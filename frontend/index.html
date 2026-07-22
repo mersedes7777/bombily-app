@@ -6,13 +6,10 @@
 <title>Бомбилы</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  :root{
-    --bg:#0c1210;--bg-elev:#111a16;--surface:#16211c;--surface2:#1d2c25;
-    --line:#26352e;--line-strong:#35473d;--ink:#e8ede9;--ink-dim:#7f8d86;
-    --green:#33d17e;--green-deep:#28b46a;--green-soft:#12291f;--amber:#f2a73b;--red:#e2585a;
-    --shadow:0 2px 12px rgba(0,0,0,.32);--shadow-lg:0 12px 34px rgba(0,0,0,.5);
-  }
+  :root{--bg:#0c1210;--bg-elev:#111a16;--surface:#16211c;--surface2:#1d2c25;--line:#26352e;--line-strong:#35473d;--ink:#e8ede9;--ink-dim:#7f8d86;--green:#33d17e;--green-deep:#28b46a;--green-soft:#12291f;--amber:#f2a73b;--red:#e2585a;--shadow:0 2px 12px rgba(0,0,0,.32);--shadow-lg:0 12px 34px rgba(0,0,0,.5);}
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
   body{background:#070a09;font-family:'Inter',sans-serif;color:var(--ink);display:flex;justify-content:center;min-height:100vh;}
@@ -25,12 +22,11 @@
   .brand{font-family:'Oswald',sans-serif;font-weight:700;font-size:20px;letter-spacing:1.5px;text-transform:uppercase;line-height:1;}
   .brand em{font-style:normal;color:var(--green);}
   .online-pill{margin-left:auto;display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);padding:6px 12px;border-radius:100px;font-size:12px;color:var(--ink-dim);font-weight:500;}
-  .online-pill span#online-n{font-family:'Roboto Mono',monospace;font-size:12px;font-weight:700;color:var(--ink);}
+  .online-pill b{font-family:'Roboto Mono',monospace;font-size:12px;color:var(--ink);}
   .pdot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:soft 1.8s infinite;flex-shrink:0;}
   @keyframes soft{0%,100%{opacity:1;}50%{opacity:.4;}}
   .app-body{flex:1;overflow:hidden;display:flex;flex-direction:column;}
-  .tabview{flex:1;overflow-y:auto;display:none;flex-direction:column;-webkit-overflow-scrolling:touch;}
-  .tabview.active{display:flex;}
+  .tabview{flex:1;overflow-y:auto;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch;}
   .section-head{padding:16px 18px 4px;display:flex;align-items:baseline;justify-content:space-between;}
   .section-head h2{font-family:'Oswald',sans-serif;font-weight:600;font-size:16px;letter-spacing:.6px;text-transform:uppercase;}
   .section-head .muted{font-size:11.5px;color:var(--ink-dim);font-family:'Roboto Mono',monospace;}
@@ -41,26 +37,18 @@
   .hero-stat .n.g{color:var(--green);}.hero-stat .n.a{color:var(--amber);}
   .hero-stat .l{font-size:11.5px;color:var(--ink-dim);margin-top:6px;}
   .hero-cta{width:100%;margin-top:11px;background:var(--green);color:#06120b;border:none;border-radius:15px;padding:16px;font-family:'Oswald',sans-serif;font-weight:600;font-size:15px;letter-spacing:.6px;text-transform:uppercase;cursor:pointer;box-shadow:0 6px 18px color-mix(in srgb,var(--green) 30%,transparent);}
-  .chips{display:flex;gap:8px;padding:12px 18px 12px;overflow-x:auto;scrollbar-width:none;flex-shrink:0;}
-  .chips::-webkit-scrollbar{display:none;}
-  .chip{flex-shrink:0;font-size:13px;font-weight:600;padding:9px 16px;border-radius:100px;border:1px solid var(--line-strong);color:var(--ink-dim);background:var(--surface);white-space:nowrap;cursor:pointer;line-height:1;}
-  .chip.active{background:var(--green);border-color:var(--green);color:#06120b;}
-  .feed{padding:2px 14px 24px;}
+  .feed{padding:8px 14px 24px;}
   .ride-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:11px;box-shadow:var(--shadow);animation:in .38s cubic-bezier(.2,.7,.3,1);display:flex;gap:13px;}
-  .ride-card.clickable{cursor:pointer;transition:border-color .15s,transform .1s;}
+  .ride-card.clickable{cursor:pointer;}
   .ride-card.clickable:active{transform:scale(.98);}
-  .ride-card.clickable .ride-price{color:var(--green);}
   @keyframes in{from{opacity:0;transform:translateY(-9px);}to{opacity:1;transform:translateY(0);}}
   .tag{font-family:'Oswald',sans-serif;font-weight:600;font-size:10px;letter-spacing:.5px;text-transform:uppercase;padding:4px 8px;border-radius:6px;white-space:nowrap;display:inline-block;flex-shrink:0;}
   .tag.free{background:var(--green-soft);color:var(--green);}
-  .tag.need{background:color-mix(in srgb,var(--amber) 18%,transparent);color:var(--amber);}
   .ride-main{flex:1;min-width:0;}
   .ride-route{font-size:15px;font-weight:600;line-height:1.3;}
   .ride-sub{font-size:12.5px;color:var(--ink-dim);margin-top:3px;}
   .ride-foot{display:flex;align-items:center;justify-content:space-between;margin-top:9px;}
-  .ride-price{font-family:'Roboto Mono',monospace;font-weight:700;font-size:16px;}
-  .ride-price.soft{font-family:'Inter',sans-serif;font-weight:500;font-size:13px;color:var(--ink-dim);}
-  .ride-time{font-size:11px;color:var(--ink-dim);font-family:'Roboto Mono',monospace;}
+  .ride-price{font-family:'Roboto Mono',monospace;font-weight:700;font-size:14px;color:var(--green);}
   .form-wrap{padding:14px 18px;}
   .addr-block{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:2px 14px;box-shadow:var(--shadow);}
   .addr-row{display:flex;align-items:center;gap:12px;padding:15px 0;}
@@ -70,14 +58,10 @@
   .pin.to{border-radius:3px;background:var(--amber);box-shadow:0 0 0 4px color-mix(in srgb,var(--amber) 18%,transparent);}
   .addr-row input{border:none;background:transparent;outline:none;color:var(--ink);font-size:15px;width:100%;font-family:'Inter',sans-serif;font-weight:500;}
   .addr-row input::placeholder{color:var(--ink-dim);font-weight:400;}
-  .saved-addr{display:flex;gap:8px;margin-top:12px;overflow-x:auto;scrollbar-width:none;}
-  .saved-addr::-webkit-scrollbar{display:none;}
+  .saved-addr{display:flex;gap:8px;margin-top:12px;overflow-x:auto;scrollbar-width:none;flex-wrap:wrap;}
   .saved-chip{flex-shrink:0;background:var(--surface);border:1px solid var(--line);border-radius:100px;padding:8px 13px;font-size:12.5px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:7px;}
   .saved-chip.add{border-style:dashed;color:var(--green);border-color:color-mix(in srgb,var(--green) 45%,transparent);}
-  .saved-chip .chip-x{color:var(--ink-dim);font-size:11px;padding:0 2px;}
-  .who-toggle{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:4px;margin-top:14px;}
-  .who-opt{flex:1;text-align:center;padding:11px;border-radius:10px;font-size:13px;font-weight:600;color:var(--ink-dim);cursor:pointer;}
-  .who-opt.on{background:var(--green);color:#06120b;}
+  .saved-chip .chip-x{color:var(--ink-dim);font-size:11px;}
   .btn-primary{width:100%;margin-top:14px;background:var(--green);color:#06120b;border:none;border-radius:15px;padding:17px;font-family:'Oswald',sans-serif;font-weight:600;font-size:16px;letter-spacing:.7px;text-transform:uppercase;cursor:pointer;box-shadow:0 6px 18px color-mix(in srgb,var(--green) 28%,transparent);}
   .btn-primary:active{transform:scale(.98);}
   .btn-ghost{width:100%;margin-top:10px;background:transparent;color:var(--ink-dim);border:1px solid var(--line-strong);border-radius:15px;padding:14px;font-size:14px;font-weight:600;cursor:pointer;}
@@ -91,12 +75,10 @@
   @keyframes ping{0%{transform:scale(.3);opacity:.9;}100%{transform:scale(1);opacity:0;}}
   .wait-top h3{font-family:'Oswald',sans-serif;font-weight:600;font-size:16px;}
   .wait-top p{font-size:12.5px;color:var(--ink-dim);margin-top:5px;}
-  .wait-timer{font-family:'Roboto Mono',monospace;font-size:12px;color:var(--green);margin-top:6px;font-weight:700;}
   .offer-list{padding:14px 14px 10px;}
   .wait-cancel-wrap{padding:0 18px 24px;}
   .offer{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:13px;margin-bottom:10px;box-shadow:var(--shadow);display:flex;gap:12px;align-items:center;animation:in .38s cubic-bezier(.2,.7,.3,1);}
-  .ava{width:46px;height:46px;border-radius:14px;flex-shrink:0;background:linear-gradient(135deg,var(--green),var(--green-deep));display:flex;align-items:center;justify-content:center;font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#06120b;position:relative;}
-  .ava .fav-dot{position:absolute;top:-3px;right:-3px;width:16px;height:16px;background:var(--red);border-radius:50%;border:2px solid var(--surface);display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;}
+  .ava{width:46px;height:46px;border-radius:14px;flex-shrink:0;background:linear-gradient(135deg,var(--green),var(--green-deep));display:flex;align-items:center;justify-content:center;font-family:'Oswald',sans-serif;font-weight:700;font-size:18px;color:#06120b;}
   .offer-body{flex:1;min-width:0;}
   .offer-name{font-size:14.5px;font-weight:600;}
   .offer-meta{font-size:12px;color:var(--ink-dim);margin-top:2px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
@@ -112,54 +94,35 @@
   .confirm p{font-size:12.5px;color:var(--ink-dim);margin-top:6px;}
   .driver-box{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px 18px;display:flex;gap:14px;align-items:center;text-align:left;box-shadow:var(--shadow-lg);}
   .driver-box .ava{width:54px;height:54px;font-size:21px;}
-  .driver-box .fav-inline{margin-left:auto;background:none;border:none;cursor:pointer;font-size:24px;color:var(--line-strong);line-height:1;}
-  .driver-box .fav-inline.on{color:var(--red);}
-  .row-actions{display:flex;gap:10px;margin-top:16px;}
-  .row-actions .btn-primary,.row-actions .btn-ghost{margin-top:0;}
-  .chat-wrap{display:flex;flex-direction:column;height:100%;}
-  .chat-head{display:flex;align-items:center;gap:11px;padding:13px 16px;border-bottom:1px solid var(--line);background:var(--bg-elev);flex-shrink:0;}
-  .chat-head .ava{width:38px;height:38px;font-size:15px;border-radius:12px;}
-  .chat-head .who{flex:1;}.chat-head .who b{font-size:14.5px;display:block;}.chat-head .who span{font-size:11.5px;color:var(--green);}
-  .icon-btn{background:none;border:none;color:var(--ink-dim);cursor:pointer;padding:6px;display:flex;}
-  .chat-banner{margin:10px 14px 0;padding:10px 13px;background:var(--surface);border:1px solid var(--line);border-radius:12px;font-size:11.5px;color:var(--ink-dim);text-align:center;line-height:1.5;}
-  .chat-msgs{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px;}
-  .msg{max-width:78%;padding:10px 13px;border-radius:15px;font-size:13.5px;line-height:1.4;animation:in .3s;}
-  .msg.them{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:5px;}
-  .msg.me{align-self:flex-end;background:var(--green);color:#06120b;border-bottom-right-radius:5px;font-weight:500;}
-  .chat-input{display:flex;gap:8px;padding:10px 12px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--bg-elev);flex-shrink:0;}
-  .chat-input input{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:12px 16px;color:var(--ink);font-size:14px;outline:none;}
-  .chat-send{width:44px;height:44px;border-radius:50%;background:var(--green);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .drv-card{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:13px;margin:0 14px 10px;box-shadow:var(--shadow);}
-  .drv-status{font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;}
-  .drv-status.on{background:var(--green-soft);color:var(--green);}
-  .drv-status.off{background:color-mix(in srgb,var(--ink-dim) 15%,transparent);color:var(--ink-dim);}
-  .drv-del{background:none;border:none;color:var(--ink-dim);cursor:pointer;padding:6px;display:flex;}
+  .field-list{padding:10px 18px;}
+  .field-row{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow);}
+  .field-row label{font-size:11px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px;}
+  .field-row input{width:100%;background:transparent;border:none;outline:none;color:var(--ink);font-size:15px;font-weight:500;font-family:'Inter',sans-serif;}
+  .save-row{padding:6px 18px 24px;}
+  .drv-online-bar{display:flex;align-items:center;justify-content:space-between;margin:14px 14px 4px;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow);}
+  .drv-online-bar.off{border-color:color-mix(in srgb,var(--red) 45%,transparent);}
+  .drv-online-bar .lbl{font-size:14px;font-weight:600;}
+  .drv-online-bar.off .lbl{color:var(--red);}
+  .toggle{width:46px;height:27px;border-radius:100px;background:var(--line-strong);position:relative;cursor:pointer;transition:.2s;flex-shrink:0;}
+  .toggle.on{background:var(--green);}
+  .toggle b{position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:.2s;}
+  .toggle.on b{left:22px;}
   .drv-req{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:15px;margin:0 14px 11px;box-shadow:var(--shadow);animation:in .38s;}
   .drv-req-route{font-size:15.5px;font-weight:600;}
-  .drv-req-meta{font-size:12.5px;color:var(--ink-dim);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;}
+  .drv-req-meta{font-size:12.5px;color:var(--ink-dim);margin-top:4px;}
   .drv-req-price{display:flex;align-items:center;gap:8px;margin-top:12px;}
   .drv-req-price input{width:90px;background:var(--bg);border:1px solid var(--line-strong);border-radius:10px;padding:10px;color:var(--ink);font-family:'Roboto Mono',monospace;font-weight:700;font-size:15px;text-align:center;outline:none;}
   .drv-req-price .unit{color:var(--ink-dim);font-size:14px;}
   .drv-req-actions{display:flex;gap:8px;margin-top:10px;}
   .drv-accept{flex:1;background:var(--green);color:#06120b;border:none;border-radius:11px;padding:12px;font-weight:700;font-size:13.5px;cursor:pointer;}
   .drv-skip{background:transparent;color:var(--ink-dim);border:1px solid var(--line-strong);border-radius:11px;padding:12px 16px;font-weight:600;font-size:13.5px;cursor:pointer;}
-  .drv-online-bar{display:flex;align-items:center;justify-content:space-between;margin:14px 14px 4px;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow);}
-  .drv-online-bar .lbl{font-size:14px;font-weight:600;}
-  .toggle{width:46px;height:27px;border-radius:100px;background:var(--line-strong);position:relative;cursor:pointer;transition:.2s;flex-shrink:0;}
-  .toggle.on{background:var(--green);}
-  .toggle b{position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:.2s;}
-  .toggle.on b{left:22px;}
   .adm-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px;}
   .adm-stat{background:var(--surface);border:1px solid var(--line);border-radius:15px;padding:15px;box-shadow:var(--shadow);}
   .adm-stat .n{font-family:'Roboto Mono',monospace;font-weight:700;font-size:23px;}
-  .adm-stat .n.g{color:var(--green);}.adm-stat .n.a{color:var(--amber);}.adm-stat .n.r{color:var(--red);}
+  .adm-stat .n.g{color:var(--green);}.adm-stat .n.a{color:var(--amber);}
   .adm-stat .l{font-size:11.5px;color:var(--ink-dim);margin-top:5px;}
   .adm-list-item{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line);}
   .adm-list-item .ava{width:38px;height:38px;font-size:14px;border-radius:11px;}
-  .adm-badge{margin-left:auto;font-size:11px;font-weight:600;padding:3px 9px;border-radius:100px;}
-  .adm-badge.ok{background:var(--green-soft);color:var(--green);}
-  .adm-badge.warn{background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red);}
-  .adm-ban{background:none;border:1px solid color-mix(in srgb,var(--red) 40%,transparent);color:var(--red);border-radius:9px;padding:6px 10px;font-size:14px;font-weight:600;cursor:pointer;}
   nav{display:flex;background:var(--bg-elev);border-top:1px solid var(--line);padding:9px 8px calc(14px + env(safe-area-inset-bottom));flex-shrink:0;}
   .nav-btn{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--ink-dim);cursor:pointer;padding:4px 0;}
   .nav-btn.active{color:var(--green);}
@@ -168,416 +131,276 @@
   .prof-ava{width:70px;height:70px;border-radius:22px;margin:0 auto 12px;background:linear-gradient(135deg,var(--green),var(--green-deep));display:flex;align-items:center;justify-content:center;font-family:'Oswald',sans-serif;font-weight:700;font-size:27px;color:#06120b;box-shadow:var(--shadow-lg);}
   .prof-name{font-family:'Oswald',sans-serif;font-weight:600;font-size:19px;}
   .prof-role{font-size:12.5px;color:var(--ink-dim);margin-top:3px;}
-  .stats{display:flex;gap:10px;padding:16px 18px;}
-  .stat{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 8px;text-align:center;box-shadow:var(--shadow);}
-  .stat b{display:block;font-family:'Roboto Mono',monospace;font-size:19px;color:var(--green);}
-  .stat span{font-size:10.5px;color:var(--ink-dim);margin-top:2px;display:block;}
   .menu-list{padding:6px 18px 24px;}
   .menu-item{display:flex;align-items:center;justify-content:space-between;padding:15px 4px;border-bottom:1px solid var(--line);font-size:14.5px;font-weight:500;cursor:pointer;}
   .menu-item .chev{color:var(--ink-dim);}
-  .active-bar{display:flex;align-items:center;gap:12px;background:var(--surface);border-top:1px solid var(--green);padding:12px 16px;cursor:pointer;flex-shrink:0;}
-  .active-bar .ava{width:38px;height:38px;font-size:15px;border-radius:11px;}
-  .active-bar .txt{flex:1;}
-  .active-bar .txt b{font-size:13.5px;display:block;}
-  .active-bar .txt span{font-size:11.5px;color:var(--ink-dim);}
-  .active-bar .go{font-size:12px;font-weight:700;color:var(--green);display:flex;align-items:center;gap:3px;}
-  .field-list{padding:10px 18px;}
-  .field-row{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow);}
-  .field-row label{font-size:11px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px;}
-  .field-row input{width:100%;background:transparent;border:none;outline:none;color:var(--ink);font-size:15px;font-weight:500;font-family:'Inter',sans-serif;}
-  .field-row input::placeholder{color:var(--ink-dim);font-weight:400;}
-  .save-row{padding:6px 18px 24px;}
-  .drv-online-bar.off{border-color:color-mix(in srgb,var(--red) 45%,transparent);}
-  .drv-online-bar.off .lbl{color:var(--red);}
-  .toggle.off{background:var(--red);}
-  .toggle.off b{left:22px;}
   .sheet-mask{position:fixed;inset:0;background:rgba(4,6,5,.66);z-index:80;display:flex;align-items:flex-end;justify-content:center;}
-  .sheet{width:100%;max-width:430px;background:var(--surface);border-top:1px solid var(--line-strong);border-radius:22px 22px 0 0;padding:20px 18px calc(22px + env(safe-area-inset-bottom));animation:sheetUp .28s cubic-bezier(.2,.7,.3,1);}
-  @keyframes sheetUp{from{transform:translateY(30px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  .sheet{width:100%;max-width:430px;background:var(--surface);border-top:1px solid var(--line-strong);border-radius:22px 22px 0 0;padding:20px 18px calc(22px + env(safe-area-inset-bottom));}
   .sheet h3{font-family:'Oswald',sans-serif;font-weight:600;font-size:17px;margin-bottom:4px;}
   .sheet .sub{font-size:12px;color:var(--ink-dim);margin-bottom:14px;}
   .sheet-actions{display:flex;gap:8px;margin-top:14px;}
   .sheet-actions button{flex:1;border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;cursor:pointer;border:none;}
   .sa-cancel{background:transparent;border:1px solid var(--line-strong)!important;color:var(--ink-dim);}
   .sa-ok{background:var(--green);color:#06120b;}
-  .sa-danger{background:var(--red);color:#fff;}
-  .rep-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;margin:0 14px 11px;box-shadow:var(--shadow);}
-  .rep-top{display:flex;align-items:center;gap:10px;}
-  .rep-top .ava{width:38px;height:38px;font-size:14px;border-radius:11px;background:linear-gradient(135deg,var(--red),#a83646);}
-  .rep-reason{font-size:14px;font-weight:600;margin-top:10px;}
-  .rep-meta{font-size:11.5px;color:var(--ink-dim);margin-top:4px;}
-  .rep-actions{display:flex;gap:8px;margin-top:12px;}
-  .rep-actions button{flex:1;border-radius:10px;padding:10px;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid var(--line-strong);background:transparent;color:var(--ink);}
-  .rep-actions .warn{border-color:var(--amber);color:var(--amber);}
-  .rep-actions .ban{border-color:var(--red);color:var(--red);}
-  .rep-actions .ok{border-color:var(--green);color:var(--green);}
-  .rep-badge{display:inline-block;font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:color-mix(in srgb,var(--red) 18%,transparent);color:var(--red);text-transform:uppercase;letter-spacing:.4px;}
-  .ava-upload{position:relative;cursor:pointer;display:inline-block;}
-  .ava-upload .cam{position:absolute;bottom:-2px;right:-2px;width:26px;height:26px;border-radius:50%;background:var(--green);border:3px solid var(--bg-elev);display:flex;align-items:center;justify-content:center;}
-  .ava-photo{width:100%;height:100%;object-fit:cover;border-radius:22px;}
-  .offer-screen{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;flex-direction:column;max-width:430px;margin:0 auto;}
-  .offer-scroll{flex:1;overflow-y:auto;padding:24px 22px;}
-  .offer-scroll h1{font-family:'Oswald',sans-serif;font-weight:700;font-size:24px;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;}
-  .offer-scroll h1 em{font-style:normal;color:var(--green);}
-  .offer-lead{font-size:13px;color:var(--ink-dim);margin-bottom:20px;line-height:1.5;}
-  .rule-block{margin-bottom:18px;}
-  .rule-block h4{font-family:'Oswald',sans-serif;font-weight:600;font-size:14px;letter-spacing:.4px;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
-  .rule-block h4 .ic{width:22px;height:22px;border-radius:7px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;}
-  .rule-block ul{list-style:none;}
-  .rule-block li{font-size:13px;color:var(--ink);line-height:1.5;padding:6px 0 6px 18px;position:relative;}
-  .rule-block li::before{content:"—";position:absolute;left:0;color:var(--ink-dim);}
-  .rule-block.ban li::before{content:"⛔";font-size:10px;top:8px;}
-  .offer-foot{padding:16px 22px calc(18px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--bg-elev);}
-  .offer-screen .btn-primary{margin-top:0;}
-  .offer-note{text-align:center;font-size:11px;color:var(--ink-dim);margin-top:10px;}
-  .bell{position:relative;background:var(--surface);border:1px solid var(--line);width:36px;height:36px;border-radius:11px;margin-left:auto;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;}
-  .bell + .online-pill{margin-left:8px;}
-  .bell-dot{position:absolute;top:6px;right:7px;width:8px;height:8px;background:var(--red);border-radius:50%;border:2px solid var(--surface);display:none;}
-  .bell-dot.show{display:block;}
-  .notif-item{display:flex;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);}
-  .notif-item.unread{background:color-mix(in srgb,var(--green) 6%,transparent);}
-  .notif-ic{width:38px;height:38px;border-radius:11px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
-  .notif-body{flex:1;min-width:0;}
-  .notif-body b{font-size:13.5px;display:block;}
-  .notif-body p{font-size:12.5px;color:var(--ink-dim);margin-top:2px;line-height:1.4;}
-  .notif-when{font-size:10.5px;color:var(--ink-dim);margin-top:4px;font-family:'Roboto Mono',monospace;}
-  .pub-head{padding:26px 20px 18px;text-align:center;}
-  .pub-ava{width:84px;height:84px;border-radius:26px;margin:0 auto 12px;background:linear-gradient(135deg,var(--green),var(--green-deep));display:flex;align-items:center;justify-content:center;font-family:'Oswald',sans-serif;font-weight:700;font-size:32px;color:#06120b;box-shadow:var(--shadow-lg);overflow:hidden;}
-  .pub-name{font-family:'Oswald',sans-serif;font-weight:600;font-size:21px;}
-  .pub-badges{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:8px;}
-  .pub-badge{font-size:11px;font-weight:600;padding:4px 10px;border-radius:100px;background:var(--surface2);color:var(--ink);}
-  .pub-badge.verified{background:var(--green-soft);color:var(--green);}
-  #toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%) translateY(16px);background:var(--green);color:#06120b;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:700;opacity:0;transition:.28s;z-index:90;white-space:nowrap;pointer-events:none;box-shadow:var(--shadow-lg);}
+  #toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%) translateY(16px);background:var(--green);color:#06120b;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:700;opacity:0;transition:.28s;z-index:90;white-space:nowrap;pointer-events:none;box-shadow:var(--shadow-lg);text-align:center;max-width:90%;}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  #boot{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;}
 </style>
 </head>
 <body>
 <div class="device" id="device">
   <div class="checker"></div>
-  <div class="role-switch">
-    <div class="role-btn on" id="role-passenger" onclick="setRole('passenger')">Пассажир</div>
-    <div class="role-btn" id="role-driver" onclick="setRole('driver')">Водитель</div>
-    <div class="role-btn" id="role-admin" onclick="setRole('admin')">Админ</div>
-  </div>
+  <div class="role-switch" id="role-switch"></div>
   <div class="topbar">
     <div class="brand">Бом<em>билы</em></div>
-    <button class="bell" id="bell" onclick="openNotifs()"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg><span class="bell-dot" id="bell-dot"></span></button>
-    <div class="online-pill"><span class="pdot"></span><span id="online-n">34</span>&nbsp;водителей</div>
+    <div class="online-pill"><span class="pdot"></span><b id="online-n">0</b>&nbsp;онлайн</div>
   </div>
   <div class="app-body" id="app-body"></div>
   <nav id="nav"></nav>
   <div id="toast"></div>
 </div>
+<div id="boot">Загрузка…</div>
+
 <script>
-const cars=["ВАЗ Веста","Skoda Octavia","Renault Logan","Chevrolet Lacetti","Hyundai Solaris","УАЗ Патриот"];
-const rFree=["Ленина → любой район","Центр → куда скажете","Восточный → город","Пригород → центр"];
-const rNeed=["Восточный → вокзал","Центр → рынок","Ленина → больница","Автовокзал → центр"];
-const names=["Сергей","Андрей","Игорь","Виталий","Дмитрий"];
-const dcars=["Lada Vesta","Skoda Octavia","Renault Logan","Kia Rio"];
-function pad(n){return n.toString().padStart(2,'0');}
-function tnow(){const d=new Date();return pad(d.getHours())+":"+pad(d.getMinutes());}
-function pick(a){return a[Math.floor(Math.random()*a.length)];}
-function stars(n){return "★".repeat(n)+"☆".repeat(5-n);}
-function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(window._tt);window._tt=setTimeout(()=>el.classList.remove('show'),2200);}
-let role='passenger';
-let myDrivers=[{name:"Сергей",car:"Lada Vesta",rating:5,online:true},{name:"Дмитрий",car:"Kia Rio",rating:4,online:false}];
-function mkFeed(){const f=Math.random()>.45;return{kind:f?'free':'need',driver:f?pick(names):null,car:f?pick(cars):null,route:f?pick(rFree):pick(rNeed),price:f?null:(150+Math.floor(Math.random()*18)*10)+' ₽',time:tnow()};}
-let feed=Array.from({length:6},mkFeed);
-let who='all',pool=[],timer,touts=[],currentDriver=null,pTab='home',ff='all',activeRide=null;
-let savedPlaces=[];
-let me={name:"Виктор",phone:"",since:"с марта 2026",photo:null};
-let driverMe={name:"Сергей",phone:"",car:"Lada Vesta",plate:"",photo:null,status:"approved"};
-let driverApplications=[
-  {id:1,name:"Павел",phone:"+7 900 555-11-22",when:"сегодня 13:10"},
-  {id:2,name:"Роман",phone:"+7 900 666-33-44",when:"вчера"},
-];
-let rulesAccepted=false;
-let notifs={
-  passenger:[
-    {icon:'⭐',title:'Оцените поездку',text:'Как вам поездка с Сергеем? Поставьте оценку.',when:'5 мин назад',unread:true},
-    {icon:'✅',title:'Заказ завершён',text:'Поездка ул. Ленина → Автовокзал, 200 ₽',when:'вчера',unread:false},
-    {icon:'🎁',title:'Пригласите друга',text:'За друга, который сделает первый заказ — приоритет в ленте.',when:'2 дня назад',unread:false},
-  ],
-  driver:[
-    {icon:'⭐',title:'Новая оценка',text:'Пассажир поставил вам 5 звёзд. Так держать!',when:'10 мин назад',unread:true},
-    {icon:'⚠️',title:'Предупреждение',text:'Жалоба на завышение цены. Соблюдайте договорённости.',when:'вчера',unread:true},
-    {icon:'💰',title:'Итоги недели',text:'6 240 ₽ за 38 поездок. Отличная неделя!',when:'3 дня назад',unread:false},
-  ]
-};
-let reports=[
-  {id:1,target:"Игорь",reason:"Завысил цену после согласования",by:"Виктор",when:"сегодня 14:20",status:"pending"},
-  {id:2,target:"Андрей",reason:"Просит оплату мимо приложения",by:"Пассажир #212",when:"вчера 19:05",status:"pending"},
-  {id:3,target:"Игорь",reason:"Грубость",by:"Пассажир #98",when:"3 дня назад",status:"pending"},
-];
-let driverOnline=true,dTab='inbox';
-let driverReqs=[{id:1,route:"ул. Ленина, 14 → Автовокзал",dist:"2.3 км до пассажира",comment:"два чемодана",price:200},{id:2,route:"Центр → Восточный",dist:"1.1 км до пассажира",comment:"",price:170}];
-function setRole(r){role=r;document.querySelectorAll('.role-btn').forEach(b=>b.classList.remove('on'));document.getElementById('role-'+r).classList.add('on');if(r==='passenger'){pTab='home';renderPassenger();}if(r==='driver'){dTab='inbox';renderDriver();}if(r==='admin'){renderAdmin();}}
-function renderPassenger(){
-  const nav=document.getElementById('nav');nav.style.display='flex';
-  nav.innerHTML=`
-    <button class="nav-btn ${pTab==='home'?'active':''}" onclick="pGo('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Главная</button>
-    <button class="nav-btn ${pTab==='feed'?'active':''}" onclick="pGo('feed')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>Линия</button>
-    <button class="nav-btn ${pTab==='drivers'?'active':''}" onclick="pGo('drivers')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l8.8 8.6 8.8-8.6a5.5 5.5 0 000-7.8z"/></svg>Свои</button>
-    <button class="nav-btn ${pTab==='profile'?'active':''}" onclick="pGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль</button>`;
-  const body=document.getElementById('app-body');
-  if(pTab==='home')body.innerHTML=viewHome();
-  if(pTab==='feed'){body.innerHTML=viewFeed();bindFeed();}
-  if(pTab==='request'){body.innerHTML=viewRequestForm();if(activeRide)showActiveRide();}
-  if(pTab==='drivers')body.innerHTML=viewDrivers();
-  if(pTab==='profile')body.innerHTML=viewProfile();
-  renderActiveBar();
+/* ============ CONFIG — ВСТАВЬ СВОЙ ANON КЛЮЧ ============ */
+const SUPABASE_URL = "https://wygmuydnodwpbtsdfjuq.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5Z211eWRub2R3cGJ0c2RmanVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1ODA5MTAsImV4cCI6MjEwMDE1NjkxMH0.hrU9TwCQzplTLkShaF8djP9PqANbBrTCJuvlNk84dGw";
+const OWNER_ID = 8672930773;
+/* ======================================================= */
+
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const tg = window.Telegram?.WebApp; try{tg?.ready();tg?.expand();}catch(e){}
+const tgUser = tg?.initDataUnsafe?.user;
+
+let tgId = tgUser?.id;
+if(!tgId){ let s=localStorage.getItem('bmb_tgid'); if(!s){s=Math.floor(Math.random()*1e9);localStorage.setItem('bmb_tgid',s);} tgId=Number(s); }
+const tgName = tgUser?.first_name || ('Гость'+String(tgId).slice(-3));
+
+let me=null, role='passenger';
+let savedPlaces=JSON.parse(localStorage.getItem('bmb_places')||'[]');
+let favs=JSON.parse(localStorage.getItem('bmb_favs')||'[]');
+
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(window._tt);window._tt=setTimeout(()=>el.classList.remove('show'),2400);}
+function stars(n){n=n||5;return "★".repeat(Math.round(n))+"☆".repeat(5-Math.round(n));}
+
+async function boot(){
+  if(SUPABASE_ANON_KEY.includes("ВСТАВЬ")){document.getElementById('boot').innerHTML='<div style="padding:20px;text-align:center;color:#e2585a">Не вставлен ANON ключ в код (строка SUPABASE_ANON_KEY)</div>';return;}
+  try{
+    let {data}=await db.from('users').select('*').eq('telegram_id',tgId).maybeSingle();
+    if(!data){ let r=await db.from('users').insert({telegram_id:tgId,name:tgName}).select().single(); data=r.data; }
+    me=data;
+    document.getElementById('boot').style.display='none';
+    renderRoleSwitch();
+    updateOnlineCount();
+    setInterval(updateOnlineCount,8000);
+    setRole('passenger');
+  }catch(e){ document.getElementById('boot').innerHTML='<div style="padding:20px;text-align:center;color:#e2585a">Ошибка подключения: '+e.message+'</div>'; }
 }
-function renderActiveBar(){
-  let bar=document.getElementById('active-bar');
-  if(bar)bar.remove();
-  if(role==='passenger'&&activeRide&&pTab!=='request'){
-    const nav=document.getElementById('nav');
-    const el=document.createElement('div');
-    el.className='active-bar';el.id='active-bar';
-    el.onclick=()=>{pTab='request';renderPassenger();showActiveRide();};
-    el.innerHTML=`<div class="ava">${activeRide.name[0]}</div><div class="txt"><b>${activeRide.name} · ${activeRide.price} ₽</b><span>бомбила в пути · ${activeRide.eta} мин</span></div><div class="go">Открыть ›</div>`;
-    nav.parentNode.insertBefore(el,nav);
-  }
+
+async function updateOnlineCount(){
+  const {count}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online');
+  document.getElementById('online-n').textContent=count||0;
+}
+
+function isStaff(){return me && (me.staff_role==='owner'||me.staff_role==='admin'||me.staff_role==='moderator');}
+function renderRoleSwitch(){
+  const sw=document.getElementById('role-switch');
+  const isDriver=me.role==='driver'||me.role==='both';
+  let btns=`<div class="role-btn ${role==='passenger'?'on':''}" onclick="setRole('passenger')">Пассажир</div>`;
+  if(isDriver)btns+=`<div class="role-btn ${role==='driver'?'on':''}" onclick="setRole('driver')">Водитель</div>`;
+  if(isStaff())btns+=`<div class="role-btn ${role==='admin'?'on':''}" onclick="setRole('admin')">Панель</div>`;
+  // если переключать не между чем — скрываем панель совсем
+  if(!isDriver && !isStaff()){sw.style.display='none';}else{sw.style.display='flex';sw.innerHTML=btns;}
+}
+function setRole(r){
+  if(r==='admin'&&!isStaff()){toast('Нет доступа');return;}
+  if(r==='driver'&&!(me.role==='driver'||me.role==='both')){toast('Сначала пройдите модерацию');return;}
+  role=r;
+  renderRoleSwitch();
+  if(r==='passenger'){pTab='home';renderPassenger();}
+  if(r==='driver'){dTab='inbox';renderDriver();}
+  if(r==='admin'){renderAdmin();}
+}
+
+/* ================= PASSENGER ================= */
+let pTab='home',currentRideId=null,offersChannel=null;
+function renderPassenger(){
+  document.getElementById('nav').innerHTML=`
+    <button class="nav-btn ${pTab==='home'?'active':''}" onclick="pGo('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Главная</button>
+    <button class="nav-btn ${pTab==='request'?'active':''}" onclick="pGo('request')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 00-8 8c0 5.5 8 12 8 12s8-6.5 8-12a8 8 0 00-8-8z"/></svg>Заказать</button>
+    <button class="nav-btn ${pTab==='profile'?'active':''}" onclick="pGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль</button>`;
+  const b=document.getElementById('app-body');
+  if(pTab==='home')renderHome(b);
+  if(pTab==='request')b.innerHTML=`<div class="tabview"><div id="reqhost">${reqFormHTML()}</div></div>`;
+  if(pTab==='profile')b.innerHTML=viewProfile();
 }
 function pGo(t){pTab=t;renderPassenger();}
-function feedCard(e,idx){const clickable=e.kind==='free';return `<div class="ride-card${clickable?' clickable':''}"${clickable?` onclick="directRequest('${(e.driver||'Водитель').replace(/'/g,'')}','${(e.car||'').replace(/'/g,'')}')"`:''}><div><span class="tag ${e.kind}">${e.kind==='free'?'Свободен':'Ищет'}</span></div><div class="ride-main"><div class="ride-route">${e.route}</div><div class="ride-sub">${e.driver?e.driver+' · ':''}${e.car||'нужна машина'}</div><div class="ride-foot"><span class="ride-price ${e.price?'':'soft'}">${clickable?'выбрать →':(e.price||'договорная')}</span><span class="ride-time">${e.time}</span></div></div></div>`;}
-function viewHome(){
-  const free=feed.filter(f=>f.kind==='free').length,need=feed.filter(f=>f.kind==='need').length;
-  return `<div class="tabview active"><div class="hero"><div class="hero-grid"><div class="hero-stat"><div class="n g">${free}</div><div class="l">свободны сейчас</div></div><div class="hero-stat"><div class="n a">${need}</div><div class="l">ищут машину</div></div></div><button class="hero-cta" onclick="pTab='request';renderPassenger()">Позвать бомбилу</button></div><div class="section-head"><h2>Свежее на линии</h2><span class="muted">обновляется</span></div><div class="feed">${feed.slice(0,4).map(feedCard).join('')}</div></div>`;
+
+async function renderHome(b){
+  b.innerHTML=`<div class="tabview"><div class="hero"><div class="hero-grid"><div class="hero-stat"><div class="n g" id="h-free">…</div><div class="l">свободны сейчас</div></div><div class="hero-stat"><div class="n a" id="h-req">…</div><div class="l">заявок открыто</div></div></div><button class="hero-cta" onclick="pGo('request')">Позвать бомбилу</button></div><div class="section-head"><h2>Кто на линии</h2><span class="muted">обновляется</span></div><div class="feed" id="home-feed"><div class="empty">Загрузка…</div></div></div>`;
+  const {data:drivers}=await db.from('users').select('*').eq('status','online').in('role',['driver','both']);
+  const {count:reqCount}=await db.from('rides').select('*',{count:'exact',head:true}).eq('status','created');
+  const fe=document.getElementById('h-free'); if(fe)fe.textContent=(drivers||[]).length;
+  const re=document.getElementById('h-req'); if(re)re.textContent=reqCount||0;
+  const feed=document.getElementById('home-feed'); if(!feed)return;
+  if(!drivers||!drivers.length){feed.innerHTML='<div class="empty"><b>Пока никого нет на линии</b>Как только водитель выйдет на линию — появится здесь.</div>';return;}
+  feed.innerHTML=drivers.map(d=>`<div class="ride-card clickable" onclick="directRequest('${d.id}','${(d.name||'').replace(/'/g,'')}','${(d.car||'').replace(/'/g,'')}')"><div><span class="tag free">Свободен</span></div><div class="ride-main"><div class="ride-route">${d.name}</div><div class="ride-sub">${d.car||'машина не указана'}</div><div class="ride-foot"><span class="ride-price">выбрать →</span><span class="offer-meta"><span class="stars">${stars(d.rating)}</span></span></div></div></div>`).join('');
 }
-function viewFeed(){return `<div class="tabview active"><div class="section-head"><h2>Кто на линии</h2><span class="muted">6 чатов города</span></div><div class="chips" id="feed-chips"><div class="chip ${ff==='all'?'active':''}" data-f="all">Все</div><div class="chip ${ff==='free'?'active':''}" data-f="free">Свободны</div><div class="chip ${ff==='need'?'active':''}" data-f="need">Ищут машину</div></div><div class="feed" id="feed">${feed.filter(e=>ff==='all'||e.kind===ff).map(feedCard).join('')}</div></div>`;}
-function bindFeed(){const c=document.getElementById('feed-chips');if(!c)return;c.addEventListener('click',e=>{const ch=e.target.closest('.chip');if(!ch)return;ff=ch.dataset.f;renderPassenger();});}
-function viewRequestForm(){return `<div class="tabview active"><div id="reqhost">${reqFormHTML()}</div></div>`;}
+
 function reqFormHTML(){
   const chips=savedPlaces.map((p,i)=>`<div class="saved-chip" onclick="document.getElementById('dest').value='${p.replace(/'/g,"")}'">📍 ${p}<span class="chip-x" onclick="event.stopPropagation();delPlace(${i})">✕</span></div>`).join('');
-  return `<div class="section-head"><h2>Куда едем</h2></div><div class="form-wrap"><div class="addr-block"><div class="addr-row"><span class="pin from"></span><input value="Моя геолокация · ул. Ленина, 14"></div><div class="addr-row"><span class="pin to"></span><input id="dest" placeholder="Адрес назначения"></div></div><div class="saved-addr">${chips}<div class="saved-chip add" onclick="addPlace()">＋ Сохранить место</div></div><div class="who-toggle"><div class="who-opt ${who==='all'?'on':''}" onclick="setWho('all')">Звать всех</div><div class="who-opt ${who==='fav'?'on':''}" onclick="setWho('fav')">Только своих</div></div><button class="btn-primary" onclick="startSearch()">Позвать бомбилу</button><div class="form-note">${who==='fav'?'Заявка уйдёт только вашим водителям.<br>Если никто не ответит — расширим на всех.':'Заявка уйдёт всем, кто сейчас на линии.<br>Первые предложения — обычно за полминуты.'}</div></div>`;
+  return `<div class="section-head"><h2>Куда едем</h2></div><div class="form-wrap"><div class="addr-block"><div class="addr-row"><span class="pin from"></span><input id="from" value="Моя геолокация" placeholder="Откуда"></div><div class="addr-row"><span class="pin to"></span><input id="dest" placeholder="Адрес назначения"></div></div><div class="saved-addr">${chips}<div class="saved-chip add" onclick="addPlace()">＋ Сохранить место</div></div><button class="btn-primary" onclick="createRide()">Позвать бомбилу</button><div class="form-note">Заявку увидят все водители на линии. Они пришлют цену — вы выберете.</div></div>`;
 }
-function addPlace(){
-  const cur=document.getElementById('dest').value.trim();
-  const val=cur||prompt('Название или адрес места (например: Работа, Вокзал):');
-  if(!val)return;
-  if(!savedPlaces.includes(val)){savedPlaces.push(val);toast('Место сохранено');}
-  document.getElementById('reqhost').innerHTML=reqFormHTML();
+function addPlace(){const cur=document.getElementById('dest').value.trim();const v=cur||prompt('Название места:');if(!v)return;if(!savedPlaces.includes(v)){savedPlaces.push(v);localStorage.setItem('bmb_places',JSON.stringify(savedPlaces));toast('Место сохранено');}document.getElementById('reqhost').innerHTML=reqFormHTML();}
+function delPlace(i){savedPlaces.splice(i,1);localStorage.setItem('bmb_places',JSON.stringify(savedPlaces));toast('Удалено');document.getElementById('reqhost').innerHTML=reqFormHTML();}
+
+async function createRide(to,driverId){
+  const from=document.getElementById('from')?.value||'Моя геолокация';
+  const dest=to||document.getElementById('dest')?.value;
+  if(!dest){toast('Укажите адрес');return;}
+  const {data,error}=await db.from('rides').insert({passenger_id:me.id,passenger_name:me.name,from_address:from,to_address:dest,status:'created'}).select().single();
+  if(error){toast('Ошибка: '+error.message);return;}
+  currentRideId=data.id;
+  showWaiting(from,dest);
+  subscribeOffers(data.id);
 }
-function delPlace(i){savedPlaces.splice(i,1);toast('Место удалено');document.getElementById('reqhost').innerHTML=reqFormHTML();}
-function directRequest(name,car){
-  currentDriver={name,car,rating:5,eta:3+Math.floor(Math.random()*8),price:null};
-  pTab='request';renderPassenger();
-  document.getElementById('reqhost').innerHTML=`<div class="section-head"><h2>Заявка водителю</h2></div><div class="form-wrap"><div class="driver-box" style="margin-top:0"><div class="ava">${name[0]}</div><div><div class="offer-name" style="font-size:16px">${name}</div><div class="offer-meta" style="margin-top:4px"><span class="stars">${stars(5)}</span><span>${car||'—'}</span></div></div></div><div class="addr-block" style="margin-top:14px"><div class="addr-row"><span class="pin from"></span><input value="Моя геолокация · ул. Ленина, 14"></div><div class="addr-row"><span class="pin to"></span><input id="dd-dest" placeholder="Адрес назначения"></div></div><button class="btn-primary" onclick="sendDirect()">Отправить заявку ${name}</button><div class="form-note">${name} получит заявку и назовёт свою цену. Вы сможете принять или отказаться.</div></div>`;
+function showWaiting(from,dest){
+  document.getElementById('reqhost').innerHTML=`<div class="wait-top"><div class="beacon"><i></i><i></i><i></i><b></b></div><h3>Ищем свободных</h3><p>${from} → ${dest}</p></div><div class="offer-list" id="offers"><div class="empty">Ждём, кто откликнется…</div></div><div class="wait-cancel-wrap"><button class="btn-danger" onclick="cancelRide()">Отменить заявку</button></div>`;
 }
-function sendDirect(){
-  const dest=document.getElementById('dd-dest').value||'Автовокзал';
-  document.getElementById('reqhost').innerHTML=`<div class="wait-top"><div class="beacon"><i></i><i></i><i></i><b></b></div><h3>Заявка отправлена ${currentDriver.name}</h3><p>ул. Ленина, 14 → ${dest}</p><div class="wait-timer">ждём ответа…</div></div><div class="offer-list" id="dd-offers"><div class="empty">${currentDriver.name} смотрит заявку…</div></div><div class="wait-cancel-wrap"><button class="btn-danger" onclick="pTab='request';renderPassenger()">Отменить</button></div>`;
-  setTimeout(()=>{
-    const price=150+Math.floor(Math.random()*14)*10;currentDriver.price=price;
-    const box=document.getElementById('dd-offers');if(!box)return;
-    box.innerHTML=`<div class="offer"><div class="ava">${currentDriver.name[0]}</div><div class="offer-body"><div class="offer-name">${currentDriver.name} готов ехать</div><div class="offer-meta"><span class="stars">${stars(5)}</span><span>${currentDriver.car||'—'}</span><span>· ${currentDriver.eta} мин</span></div></div><div class="offer-right"><div class="offer-price">${price} ₽</div><button class="pick" onclick="acceptDirect()">Принять</button></div></div>`;
-  },2200);
+function subscribeOffers(rideId){
+  if(offersChannel)db.removeChannel(offersChannel);
+  offersChannel=db.channel('off-'+rideId).on('postgres_changes',{event:'INSERT',schema:'public',table:'offers',filter:'ride_id=eq.'+rideId},p=>addOffer(p.new)).subscribe();
+  db.from('offers').select('*').eq('ride_id',rideId).then(({data})=>{(data||[]).forEach(addOffer);});
 }
-function acceptDirect(){activeRide=currentDriver;showActiveRide();}
+function addOffer(o){
+  const box=document.getElementById('offers');if(!box)return;
+  if(document.getElementById('offer-'+o.id))return;
+  if(box.querySelector('.empty'))box.innerHTML='';
+  box.insertAdjacentHTML('afterbegin',`<div class="offer" id="offer-${o.id}"><div class="ava">${(o.driver_name||'?')[0]}</div><div class="offer-body"><div class="offer-name">${o.driver_name||'Водитель'}</div><div class="offer-meta"><span>${o.car||'—'}</span><span>· ${o.eta_minutes||'?'} мин</span></div></div><div class="offer-right"><div class="offer-price">${o.price} ₽</div><button class="pick" onclick="pickOffer('${o.id}','${o.driver_id}','${(o.driver_name||'').replace(/'/g,'')}','${(o.car||'').replace(/'/g,'')}',${o.price})">Выбрать</button></div></div>`);
+}
+async function pickOffer(offerId,driverId,dname,car,price){
+  await db.from('rides').update({driver_id:driverId,status:'confirmed'}).eq('id',currentRideId);
+  await db.from('offers').update({status:'selected'}).eq('id',offerId);
+  if(offersChannel){db.removeChannel(offersChannel);offersChannel=null;}
+  document.getElementById('reqhost').innerHTML=`<div class="confirm"><div class="badge-ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>Бомбила выехал</h3><p>Остальным ушло «занято»</p><div class="driver-box"><div class="ava">${(dname||'?')[0]}</div><div><div class="offer-name" style="font-size:16px">${dname}</div><div class="offer-meta" style="margin-top:4px"><span>${car||'—'}</span></div><div class="offer-price" style="margin-top:6px">${price} ₽</div></div></div><button class="btn-danger" onclick="finishRide()">Завершить поездку</button></div>`;
+}
+async function cancelRide(){if(currentRideId)await db.from('rides').update({status:'cancelled_by_passenger_free'}).eq('id',currentRideId);if(offersChannel){db.removeChannel(offersChannel);offersChannel=null;}currentRideId=null;toast('Заявка отменена');pGo('request');}
+async function finishRide(){if(currentRideId)await db.from('rides').update({status:'completed'}).eq('id',currentRideId);currentRideId=null;toast('Поездка завершена');pGo('home');}
+
+async function directRequest(driverId,name,car){
+  pGo('request');
+  document.getElementById('reqhost').innerHTML=`<div class="section-head"><h2>Заявка водителю</h2></div><div class="form-wrap"><div class="driver-box" style="margin-top:0"><div class="ava">${(name||'?')[0]}</div><div><div class="offer-name" style="font-size:16px">${name}</div><div class="offer-meta" style="margin-top:4px"><span>${car||'—'}</span></div></div></div><div class="addr-block" style="margin-top:14px"><div class="addr-row"><span class="pin from"></span><input id="from" value="Моя геолокация"></div><div class="addr-row"><span class="pin to"></span><input id="dest" placeholder="Адрес назначения"></div></div><button class="btn-primary" onclick="createRide()">Отправить заявку</button><div class="form-note">Заявка уйдёт всем на линии, включая ${name}.</div></div>`;
+}
+
+function viewProfile(){
+  const isDriver=me.role==='driver'||me.role==='both';
+  return `<div class="tabview"><div class="prof-head"><div class="prof-ava">${(me.name||'?')[0]}</div><div class="prof-name">${me.name}</div><div class="prof-role">${isDriver?'Водитель':'Пассажир'} · рейтинг ${me.rating||5}</div></div><div class="field-list"><div class="field-row"><label>Имя</label><input id="pf-name" value="${me.name||''}"></div><div class="field-row"><label>Телефон</label><input id="pf-phone" value="${me.phone||''}" inputmode="tel" placeholder="+7 900 000-00-00"></div><div class="field-row"><label>Возраст</label><input id="pf-age" value="${me.age||''}" inputmode="numeric" placeholder="не обязательно"></div></div><div class="save-row"><button class="btn-primary" onclick="saveProfile()">Сохранить</button></div><div class="menu-list">${me.driver_status==='pending'?'<div class="menu-item" style="color:var(--amber)"><span>Заявка в водители на модерации ⏳</span></div>':(isDriver?'':'<div class="menu-item" onclick="becomeDriver()"><span>Стать бомбилой</span><span class="chev">›</span></div>')}<div class="menu-item" onclick="toast('Поддержка: @твой_ник')"><span>Поддержка</span><span class="chev">›</span></div></div></div>`;
+}
+async function saveProfile(){
+  const n=document.getElementById('pf-name').value.trim();if(!n){toast('Введите имя');return;}
+  const patch={name:n,phone:document.getElementById('pf-phone').value.trim(),age:parseInt(document.getElementById('pf-age').value)||null};
+  await db.from('users').update(patch).eq('id',me.id);Object.assign(me,patch);toast('Сохранено');renderPassenger();
+}
 function becomeDriver(){
-  const mask=document.createElement('div');mask.className='sheet-mask';mask.id='drv-sheet';
-  mask.innerHTML=`<div class="sheet"><h3>Стать бомбилой</h3><div class="sub">Заявка уйдёт на проверку. Марку и номер машины впишет администратор после одобрения — сами вы их менять не сможете.</div><div class="field-row"><label>Имя</label><input id="bd-name" value="${driverMe.name}" placeholder="Имя"></div><div class="field-row"><label>Телефон</label><input id="bd-phone" value="${driverMe.phone}" placeholder="+7 900 000-00-00" inputmode="tel"></div><div class="sheet-actions"><button class="sa-cancel" onclick="closeSheet()">Отмена</button><button class="sa-ok" onclick="submitDriverApp()">Отправить заявку</button></div></div>`;
-  document.getElementById('device').appendChild(mask);
+  const m=document.createElement('div');m.className='sheet-mask';m.id='sheet';
+  m.innerHTML=`<div class="sheet"><h3>Стать бомбилой</h3><div class="sub">Заявка уйдёт на проверку. Марку и номер машины впишет админ после одобрения — сами вы их менять не сможете.</div><div class="field-row"><label>Телефон</label><input id="bd-phone" value="${me.phone||''}" placeholder="+7 900 000-00-00" inputmode="tel"></div><div class="sheet-actions"><button class="sa-cancel" onclick="closeSheet()">Отмена</button><button class="sa-ok" onclick="submitDriverApp()">Отправить</button></div></div>`;
+  document.getElementById('device').appendChild(m);
 }
-function submitDriverApp(){
-  const n=document.getElementById('bd-name').value.trim();const p=document.getElementById('bd-phone').value.trim();
-  if(!n||!p){toast('Заполните имя и телефон');return;}
-  driverMe.name=n;driverMe.phone=p;driverMe.status='pending';
-  driverApplications.push({id:Date.now(),name:n,phone:p,when:'только что'});
-  closeSheet();toast('Заявка отправлена на модерацию');
+async function submitDriverApp(){
+  const p=document.getElementById('bd-phone').value.trim();if(!p){toast('Введите телефон');return;}
+  await db.from('users').update({phone:p,driver_status:'pending'}).eq('id',me.id);me.driver_status='pending';me.phone=p;
+  closeSheet();toast('Заявка отправлена на модерацию');renderPassenger();
 }
-function closeSheet(){const s=document.getElementById('drv-sheet')||document.getElementById('adm-sheet');if(s)s.remove();}
-function setWho(w){who=w;document.getElementById('reqhost').innerHTML=reqFormHTML();}
-function startSearch(){
-  const dest=document.getElementById('dest').value||'Автовокзал';pool=[];let s=0;
-  document.getElementById('reqhost').innerHTML=`<div class="wait-top"><div class="beacon"><i></i><i></i><i></i><b></b></div><h3>Ищем свободных</h3><p>ул. Ленина, 14 → ${dest}</p><div class="wait-timer" id="wait-timer">00:00</div></div><div class="offer-list" id="offers"><div class="empty">Ждём, кто откликнется…</div></div><div class="wait-cancel-wrap"><button class="btn-danger" onclick="cancelSearch()">Отменить заявку</button></div>`;
-  timer=setInterval(()=>{s++;const el=document.getElementById('wait-timer');if(el)el.textContent=pad(Math.floor(s/60))+":"+pad(s%60);},1000);
-  const delays=who==='fav'?[1600,4200]:[1500,2800,4200,6500,8800];
-  delays.forEach((d,i)=>touts.push(setTimeout(()=>{
-    const o={i,name:names[i%names.length],car:dcars[i%dcars.length],price:150+Math.floor(Math.random()*14)*10,rating:4+(Math.random()>.5?1:0),eta:3+Math.floor(Math.random()*8),fav:who==='fav'||(i===0&&Math.random()>.6)};
-    pool.push(o);const box=document.getElementById('offers');if(!box)return;if(box.querySelector('.empty'))box.innerHTML='';
-    box.insertAdjacentHTML('afterbegin',`<div class="offer"><div class="ava">${o.name[0]}${o.fav?'<span class="fav-dot">♥</span>':''}</div><div class="offer-body"><div class="offer-name">${o.name}${o.fav?' <span style="font-size:11px;color:var(--red)">свой</span>':''}</div><div class="offer-meta"><span class="stars">${stars(o.rating)}</span><span>${o.car}</span><span>· ${o.eta} мин</span></div></div><div class="offer-right"><div class="offer-price">${o.price} ₽</div><button class="pick" onclick="choose(${o.i})">Выбрать</button></div></div>`);
-  },d)));
-}
-function cancelSearch(){clearInterval(timer);touts.forEach(clearTimeout);toast('Заявка отменена');document.getElementById('reqhost').innerHTML=reqFormHTML();}
-function choose(i){
-  clearInterval(timer);touts.forEach(clearTimeout);const o=pool.find(x=>x.i===i);currentDriver=o;activeRide=o;
-  showActiveRide();
-}
-function showActiveRide(){
-  const o=currentDriver;if(!o)return;
-  const already=myDrivers.some(d=>d.name===o.name);
-  document.getElementById('reqhost').innerHTML=`<div class="confirm"><div class="badge-ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>Бомбила выехал</h3><p>Остальным ушло «занято»</p><div class="driver-box"><div class="ava">${o.name[0]}</div><div><div class="offer-name" style="font-size:16px">${o.name}</div><div class="offer-meta" style="margin-top:4px"><span class="stars">${stars(o.rating)}</span><span>${o.car}</span></div><div class="offer-price" style="margin-top:6px">${o.price} ₽ · ${o.eta} мин</div></div><button class="fav-inline ${already?'on':''}" id="favi" onclick="toggleFav()">♥</button></div><div class="row-actions"><button class="btn-ghost" onclick="cancelRide()">Отменить</button><button class="btn-primary" onclick="openChat()">Написать в чат</button></div></div>`;
-}
-function cancelRide(){toast('Поездка отменена');activeRide=null;pTab='request';currentDriver=null;renderPassenger();}
-function toggleFav(){if(!currentDriver)return;const idx=myDrivers.findIndex(d=>d.name===currentDriver.name);const favi=document.getElementById('favi');if(idx>=0){myDrivers.splice(idx,1);favi.classList.remove('on');toast('Убрали из своих');}else{myDrivers.push({name:currentDriver.name,car:currentDriver.car,rating:currentDriver.rating,online:true});favi.classList.add('on');toast('Добавили в свои');}}
-function openChat(){
-  const o=currentDriver||{name:'Сергей'};
-  document.getElementById('reqhost').innerHTML=`<div class="chat-wrap"><div class="chat-head"><button class="icon-btn" onclick="showActiveRide()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button><div class="ava">${o.name[0]}</div><div class="who"><b>${o.name}</b><span>в сети</span></div><button class="icon-btn" onclick="toast('Звонок водителю')"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012 4.1 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.3a2 2 0 012.1-.4c.9.3 1.8.6 2.8.7A2 2 0 0122 16.9z"/></svg></button></div><div class="chat-banner">Общайтесь в приложении — так безопаснее. Телефон открывается кнопкой звонка выше.</div><div class="chat-msgs" id="cm"></div><div class="chat-input"><input id="cf" placeholder="Написать сообщение…" onkeydown="if(event.key==='Enter')sendMsg()"><button class="chat-send" onclick="sendMsg()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="2.3"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button></div></div>`;
-  [{f:'them',t:'Добрый день! Уже выезжаю, буду минут через 6'},{f:'them',t:'Машина белая, номер увидите'}].forEach((m,i)=>setTimeout(()=>addMsg(m.f,m.t),i*650));
-}
-function addMsg(f,t){const box=document.getElementById('cm');if(!box)return;box.insertAdjacentHTML('beforeend',`<div class="msg ${f==='me'?'me':'them'}">${t}</div>`);box.scrollTop=box.scrollHeight;}
-function sendMsg(){const inp=document.getElementById('cf');if(!inp||!inp.value.trim())return;addMsg('me',inp.value.trim());inp.value='';setTimeout(()=>addMsg('them','Понял, принял 👍'),900);}
-function viewDrivers(){
-  const list=myDrivers.length?myDrivers.map((d,idx)=>`<div class="drv-card"><div class="ava">${d.name[0]}</div><div style="flex:1"><div class="offer-name">${d.name}</div><div class="offer-meta"><span class="stars">${stars(d.rating)}</span><span>${d.car}</span></div></div><span class="drv-status ${d.online?'on':'off'}">${d.online?'на линии':'оффлайн'}</span><button class="drv-del" onclick="delDriver(${idx})"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button></div>`).join(''):'<div class="empty"><b>Пока никого</b>После поездки нажмите на сердечко у водителя — он появится здесь, и его можно звать напрямую.</div>';
-  return `<div class="tabview active"><div class="section-head"><h2>Мои водители</h2><span class="muted">${myDrivers.length} своих</span></div><div style="padding:10px 0 24px">${list}</div></div>`;
-}
-function delDriver(i){myDrivers.splice(i,1);toast('Водитель удалён');renderPassenger();}
-function viewProfile(){return `<div class="tabview active"><div class="prof-head"><div class="ava-upload" onclick="pickPhoto('passenger')"><div class="prof-ava">${avaHTML(me.photo,me.name[0]||'?')}</div><span class="cam"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="2.2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></span></div><div class="prof-name">${me.name}</div><div class="prof-role">Пассажир · ${me.since}</div></div><div class="stats"><div class="stat"><b>24</b><span>поездки</span></div><div class="stat"><b>4.9</b><span>рейтинг</span></div><div class="stat"><b>3 мин</b><span>ср. отклик</span></div></div><div class="field-list"><div class="field-row"><label>Имя</label><input id="pf-name" value="${me.name}" placeholder="Ваше имя"></div><div class="field-row"><label>Телефон</label><input id="pf-phone" value="${me.phone}" placeholder="+7 900 000-00-00" inputmode="tel"></div></div><div class="save-row"><button class="btn-primary" onclick="savePassenger()">Сохранить</button></div><div class="menu-list"><div class="menu-item" onclick="becomeDriver()"><span>Стать бомбилой</span><span class="chev">›</span></div><div class="menu-item" onclick="toast('Уведомления')"><span>Уведомления</span><span class="chev">›</span></div><div class="menu-item" onclick="toast('Поддержка')"><span>Поддержка</span><span class="chev">›</span></div></div></div>`;}
-function savePassenger(){const n=document.getElementById('pf-name').value.trim();const p=document.getElementById('pf-phone').value.trim();if(!n){toast('Введите имя');return;}me.name=n;me.phone=p;toast('Профиль сохранён');renderPassenger();}
+function closeSheet(){const s=document.getElementById('sheet');if(s)s.remove();}
+
+/* ================= DRIVER ================= */
+let dTab='inbox',inboxChannel=null,myRideChannel=null,driverReqs=[];
 function renderDriver(){
-  document.getElementById('nav').innerHTML=`<button class="nav-btn ${dTab==='inbox'?'active':''}" onclick="dGo('inbox')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5h13L22 12v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6z"/></svg>Заявки</button><button class="nav-btn ${dTab==='earn'?'active':''}" onclick="dGo('earn')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Доход</button><button class="nav-btn ${dTab==='profile'?'active':''}" onclick="dGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль</button>`;
-  const body=document.getElementById('app-body');
-  if(dTab==='inbox')body.innerHTML=viewDriverInbox();
-  if(dTab==='earn')body.innerHTML=viewDriverEarn();
-  if(dTab==='profile')body.innerHTML=viewDriverProfile();
+  document.getElementById('nav').innerHTML=`
+    <button class="nav-btn ${dTab==='inbox'?'active':''}" onclick="dGo('inbox')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5h13L22 12v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6z"/></svg>Заявки</button>
+    <button class="nav-btn ${dTab==='profile'?'active':''}" onclick="dGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль</button>`;
+  const b=document.getElementById('app-body');
+  if(dTab==='inbox')renderInbox(b);
+  if(dTab==='profile')b.innerHTML=viewDriverProfile();
 }
 function dGo(t){dTab=t;renderDriver();}
-function viewDriverInbox(){
-  const reqs=driverReqs.map(r=>`<div class="drv-req" id="req-${r.id}"><div class="drv-req-route">${r.route}</div><div class="drv-req-meta"><span>📍 ${r.dist}</span>${r.comment?`<span>💬 ${r.comment}</span>`:''}</div><div class="drv-req-price"><input type="number" id="price-${r.id}" value="${r.price}"><span class="unit">₽ — ваша цена</span></div><div class="drv-req-actions"><button class="drv-accept" onclick="acceptReq(${r.id})">Откликнуться</button><button class="drv-skip" onclick="skipReq(${r.id})">Пропустить</button></div></div>`).join('');
-  return `<div class="tabview active"><div class="drv-online-bar ${driverOnline?'':'off'}"><div><div class="lbl">${driverOnline?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--ink-dim);margin-top:2px">${driverOnline?'получаете заявки':'заявки не приходят'}</div></div><div class="toggle ${driverOnline?'on':'off'}" onclick="toggleOnline()"><b></b></div></div><div class="section-head"><h2>Входящие заявки</h2><span class="muted">${driverReqs.length} рядом</span></div><div style="padding:10px 0 24px">${driverOnline?(driverReqs.length?reqs:'<div class="empty"><b>Пока тихо</b>Новые заявки появятся здесь. Держите статус «на линии».</div>'):'<div class="empty"><b>Вы оффлайн</b>Включите статус «на линии» вверху, чтобы получать заявки.</div>'}</div></div>`;
+async function renderInbox(b){
+  const online=me.status==='online';
+  b.innerHTML=`<div class="tabview"><div class="drv-online-bar ${online?'':'off'}"><div><div class="lbl">${online?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--ink-dim);margin-top:2px">${online?'получаете заявки':'заявки не приходят'}</div></div><div class="toggle ${online?'on':''}" onclick="toggleOnline()"><b></b></div></div><div class="section-head"><h2>Входящие заявки</h2></div><div id="inbox-list" style="padding:10px 0 24px"><div class="empty">${online?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div></div>`;
+  if(online){loadInbox();subscribeInbox();subscribeMyRide();}
 }
-function toggleOnline(){driverOnline=!driverOnline;renderDriver();}
-function acceptReq(id){const p=document.getElementById('price-'+id).value;driverReqs=driverReqs.filter(r=>r.id!==id);toast('Отклик отправлен: '+p+' ₽');renderDriver();}
-function skipReq(id){driverReqs=driverReqs.filter(r=>r.id!==id);renderDriver();}
-function viewDriverEarn(){return `<div class="tabview active"><div class="section-head"><h2>Мой доход</h2><span class="muted">эта неделя</span></div><div class="hero"><div class="hero-grid"><div class="hero-stat"><div class="n g">6 240 ₽</div><div class="l">за неделю</div></div><div class="hero-stat"><div class="n a">38</div><div class="l">поездок</div></div></div></div><div class="section-head"><h2>По дням</h2></div><div class="feed">${[['Пн','980 ₽','6'],['Вт','1 240 ₽','8'],['Ср','760 ₽','5'],['Чт','1 100 ₽','7'],['Пт','2 160 ₽','12']].map(d=>`<div class="ride-card"><div style="flex:1"><div class="ride-route">${d[0]}</div><div class="ride-sub">${d[2]} поездок</div></div><div class="ride-price">${d[1]}</div></div>`).join('')}</div></div>`;}
-function viewDriverProfile(){return `<div class="tabview active"><div class="prof-head"><div class="ava-upload" onclick="pickPhoto('driver')"><div class="prof-ava">${avaHTML(driverMe.photo,driverMe.name[0]||'?')}</div><span class="cam"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="2.2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></span></div><div class="prof-name">${driverMe.name}</div><div class="prof-role">Водитель · ${driverMe.car}${driverMe.plate?' · '+driverMe.plate:''}</div></div><div class="stats"><div class="stat"><b>4.9</b><span>рейтинг</span></div><div class="stat"><b>312</b><span>поездок</span></div><div class="stat"><b>18</b><span>в «своих»</span></div></div><div class="field-list"><div class="field-row"><label>Имя</label><input id="df-name" value="${driverMe.name}" placeholder="Имя"></div><div class="field-row"><label>Телефон</label><input id="df-phone" value="${driverMe.phone}" placeholder="+7 900 000-00-00" inputmode="tel"></div><div class="field-row" style="opacity:.7"><label>Машина · назначает админ 🔒</label><input value="${driverMe.car}" disabled></div><div class="field-row" style="opacity:.7"><label>Гос. номер · назначает админ 🔒</label><input value="${driverMe.plate||'—'}" disabled></div></div><div class="save-row"><button class="btn-primary" onclick="saveDriver()">Сохранить</button></div><div class="menu-list"><div class="menu-item" onclick="setRole('passenger')"><span>Вернуться как пассажир</span><span class="chev">›</span></div></div></div>`;}
-function saveDriver(){const n=document.getElementById('df-name').value.trim();if(!n){toast('Введите имя');return;}driverMe.name=n;driverMe.phone=document.getElementById('df-phone').value.trim();toast('Профиль сохранён');renderDriver();}
-let aTab='overview';
-function renderAdmin(){
-  document.getElementById('nav').innerHTML=`
-    <button class="nav-btn ${aTab==='overview'?'active':''}" onclick="aGo('overview')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Обзор</button>
-    <button class="nav-btn ${aTab==='apps'?'active':''}" onclick="aGo('apps')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Заявки${driverApplications.length?`<span style="position:absolute;transform:translate(14px,-8px);background:var(--amber);color:#211601;font-size:9px;font-weight:700;border-radius:100px;padding:1px 5px">${driverApplications.length}</span>`:''}</button>
-    <button class="nav-btn ${aTab==='reports'?'active':''}" onclick="aGo('reports')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Жалобы${pendingReports()?`<span style="position:absolute;transform:translate(14px,-8px);background:var(--red);color:#fff;font-size:9px;font-weight:700;border-radius:100px;padding:1px 5px">${pendingReports()}</span>`:''}</button>
-    <button class="nav-btn" onclick="setRole('passenger')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>Выйти</button>`;
-  const body=document.getElementById('app-body');
-  if(aTab==='overview')body.innerHTML=adminOverview();
-  if(aTab==='users')body.innerHTML=adminUsers();
-  if(aTab==='apps')body.innerHTML=adminApps();
-  if(aTab==='reports')body.innerHTML=adminReports();
+async function toggleOnline(){
+  const ns=me.status==='online'?'offline':'online';
+  await db.from('users').update({status:ns,last_active:new Date().toISOString()}).eq('id',me.id);me.status=ns;
+  if(ns==='offline'){if(inboxChannel){db.removeChannel(inboxChannel);inboxChannel=null;}}
+  renderDriver();updateOnlineCount();
 }
-function aGo(t){aTab=t;renderAdmin();}
-function pendingReports(){return reports.filter(r=>r.status==='pending').length;}
-const adminUsersData=[['Сергей','водитель · 312 поездок · Lada Vesta','ok','надёжный','4.9','+7 900 111-22-33'],['Андрей','водитель · 88 поездок · Kia Rio','ok','активен','4.7','+7 900 222-33-44'],['Игорь','водитель · 2 жалобы','warn','на контроле','4.1','+7 900 333-44-55'],['Виктор','пассажир · 24 поездки','ok','ок','4.9','скрыт']];
-function adminOverview(){
-  return `<div class="tabview active"><div class="section-head"><h2>Панель · Бомбилы</h2><span class="muted">сегодня</span></div><div class="adm-grid"><div class="adm-stat"><div class="n g">142</div><div class="l">заказов сегодня</div></div><div class="adm-stat"><div class="n">89</div><div class="l">активных сейчас</div></div><div class="adm-stat"><div class="n a">4 260 ₽</div><div class="l">комиссия за день</div></div><div class="adm-stat" onclick="aGo('reports')" style="cursor:pointer"><div class="n r">${pendingReports()}</div><div class="l">жалобы на разборе ›</div></div></div><div class="section-head"><h2>Последние люди</h2><span class="muted" onclick="aGo('users')" style="cursor:pointer">все ›</span></div><div style="padding:6px 0 24px">${adminUsersData.slice(0,3).map((u,i)=>admUserRow(u,i)).join('')}</div></div>`;
+async function loadInbox(){
+  const {data}=await db.from('rides').select('*').eq('status','created').order('created_at',{ascending:false});
+  driverReqs=data||[];renderInboxList();
 }
-function adminUsers(){return `<div class="tabview active"><div class="section-head"><h2>Пользователи</h2><span class="muted">${adminUsersData.length}</span></div><div style="padding:6px 0 24px">${adminUsersData.map((u,i)=>admUserRow(u,i)).join('')}</div></div>`;}
-function admUserRow(u,i){return `<div class="adm-list-item" onclick="openUser(${i})" style="cursor:pointer"><div class="ava">${u[0][0]}</div><div style="flex:1"><div style="font-size:14px;font-weight:600">${u[0]}</div><div style="font-size:11.5px;color:var(--ink-dim)">${u[1]}</div></div><span class="adm-badge ${u[2]}">${u[3]}</span></div>`;}
-function openUser(i){
-  const u=adminUsersData[i];
-  const mask=document.createElement('div');mask.className='sheet-mask';mask.id='adm-sheet';
-  mask.innerHTML=`<div class="sheet"><h3>${u[0]}</h3><div class="sub">${u[1]}</div><div class="field-list" style="padding:0"><div class="field-row"><label>Рейтинг</label><div style="font-family:'Roboto Mono';font-weight:700">${u[4]} ★</div></div><div class="field-row"><label>Телефон</label><div style="font-weight:500">${u[5]}</div></div><div class="field-row"><label>Статус</label><div><span class="adm-badge ${u[2]}">${u[3]}</span></div></div></div><div class="sheet-actions"><button class="sa-cancel" onclick="closeSheet()">Закрыть</button><button class="sa-danger" onclick="closeSheet();toast('${u[0]} заблокирован')">Заблокировать</button></div></div>`;
-  document.getElementById('device').appendChild(mask);
+function renderInboxList(){
+  const l=document.getElementById('inbox-list');if(!l)return;
+  if(!driverReqs.length){l.innerHTML='<div class="empty"><b>Пока тихо</b>Новые заявки появятся здесь сразу.</div>';return;}
+  l.innerHTML=driverReqs.map(r=>`<div class="drv-req" id="dreq-${r.id}"><div class="drv-req-route">${r.from_address} → ${r.to_address}</div><div class="drv-req-meta">от ${r.passenger_name||'пассажира'}</div><div class="drv-req-price"><input type="number" id="pr-${r.id}" placeholder="цена"><span class="unit">₽ — ваша цена</span></div><div class="drv-req-actions"><button class="drv-accept" onclick="acceptReq('${r.id}')">Откликнуться</button><button class="drv-skip" onclick="skipReq('${r.id}')">Пропустить</button></div></div>`).join('');
 }
-function adminApps(){
-  const cards=driverApplications.map(a=>`<div class="rep-card"><span class="rep-badge" style="background:color-mix(in srgb,var(--amber) 18%,transparent);color:var(--amber-deep,#c8790a)">заявка в водители</span><div class="rep-top" style="margin-top:8px"><div class="ava" style="background:linear-gradient(135deg,var(--amber),#c8790a)">${a.name[0]}</div><div><div style="font-size:14.5px;font-weight:600">${a.name}</div><div class="rep-meta">${a.phone} · ${a.when}</div></div></div><div class="field-row" style="margin-top:12px"><label>Марка машины</label><input id="app-car-${a.id}" placeholder="Например: Lada Vesta"></div><div class="field-row"><label>Гос. номер</label><input id="app-plate-${a.id}" placeholder="А123ВС"></div><div class="rep-actions"><button class="ban" onclick="rejectApp(${a.id})">Отклонить</button><button class="ok" onclick="approveApp(${a.id})">Одобрить</button></div></div>`).join('');
-  return `<div class="tabview active"><div class="section-head"><h2>Заявки в водители</h2><span class="muted">${driverApplications.length} на проверке</span></div><div style="padding:10px 0 24px">${driverApplications.length?cards:'<div class="empty"><b>Заявок нет</b>Новые заявки на статус водителя появятся здесь.</div>'}</div></div>`;
+function subscribeInbox(){
+  if(inboxChannel)db.removeChannel(inboxChannel);
+  inboxChannel=db.channel('inbox').on('postgres_changes',{event:'INSERT',schema:'public',table:'rides',filter:'status=eq.created'},p=>{driverReqs.unshift(p.new);renderInboxList();toast('Новая заявка!');}).subscribe();
 }
-function approveApp(id){
-  const car=document.getElementById('app-car-'+id).value.trim();const plate=document.getElementById('app-plate-'+id).value.trim();
+function subscribeMyRide(){
+  if(myRideChannel)db.removeChannel(myRideChannel);
+  myRideChannel=db.channel('myride-'+me.id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'rides',filter:'driver_id=eq.'+me.id},p=>{if(p.new.status==='confirmed')driverGotRide(p.new);}).subscribe();
+}
+async function acceptReq(rideId){
+  const price=document.getElementById('pr-'+rideId).value;
+  if(!price){toast('Укажите цену');return;}
+  const {error}=await db.from('offers').insert({ride_id:rideId,driver_id:me.id,driver_name:me.name,car:me.car,price:Number(price),eta_minutes:5});
+  if(error){toast('Ошибка: '+error.message);return;}
+  driverReqs=driverReqs.filter(r=>r.id!==rideId);renderInboxList();toast('Отклик отправлен: '+price+' ₽');
+}
+function skipReq(rideId){driverReqs=driverReqs.filter(r=>r.id!==rideId);renderInboxList();}
+function driverGotRide(ride){
+  const b=document.getElementById('app-body');
+  b.innerHTML=`<div class="tabview"><div class="confirm"><div class="badge-ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>Вас выбрали!</h3><p>${ride.from_address} → ${ride.to_address}</p><div class="driver-box"><div class="ava">${(ride.passenger_name||'?')[0]}</div><div><div class="offer-name" style="font-size:16px">${ride.passenger_name||'Пассажир'}</div><div class="offer-meta" style="margin-top:4px">едет к вам</div></div></div><button class="btn-primary" onclick="dGo('inbox')" style="margin-top:16px">Понятно</button></div></div>`;
+  toast('Заказ ваш!');
+}
+function viewDriverProfile(){
+  return `<div class="tabview"><div class="prof-head"><div class="prof-ava">${(me.name||'?')[0]}</div><div class="prof-name">${me.name}</div><div class="prof-role">Водитель · ${me.car||'машина не назначена'}${me.plate?' · '+me.plate:''}</div></div><div class="field-list"><div class="field-row"><label>Имя</label><input id="df-name" value="${me.name||''}"></div><div class="field-row"><label>Телефон</label><input id="df-phone" value="${me.phone||''}" inputmode="tel"></div><div class="field-row" style="opacity:.7"><label>Машина · назначает админ 🔒</label><input value="${me.car||'—'}" disabled></div><div class="field-row" style="opacity:.7"><label>Гос. номер · назначает админ 🔒</label><input value="${me.plate||'—'}" disabled></div></div><div class="save-row"><button class="btn-primary" onclick="saveDriverProfile()">Сохранить</button><button class="btn-ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div></div>`;
+}
+async function saveDriverProfile(){const n=document.getElementById('df-name').value.trim();if(!n){toast('Введите имя');return;}await db.from('users').update({name:n,phone:document.getElementById('df-phone').value.trim()}).eq('id',me.id);me.name=n;toast('Сохранено');renderDriver();}
+
+/* ================= ADMIN ================= */
+async function renderAdmin(){
+  document.getElementById('nav').innerHTML=`<button class="nav-btn active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Обзор</button><button class="nav-btn" onclick="setRole('passenger')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>Выйти</button>`;
+  const b=document.getElementById('app-body');
+  b.innerHTML='<div class="tabview"><div class="empty">Загрузка…</div></div>';
+  const {count:orders}=await db.from('rides').select('*',{count:'exact',head:true});
+  const {count:onlineC}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online');
+  const {data:apps}=await db.from('users').select('*').eq('driver_status','pending');
+  const {data:users}=await db.from('users').select('*').order('created_at',{ascending:false}).limit(20);
+  b.innerHTML=`<div class="tabview"><div class="section-head"><h2>Панель · Бомбилы</h2></div><div class="adm-grid"><div class="adm-stat"><div class="n g">${orders||0}</div><div class="l">всего заявок</div></div><div class="adm-stat"><div class="n">${onlineC||0}</div><div class="l">онлайн сейчас</div></div><div class="adm-stat"><div class="n a">${(apps||[]).length}</div><div class="l">заявок в водители</div></div><div class="adm-stat"><div class="n">${(users||[]).length}</div><div class="l">пользователей</div></div></div>
+  <div class="section-head"><h2>Заявки в водители</h2></div><div style="padding:6px 0">${(apps||[]).length?apps.map(a=>`<div class="drv-req"><div class="drv-req-route">${a.name}</div><div class="drv-req-meta">${a.phone||'без телефона'}</div><div class="field-row" style="margin-top:10px"><label>Марка</label><input id="ac-${a.id}" placeholder="Lada Vesta"></div><div class="field-row"><label>Гос. номер</label><input id="ap-${a.id}" placeholder="А123ВС"></div><div class="drv-req-actions"><button class="drv-accept" onclick="approveDriver('${a.id}')">Одобрить</button><button class="drv-skip" onclick="rejectDriver('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty">Заявок нет</div>'}</div>
+  <div class="section-head"><h2>Пользователи</h2></div><div style="padding:6px 0 24px">${(users||[]).map(u=>{const canManage=me.staff_role==='owner'||(me.staff_role==='admin'&&u.staff_role!=='owner'&&u.staff_role!=='admin');const isMe=u.id===me.id;let badge=u.staff_role&&u.staff_role!=='none'?`<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;background:color-mix(in srgb,var(--amber) 20%,transparent);color:var(--amber);text-transform:uppercase">${u.staff_role==='owner'?'владелец':u.staff_role==='admin'?'админ':'модератор'}</span>`:'';let ctrl=(canManage&&!isMe&&u.staff_role!=='owner')?`<button class="drv-skip" style="padding:7px 10px;font-size:11px" onclick="cycleStaff('${u.id}','${u.staff_role||'none'}')">роль ⇄</button>`:'';return `<div class="adm-list-item"><div class="ava">${(u.name||'?')[0]}</div><div style="flex:1"><div style="font-size:14px;font-weight:600">${u.name}${isMe?' (вы)':''}</div><div style="font-size:11.5px;color:var(--ink-dim)">${u.role}${u.car?' · '+u.car:''} · ${u.status}</div></div>${badge}${ctrl}</div>`;}).join('')}</div></div>`;
+}
+async function cycleStaff(id,cur){
+  // owner может назначать admin; admin может назначать moderator
+  let next;
+  if(me.staff_role==='owner'){ next = cur==='none'?'moderator':cur==='moderator'?'admin':'none'; }
+  else { next = cur==='none'?'moderator':'none'; } // admin переключает только модератора
+  await db.from('users').update({staff_role:next}).eq('id',id);
+  toast(next==='none'?'Права сняты':'Назначен: '+(next==='admin'?'админ':'модератор'));
+  renderAdmin();
+}
+async function approveDriver(id){
+  const car=document.getElementById('ac-'+id).value.trim();const plate=document.getElementById('ap-'+id).value.trim();
   if(!car||!plate){toast('Впишите марку и номер');return;}
-  driverApplications=driverApplications.filter(a=>a.id!==id);
-  toast('Водитель одобрен, машина закреплена');renderAdmin();
+  await db.from('users').update({role:'driver',driver_status:'approved',car:car,plate:plate}).eq('id',id);
+  toast('Водитель одобрен');renderAdmin();
 }
-function rejectApp(id){driverApplications=driverApplications.filter(a=>a.id!==id);toast('Заявка отклонена');renderAdmin();}
-function adminReports(){
-  const list=reports.filter(r=>r.status==='pending');
-  const cards=list.map(r=>`<div class="rep-card"><span class="rep-badge">жалоба</span><div class="rep-top" style="margin-top:8px"><div class="ava">${r.target[0]}</div><div><div style="font-size:14.5px;font-weight:600">На: ${r.target}</div><div class="rep-meta">от ${r.by} · ${r.when}</div></div></div><div class="rep-reason">${r.reason}</div><div class="rep-actions"><button class="ok" onclick="resolveReport(${r.id},'dismiss')">Отклонить</button><button class="warn" onclick="resolveReport(${r.id},'warn')">Предупредить</button><button class="ban" onclick="resolveReport(${r.id},'ban')">Забанить</button></div></div>`).join('');
-  return `<div class="tabview active"><div class="section-head"><h2>Жалобы</h2><span class="muted">${list.length} на разборе</span></div><div style="padding:10px 0 24px">${list.length?cards:'<div class="empty"><b>Жалоб нет</b>Все обращения разобраны. Новые появятся здесь.</div>'}</div></div>`;
-}
-function resolveReport(id,action){
-  const r=reports.find(x=>x.id===id);if(r)r.status='done';
-  const map={dismiss:'Жалоба отклонена',warn:'Вынесено предупреждение',ban:'Пользователь забанен'};
-  toast(map[action]);renderAdmin();
-}
-/* ============ OFFER / RULES ============ */
-function offerHTML(withAccept){
-  return `<div class="offer-screen" id="offer-screen">
-    <div class="offer-scroll">
-      <h1>Правила <em>Бомбил</em></h1>
-      <div class="offer-lead">Сервис соединяет пассажиров и водителей. Пользуясь приложением, вы соглашаетесь с правилами ниже. Нарушение ведёт к предупреждению или блокировке.</div>
-      <div class="rule-block ban">
-        <h4><span class="ic">⛔</span>Строго запрещено</h4>
-        <ul>
-          <li>Обсуждение и предложение оружия, наркотиков, любых запрещённых веществ и товаров</li>
-          <li>Экстремизм, разжигание вражды, угрозы, призывы к насилию</li>
-          <li>Оскорбления, домогательства, любое неуважение в чате</li>
-          <li>Мошенничество и обман — пассажиров, водителей или сервиса</li>
-        </ul>
-      </div>
-      <div class="rule-block ban">
-        <h4><span class="ic">🚫</span>Обход системы = бан</h4>
-        <ul>
-          <li>Попытка не оплатить комиссию за состоявшийся заказ карается блокировкой</li>
-          <li>Договорённости в обход приложения ради ухода от оплаты — нарушение</li>
-          <li>Накрутка заказов, фейковые аккаунты и поездки — блокировка</li>
-        </ul>
-      </div>
-      <div class="rule-block">
-        <h4><span class="ic">✅</span>Как правильно</h4>
-        <ul>
-          <li>Общайтесь вежливо, договаривайтесь о цене заранее</li>
-          <li>Отменяйте заказ, если планы изменились — не бросайте вторую сторону</li>
-          <li>Жалуйтесь на нарушения — модерация разберётся</li>
-        </ul>
-      </div>
-      <div class="rule-block">
-        <h4><span class="ic">ℹ️</span>Ответственность</h4>
-        <ul>
-          <li>Сервис — площадка для связи, поездку выполняет сам водитель</li>
-          <li>Данные профиля должны быть достоверными</li>
-        </ul>
-      </div>
-    </div>
-    ${withAccept?`<div class="offer-foot"><button class="btn-primary" onclick="acceptRules()">Принимаю правила</button><div class="offer-note">Продолжая, вы соглашаетесь с условиями оферты</div></div>`:`<div class="offer-foot"><button class="btn-ghost" style="margin-top:0" onclick="closeOffer()">Закрыть</button></div>`}
-  </div>`;
-}
-function showOfferGate(){document.getElementById('device').insertAdjacentHTML('beforeend',offerHTML(true));}
-function acceptRules(){rulesAccepted=true;const s=document.getElementById('offer-screen');if(s)s.remove();toast('Добро пожаловать!');}
-function openOffer(){document.getElementById('device').insertAdjacentHTML('beforeend',offerHTML(false));}
-function closeOffer(){const s=document.getElementById('offer-screen');if(s)s.remove();}
+async function rejectDriver(id){await db.from('users').update({driver_status:'none'}).eq('id',id);toast('Отклонено');renderAdmin();}
 
-/* ============ NOTIFICATIONS ============ */
-function curNotifs(){return role==='driver'?notifs.driver:notifs.passenger;}
-function updateBell(){
-  const bell=document.getElementById('bell');const dot=document.getElementById('bell-dot');
-  if(!bell)return;
-  if(role==='admin'){bell.style.display='none';return;}
-  bell.style.display='flex';
-  const unread=curNotifs().some(n=>n.unread);
-  dot.classList.toggle('show',unread);
-}
-function openNotifs(){
-  const list=curNotifs();
-  const mask=document.createElement('div');mask.className='sheet-mask';mask.id='notif-sheet';
-  mask.innerHTML=`<div class="sheet" style="padding:0;max-height:80vh;overflow:hidden;display:flex;flex-direction:column"><div style="padding:18px 18px 12px;display:flex;align-items:center;justify-content:space-between"><h3 style="margin:0">Уведомления</h3><button class="icon-btn" onclick="closeNotifs()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div><div style="overflow-y:auto">${list.length?list.map(n=>`<div class="notif-item ${n.unread?'unread':''}"><div class="notif-ic">${n.icon}</div><div class="notif-body"><b>${n.title}</b><p>${n.text}</p><div class="notif-when">${n.when}</div></div></div>`).join(''):'<div class="empty"><b>Пусто</b>Новые уведомления появятся здесь.</div>'}</div></div>`;
-  document.getElementById('device').appendChild(mask);
-  list.forEach(n=>n.unread=false);updateBell();
-}
-function closeNotifs(){const s=document.getElementById('notif-sheet');if(s)s.remove();}
-
-/* ============ PUBLIC DRIVER PROFILE ============ */
-function openDriverPublic(d){
-  const mask=document.createElement('div');mask.className='sheet-mask';mask.id='pub-sheet';
-  mask.innerHTML=`<div class="sheet"><div class="pub-head"><div class="pub-ava">${d.photo?`<img class="ava-photo" src="${d.photo}">`:d.name[0]}</div><div class="pub-name">${d.name}</div><div class="offer-meta" style="justify-content:center;margin-top:6px"><span class="stars">${stars(d.rating||5)}</span><span>${d.car||'—'}</span></div><div class="pub-badges"><span class="pub-badge verified">✓ проверен</span><span class="pub-badge">${d.rides||312} поездок</span><span class="pub-badge">в «своих» у ${d.favs||18}</span></div></div><div class="stats" style="padding:4px 0 8px"><div class="stat"><b>${d.rating||5}.0</b><span>рейтинг</span></div><div class="stat"><b>${d.rides||312}</b><span>поездок</span></div><div class="stat"><b>2 года</b><span>в сервисе</span></div></div><div class="sheet-actions"><button class="sa-cancel" onclick="closePub()">Закрыть</button></div></div>`;
-  document.getElementById('device').appendChild(mask);
-}
-function closePub(){const s=document.getElementById('pub-sheet');if(s)s.remove();}
-
-
-function pickPhoto(target){
-  const inp=document.createElement('input');inp.type='file';inp.accept='image/*';
-  inp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{if(target==='passenger'){me.photo=ev.target.result;renderPassenger();}else{driverMe.photo=ev.target.result;renderDriver();}toast('Фото обновлено');};r.readAsDataURL(f);};
-  inp.click();
-}
-function avaHTML(photo,letter){return photo?`<img class="ava-photo" src="${photo}">`:letter;}
-
-
-let onl=34;
-setInterval(()=>{onl+=Math.random()>.5?1:-1;document.getElementById('online-n').textContent=Math.max(18,onl);if(role==='passenger'&&(pTab==='home'||pTab==='feed')){feed.unshift(mkFeed());feed=feed.slice(0,20);renderPassenger();}},4000);
-renderPassenger();
+boot();
 </script>
 </body>
 </html>
