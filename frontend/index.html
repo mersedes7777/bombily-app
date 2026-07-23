@@ -131,6 +131,37 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .sa button{flex:1;border-radius:12px;padding:13px;font-size:13.5px;font-weight:600;cursor:pointer;border:none;}
 .sa .c{background:transparent;border:1px solid var(--line2);color:var(--dim);}
 .sa .o{background:var(--g);color:#06120b;}
+
+.abar{display:flex;align-items:center;gap:12px;background:var(--surf);border-top:1px solid var(--g);padding:11px 16px;cursor:pointer;flex-shrink:0;}
+.abar .ava{width:36px;height:36px;font-size:14px;border-radius:11px;}
+.abar .t{flex:1;min-width:0;}
+.abar .t b{font-size:13px;display:block;}
+.abar .t span{font-size:11.5px;color:var(--dim);}
+.abar .g{font-size:12px;font-weight:700;color:var(--g);}
+.fav{background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--line2);padding:4px 6px;}
+.fav.on{color:var(--red);}
+.stars{display:flex;gap:8px;justify-content:center;margin:6px 0 4px;}
+.stars span{font-size:32px;cursor:pointer;color:var(--line2);line-height:1;}
+.stars span.on{color:var(--am);}
+.ta{width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:11px;color:var(--ink);font-family:Inter,sans-serif;font-size:14px;outline:none;resize:none;min-height:70px;}
+.sec{padding:14px 18px 4px;font-family:Oswald,sans-serif;font-weight:600;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);}
+.opt{display:flex;align-items:center;gap:11px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;cursor:pointer;background:var(--bg);}
+.opt.sel{border-color:var(--g);background:var(--gs);}
+.opt .rd{width:18px;height:18px;border-radius:50%;border:2px solid var(--line2);flex-shrink:0;}
+.opt.sel .rd{border-color:var(--g);background:var(--g);box-shadow:inset 0 0 0 3px var(--surf);}
+.opt .tx{font-size:14px;font-weight:500;}
+.opt .tx small{display:block;font-size:11.5px;color:var(--dim);font-weight:400;margin-top:2px;}
+.cp{background:var(--surf);border:1px solid var(--line);border-radius:16px;padding:14px;margin:0 14px 11px;}
+.cp .rs{font-size:14.5px;font-weight:600;margin-top:8px;}
+.cp .mt{font-size:11.5px;color:var(--dim);margin-top:4px;}
+.cp .ra{margin-top:11px;}
+.cp .ra button{flex:1;border-radius:10px;padding:10px;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid var(--line2);background:transparent;color:var(--ink);}
+.cp .ra .w{border-color:var(--am);color:var(--am);}
+.cp .ra .b{border-color:var(--red);color:var(--red);}
+.cp .ra .o{border-color:var(--g);color:var(--g);}
+.badge.red{background:rgba(226,88,90,.18);color:var(--red);}
+.rv{display:flex;gap:11px;padding:12px 16px;border-bottom:1px solid var(--line);}
+.rv .ava{width:34px;height:34px;font-size:13px;border-radius:10px;}
 #toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%) translateY(16px);background:var(--g);color:#06120b;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:700;opacity:0;transition:.28s;z-index:90;pointer-events:none;max-width:88%;text-align:center;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 #boot{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;color:var(--dim);font-size:14px;padding:20px;text-align:center;}
@@ -142,6 +173,7 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
   <div class="rsw" id="rsw" style="display:none"></div>
   <div class="top"><div class="brand">Бом<em>билы</em></div><div class="pill"><span class="dot"></span><b id="onl">0</b>&nbsp;на линии</div></div>
   <div class="body" id="main"></div>
+  <div id="abar"></div>
   <nav id="nav"></nav>
   <div id="toast"></div>
 </div>
@@ -158,12 +190,14 @@ let tgId=tu?.id;
 if(!tgId){let s=localStorage.getItem('bmb_id');if(!s){s=Math.floor(Math.random()*1e9);localStorage.setItem('bmb_id',s);}tgId=Number(s);}
 const tgName=tu?.first_name||('Гость'+String(tgId).slice(-3));
 
-let me=null,role='passenger',pTab='home',dTab='inbox';
-let rideId=null,offCh=null,inCh=null,myCh=null,reqs=[];
+let me=null,role='passenger',pTab='home',dTab='inbox',aTab='over';
+let active=null,offCh=null,inCh=null,myCh=null,reqs=[],targetDrv=null;
 
-const T=t=>{const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(window._t);window._t=setTimeout(()=>e.classList.remove('show'),2400);};
-const esc=s=>String(s||'').replace(/[<>"']/g,'');
-const places=()=>{try{return JSON.parse(me.places||'[]')}catch(e){return[]}};
+const T=t=>{const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(window._t);window._t=setTimeout(()=>e.classList.remove('show'),2600);};
+const esc=s=>String(s==null?'':s).replace(/[<>"']/g,'');
+const jget=f=>{try{return JSON.parse(me[f]||'[]')}catch(e){return[]}};
+const places=()=>jget('places');
+const favs=()=>jget('favs');
 const isStaff=()=>me&&['owner','admin','moderator'].includes(me.staff_role);
 const isDrv=()=>me&&(me.role==='driver'||me.role==='both');
 
@@ -174,11 +208,23 @@ async function boot(){
   me=data;
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){await db.from('users').update({staff_role:'owner'}).eq('id',me.id);me.staff_role='owner';}
   document.getElementById('boot').style.display='none';
-  drawRoles();count();setInterval(count,10000);
+  drawRoles();count();setInterval(count,12000);
+  await restore();
   setRole('passenger');
- }catch(e){document.getElementById('boot').innerHTML='<div style="color:#e2585a">Ошибка подключения к базе:<br><br>'+e.message+'<br><br>Проверьте, что SQL из db-3.sql выполнен в Supabase.</div>';}
+ }catch(e){document.getElementById('boot').innerHTML='<div style="color:#e2585a">Ошибка базы:<br><br>'+e.message+'<br><br>Выполните db-4.sql в Supabase.</div>';}
 }
 async function count(){const{count:c}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online');const e=document.getElementById('onl');if(e)e.textContent=c||0;}
+
+async function restore(){
+ const{data}=await db.from('rides').select('*').eq('passenger_id',me.id).in('status',['created','confirmed']).order('created_at',{ascending:false}).limit(1);
+ if(data&&data.length){active=data[0];if(active.status==='created')subOffers(active.id);}
+}
+function drawBar(){
+ const b=document.getElementById('abar');
+ if(role!=='passenger'||!active||pTab==='ride'){b.innerHTML='';return;}
+ const conf=active.status==='confirmed';
+ b.innerHTML=`<div class="abar" onclick="openRide()"><div class="ava">${conf?'🚗':'⏳'}</div><div class="t"><b>${conf?'Бомбила в пути':'Ждём предложений'}</b><span>${esc(active.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
+}
 
 function drawRoles(){
  const s=document.getElementById('rsw');
@@ -194,10 +240,10 @@ function setRole(r){
  role=r;drawRoles();
  if(r==='passenger'){pTab='home';drawP();}
  if(r==='driver'){dTab='inbox';drawD();}
- if(r==='admin')drawA();
+ if(r==='admin'){aTab='over';drawA();}
 }
 
-/* ============ ПАССАЖИР ============ */
+/* ================= ПАССАЖИР ================= */
 function drawP(){
  document.getElementById('nav').innerHTML=`
  <button class="nb ${pTab==='home'?'active':''}" onclick="pGo('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Главная</button>
@@ -205,33 +251,50 @@ function drawP(){
  <button class="nb ${pTab==='profile'?'active':''}" onclick="pGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль</button>`;
  const m=document.getElementById('main');
  if(pTab==='home')home(m);
- if(pTab==='order')m.innerHTML=`<div id="host">${formHTML(null)}</div>`;
+ if(pTab==='order')m.innerHTML=`<div id="host">${formHTML(targetDrv)}</div>`;
+ if(pTab==='ride')openRide();
  if(pTab==='trips')trips(m);
  if(pTab==='profile')m.innerHTML=profHTML();
+ drawBar();
 }
 const pGo=t=>{pTab=t;drawP();};
 
 async function home(m){
- m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="pTab='order';drawP()">Заявка всем водителям</button></div><div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
+ m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;pTab='order';drawP()">Заявка всем водителям</button></div><div id="favz"></div><div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
  const{data:ds}=await db.from('users').select('*').eq('status','online').in('role',['driver','both']);
  const{count:rc}=await db.from('rides').select('*',{count:'exact',head:true}).eq('status','created');
  const a=document.getElementById('c1');if(a)a.textContent=(ds||[]).length;
  const b=document.getElementById('c2');if(b)b.textContent=rc||0;
+ const F=favs();
+ const fz=document.getElementById('favz');
+ if(F.length&&fz){
+   const{data:fd}=await db.from('users').select('*').in('id',F);
+   if(fd&&fd.length)fz.innerHTML=`<div class="head"><h2>Свои водители</h2><span class="m">${fd.length}</span></div><div class="list">${fd.map(d=>drvCard(d,true)).join('')}</div>`;
+ }
  const l=document.getElementById('dl');if(!l)return;
- if(!ds||!ds.length){l.innerHTML='<div class="empty"><b>Сейчас никого нет</b>Как только водитель выйдет на линию — он появится здесь, и вы сможете отправить заявку лично ему.</div>';return;}
- l.innerHTML=ds.map(d=>`<div class="card tap" onclick="pickDriver('${d.id}')"><div class="ava">${esc(d.name)[0]||'?'}</div><div style="flex:1;min-width:0"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':'<span>место не указано</span>'}${d.car?'<span>· '+esc(d.car)+'</span>':''}</div></div><span class="go">позвать →</span></div>`).join('');
+ if(!ds||!ds.length){l.innerHTML='<div class="empty"><b>Сейчас никого нет</b>Как только водитель выйдет на линию — он появится здесь.</div>';return;}
+ l.innerHTML=ds.map(d=>drvCard(d,false)).join('');
+}
+function drvCard(d,isFav){
+ const on=favs().includes(d.id);
+ return `<div class="card"><div class="ava" onclick="pickDriver('${d.id}')">${esc(d.name)[0]||'?'}</div><div style="flex:1;min-width:0" onclick="pickDriver('${d.id}')"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':'<span>место не указано</span>'}${d.car?'<span>· '+esc(d.car)+'</span>':''}${d.status!=='online'?'<span style="color:var(--dim)">· оффлайн</span>':''}</div></div><button class="fav ${on?'on':''}" onclick="event.stopPropagation();togFav('${d.id}')">♥</button></div>`;
+}
+async function togFav(id){
+ let F=favs();
+ if(F.includes(id)){F=F.filter(x=>x!==id);T('Убрали из своих');}else{F.push(id);T('Добавили в свои');}
+ me.favs=JSON.stringify(F);
+ await db.from('users').update({favs:me.favs}).eq('id',me.id);
+ if(pTab==='home')home(document.getElementById('main'));
 }
 
-let targetDrv=null;
 async function pickDriver(id){
  const{data}=await db.from('users').select('*').eq('id',id).single();
  targetDrv=data;pTab='order';drawP();
- document.getElementById('main').innerHTML=`<div id="host">${formHTML(data)}</div>`;
 }
 function formHTML(d){
  const ch=places().map((p,i)=>`<div class="chip" onclick="document.getElementById('to').value='${esc(p)}'">📍 ${esc(p)}<span class="x" onclick="event.stopPropagation();delPlace(${i})">✕</span></div>`).join('');
  const hdr=d?`<div class="card" style="margin:14px 14px 0"><div class="ava">${esc(d.name)[0]}</div><div style="flex:1"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':''}${d.car?'<span>· '+esc(d.car)+'</span>':''}</div></div></div>`:'';
- return `<div class="head"><h2>${d?'Заявка водителю':'Заявка всем'}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="Откуда" value="Моё местоположение"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="Куда едем"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div><button class="btn" onclick="send(${d?"'"+d.id+"'":'null'})">Отправить заявку</button><button class="btn ghost" onclick="targetDrv=null;pTab='home';drawP()">Назад</button><div class="note">${d?esc(d.name)+' получит заявку и назовёт свою цену — вы решите, принимать или нет.':'Заявку увидят все водители на линии. Каждый пришлёт свою цену.'}</div></div>`;
+ return `<div class="head"><h2>${d?'Заявка водителю':'Заявка всем'}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="Откуда" value="Моё местоположение"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="Куда едем"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div><button class="btn" onclick="send(${d?"'"+d.id+"'":'null'})">Отправить заявку</button><button class="btn ghost" onclick="targetDrv=null;pGo('home')">Назад</button><div class="note">${d?esc(d.name)+' получит заявку и назовёт цену — вы решите, принимать или нет.':'Заявку увидят все на линии. Каждый пришлёт свою цену.'}</div></div>`;
 }
 async function addPlace(){
  const cur=document.getElementById('to')?.value.trim();
@@ -248,6 +311,7 @@ async function delPlace(i){
  T('Удалено');document.getElementById('host').innerHTML=formHTML(targetDrv);
 }
 async function send(did){
+ if(active)return T('У вас уже есть активная заявка');
  const f=document.getElementById('from').value.trim()||'Моё местоположение';
  const t=document.getElementById('to').value.trim();
  if(!t)return T('Укажите, куда едем');
@@ -255,38 +319,92 @@ async function send(did){
  if(did)row.target_driver_id=did;
  const{data,error}=await db.from('rides').insert(row).select().single();
  if(error)return T('Ошибка: '+error.message);
- rideId=data.id;waiting(f,t,did);subOffers(data.id);
-}
-function waiting(f,t,did){
- document.getElementById('host').innerHTML=`<div class="wait"><div class="bea"><i></i><i></i><i></i><b></b></div><h3>${did?'Ждём ответ водителя':'Ищем свободных'}</h3><p>${esc(f)} → ${esc(t)}</p></div><div class="list" id="offs"><div class="empty">Ждём предложений по цене…</div></div><div style="padding:0 18px 24px"><button class="btn dang" onclick="cancel()">Отменить заявку</button></div>`;
+ active=data;targetDrv=null;subOffers(data.id);pTab='ride';drawP();
 }
 function subOffers(id){
  if(offCh)db.removeChannel(offCh);
- offCh=db.channel('o'+id).on('postgres_changes',{event:'INSERT',schema:'public',table:'offers',filter:'ride_id=eq.'+id},p=>addOff(p.new)).subscribe();
- db.from('offers').select('*').eq('ride_id',id).then(({data})=>(data||[]).forEach(addOff));
+ offCh=db.channel('o'+id).on('postgres_changes',{event:'INSERT',schema:'public',table:'offers',filter:'ride_id=eq.'+id},p=>{
+   T('Пришла цена: '+p.new.price+' ₽');
+   if(pTab==='ride')openRide();else drawBar();
+ }).subscribe();
 }
-function addOff(o){
- const b=document.getElementById('offs');if(!b||document.getElementById('of'+o.id))return;
- if(b.querySelector('.empty'))b.innerHTML='';
- b.insertAdjacentHTML('afterbegin',`<div class="card" id="of${o.id}"><div class="ava">${esc(o.driver_name)[0]||'?'}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)||'Водитель'}</div><div class="sub">${esc(o.car)||'—'}</div></div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}','${esc(o.driver_name)}','${esc(o.car)}',${o.price})">Принять</button></div></div>`);
- T('Пришла цена: '+o.price+' ₽');
+async function openRide(){
+ pTab='ride';
+ const m=document.getElementById('main');
+ if(!active){pGo('home');return;}
+ document.getElementById('nav').innerHTML=`<button class="nb active" onclick="openRide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>Заказ</button><button class="nb" onclick="pGo('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Главная</button>`;
+ document.getElementById('abar').innerHTML='';
+ const{data:r}=await db.from('rides').select('*').eq('id',active.id).single();
+ if(!r||['completed','cancelled_by_passenger_free'].includes(r.status)){active=null;pGo('home');return;}
+ active=r;
+ if(r.status==='confirmed'){
+   const{data:d}=await db.from('users').select('*').eq('id',r.driver_id).single();
+   const on=favs().includes(r.driver_id);
+   m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>Бомбила выехал</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div>${d?.phone?'<div class="sub">📞 '+esc(d.phone)+'</div>':''}</div><button class="fav ${on?'on':''}" onclick="togFav('${r.driver_id}')">♥</button></div><button class="btn" onclick="doneRide('${d?.id}','${esc(d?.name)}')">Поездка завершена</button><button class="btn dang" onclick="complain('${r.id}','${d?.id}','${esc(d?.name)}')">Пожаловаться</button></div>`;
+   return;
+ }
+ const{data:offs}=await db.from('offers').select('*').eq('ride_id',r.id).eq('status','pending');
+ m.innerHTML=`<div class="wait"><div class="bea"><i></i><i></i><i></i><b></b></div><h3>${r.target_driver_id?'Ждём ответ водителя':'Ищем свободных'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p></div><div class="list">${(offs&&offs.length)?offs.map(o=>`<div class="card"><div class="ava">${esc(o.driver_name)[0]||'?'}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div></div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}')">Принять</button></div></div>`).join(''):'<div class="empty">Ждём предложений по цене…</div>'}</div><div style="padding:0 18px 24px"><button class="btn dang" onclick="cancelRide()">Отменить заявку</button></div>`;
 }
-async function accept(oid,did,dn,car,pr){
- await db.from('rides').update({driver_id:did,status:'confirmed'}).eq('id',rideId);
+async function accept(oid,did){
+ await db.from('rides').update({driver_id:did,status:'confirmed'}).eq('id',active.id);
  await db.from('offers').update({status:'selected'}).eq('id',oid);
+ await db.from('offers').update({status:'declined'}).eq('ride_id',active.id).neq('id',oid);
  if(offCh){db.removeChannel(offCh);offCh=null;}
- document.getElementById('host').innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>Бомбила выехал</h3><p>Остальным ушло «занято»</p><div class="dbox"><div class="ava">${dn[0]||'?'}</div><div><div class="nm">${dn}</div><div class="sub">${car||'—'}</div><div class="price" style="margin-top:6px">${pr} ₽</div></div></div><button class="btn dang" onclick="finish()">Завершить поездку</button></div>`;
+ active.status='confirmed';T('Водитель подтверждён');openRide();
 }
-async function cancel(){if(rideId)await db.from('rides').update({status:'cancelled_by_passenger_free'}).eq('id',rideId);if(offCh){db.removeChannel(offCh);offCh=null;}rideId=null;targetDrv=null;T('Заявка отменена');pTab='home';drawP();}
-async function finish(){if(rideId)await db.from('rides').update({status:'completed'}).eq('id',rideId);rideId=null;targetDrv=null;T('Поездка завершена');pTab='home';drawP();}
+async function cancelRide(){
+ await db.from('rides').update({status:'cancelled_by_passenger_free'}).eq('id',active.id);
+ if(offCh){db.removeChannel(offCh);offCh=null;}
+ active=null;T('Заявка отменена');pGo('home');
+}
+async function doneRide(did,dn){
+ await db.from('rides').update({status:'completed'}).eq('id',active.id);
+ const rid=active.id;active=null;
+ rateSheet(rid,did,dn);
+}
+function rateSheet(rid,did,dn){
+ let val=5;
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Как поездка?</h3><div class="s">Оценка поможет другим пассажирам</div><div class="stars" id="st"></div><textarea class="ta" id="rc" placeholder="Комментарий (не обязательно)"></textarea><div class="sa"><button class="c" onclick="closeSh();pGo('home')">Пропустить</button><button class="o" onclick="sendRate('${rid}','${did}','${dn}')">Отправить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ const draw=()=>{document.getElementById('st').innerHTML=[1,2,3,4,5].map(i=>`<span class="${i<=val?'on':''}" onclick="window._rv(${i})">★</span>`).join('');};
+ window._rv=v=>{val=v;draw();};window._rvGet=()=>val;draw();
+}
+async function sendRate(rid,did,dn){
+ const v=window._rvGet();
+ await db.from('reviews').insert({ride_id:rid,from_id:me.id,from_name:me.name,target_id:did,target_name:dn,rating:v,comment:document.getElementById('rc').value.trim()});
+ closeSh();T('Спасибо за оценку!');pGo('home');
+}
+function complain(rid,did,dn){
+ let reason='Завысил цену после согласования';
+ const rs=['Завысил цену после согласования','Не приехал','Грубость','Просит оплату мимо приложения','Другое'];
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Жалоба на ${dn}</h3><div class="s">Модерация разберётся и примет меры</div><div id="rl"></div><textarea class="ta" id="cc" placeholder="Что произошло (не обязательно)"></textarea><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="sendComplain('${rid}','${did}','${dn}')">Отправить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ const draw=()=>{document.getElementById('rl').innerHTML=rs.map(r=>`<div class="opt ${r===reason?'sel':''}" onclick="window._cr('${r}')"><div class="rd"></div><div class="tx">${r}</div></div>`).join('');};
+ window._cr=r=>{reason=r;draw();};window._crGet=()=>reason;draw();
+}
+async function sendComplain(rid,did,dn){
+ await db.from('complaints').insert({ride_id:rid,from_id:me.id,from_name:me.name,target_id:did,target_name:dn,reason:window._crGet(),comment:document.getElementById('cc').value.trim()});
+ closeSh();T('Жалоба отправлена');
+}
 
 async function trips(m){
  m.innerHTML='<div class="head"><h2>Мои поездки</h2></div><div class="list"><div class="empty">Загрузка…</div></div>';
  const{data}=await db.from('rides').select('*').eq('passenger_id',me.id).order('created_at',{ascending:false}).limit(30);
  const l=m.querySelector('.list');
  if(!data||!data.length){l.innerHTML='<div class="empty"><b>Пока пусто</b>Здесь появится история ваших заявок.</div>';return;}
- const st={created:'ждёт',confirmed:'подтверждена',completed:'завершена'};
- l.innerHTML=data.map(r=>`<div class="card"><div style="flex:1"><div class="nm">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="sub">${st[r.status]||esc(r.status)} · ${new Date(r.created_at).toLocaleDateString('ru')}</div></div></div>`).join('');
+ const st={created:'ждёт предложений',confirmed:'водитель едет',completed:'завершена',cancelled_by_passenger_free:'отменена'};
+ l.innerHTML=data.map(r=>{
+  const act=['created','confirmed'].includes(r.status);
+  return `<div class="card ${act?'tap':''}" ${act?`onclick="openRideFrom('${r.id}')"`:''}><div style="flex:1;min-width:0"><div class="nm">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="sub">${st[r.status]||esc(r.status)} · ${new Date(r.created_at).toLocaleDateString('ru')}</div></div>${act?'<span class="go">открыть →</span>':''}</div>`;
+ }).join('');
+}
+async function openRideFrom(id){
+ const{data}=await db.from('rides').select('*').eq('id',id).single();
+ active=data;if(data.status==='created')subOffers(id);
+ openRide();
 }
 
 function profHTML(){
@@ -301,7 +419,7 @@ async function saveP(){
 }
 function applyDrv(){
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>Стать бомбилой</h3><div class="s">Заявка уйдёт на проверку. Марку и номер машины впишет администратор после одобрения — сами вы их менять не сможете.</div><div class="fr"><label>Телефон</label><input id="ap" value="${esc(me.phone)}" placeholder="+7 900 000-00-00" inputmode="tel"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="sendApp()">Отправить</button></div></div>`;
+ m.innerHTML=`<div class="sheet"><h3>Стать бомбилой</h3><div class="s">Заявка уйдёт на проверку. Марку и номер впишет администратор — сами вы их менять не сможете.</div><div class="fr"><label>Телефон</label><input id="ap" value="${esc(me.phone)}" placeholder="+7 900 000-00-00" inputmode="tel"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="sendApp()">Отправить</button></div></div>`;
  document.getElementById('device').appendChild(m);
 }
 async function sendApp(){
@@ -311,13 +429,16 @@ async function sendApp(){
 }
 const closeSh=()=>{const s=document.getElementById('sh');if(s)s.remove();};
 
-/* ============ ВОДИТЕЛЬ ============ */
+/* ================= ВОДИТЕЛЬ ================= */
 function drawD(){
+ document.getElementById('abar').innerHTML='';
  document.getElementById('nav').innerHTML=`
  <button class="nb ${dTab==='inbox'?'active':''}" onclick="dGo('inbox')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5h13L22 12v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6z"/></svg>Заявки</button>
+ <button class="nb ${dTab==='rev'?'active':''}" onclick="dGo('rev')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 9 22 9 17 14 19 21 12 17 5 21 7 14 2 9 9 9"/></svg>Отзывы</button>
  <button class="nb ${dTab==='profile'?'active':''}" onclick="dGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль</button>`;
  const m=document.getElementById('main');
  if(dTab==='inbox')inbox(m);
+ if(dTab==='rev')myRev(m);
  if(dTab==='profile')m.innerHTML=dProfHTML();
 }
 const dGo=t=>{dTab=t;drawD();};
@@ -336,7 +457,7 @@ async function tglOn(){
 }
 function setSpot(){
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>Где вы стоите</h3><div class="s">Напишите ориентир — район, улицу или заметное место. Это увидят пассажиры в списке.</div><div class="fr"><label>Место</label><input id="sp" value="${esc(me.spot)}" placeholder="Например: центр, у магазина Милка"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="saveSpot()">Сохранить</button></div></div>`;
+ m.innerHTML=`<div class="sheet"><h3>Где вы стоите</h3><div class="s">Ориентир — район, улица или заметное место. Это видят пассажиры.</div><div class="fr"><label>Место</label><input id="sp" value="${esc(me.spot)}" placeholder="Например: центр, у магазина Милка"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="saveSpot()">Сохранить</button></div></div>`;
  document.getElementById('device').appendChild(m);
 }
 async function saveSpot(){
@@ -377,6 +498,12 @@ function won(r){
  document.getElementById('main').innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>Вас выбрали!</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">ждёт вас</div></div></div><button class="btn" onclick="dGo('inbox')">К заявкам</button></div>`;
  T('Заказ ваш!');
 }
+async function myRev(m){
+ m.innerHTML='<div class="head"><h2>Мои отзывы</h2></div><div class="empty">Загрузка…</div>';
+ const{data}=await db.from('reviews').select('*').eq('target_id',me.id).order('created_at',{ascending:false}).limit(30);
+ const avg=data&&data.length?(data.reduce((s,r)=>s+r.rating,0)/data.length).toFixed(1):'—';
+ m.innerHTML=`<div class="head"><h2>Мои отзывы</h2><span class="m">средняя ${avg}</span></div>${(data&&data.length)?data.map(r=>`<div class="rv"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13.5px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div></div>`).join(''):'<div class="empty"><b>Отзывов пока нет</b>Они появятся после первых поездок.</div>'}`;
+}
 function dProfHTML(){
  return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="d1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div><div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
@@ -386,23 +513,52 @@ async function saveD(){
  await db.from('users').update(p).eq('id',me.id);Object.assign(me,p);T('Сохранено');drawD();
 }
 
-/* ============ ПАНЕЛЬ ============ */
-async function drawA(){
- document.getElementById('nav').innerHTML=`<button class="nb active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Обзор</button><button class="nb" onclick="setRole('passenger')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>Выйти</button>`;
+/* ================= ПАНЕЛЬ ================= */
+function drawA(){
+ document.getElementById('abar').innerHTML='';
+ document.getElementById('nav').innerHTML=`
+ <button class="nb ${aTab==='over'?'active':''}" onclick="aGo('over')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Обзор</button>
+ <button class="nb ${aTab==='apps'?'active':''}" onclick="aGo('apps')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Заявки</button>
+ <button class="nb ${aTab==='cmp'?'active':''}" onclick="aGo('cmp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>Жалобы</button>
+ <button class="nb ${aTab==='ppl'?'active':''}" onclick="aGo('ppl')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Люди</button>`;
  const m=document.getElementById('main');m.innerHTML='<div class="empty">Загрузка…</div>';
- const{count:rides}=await db.from('rides').select('*',{count:'exact',head:true});
- const{count:on}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online');
- const{data:apps}=await db.from('users').select('*').eq('driver_status','pending');
- const{data:us}=await db.from('users').select('*').order('created_at',{ascending:false}).limit(40);
+ if(aTab==='over')aOver(m);
+ if(aTab==='apps')aApps(m);
+ if(aTab==='cmp')aCmp(m);
+ if(aTab==='ppl')aPpl(m);
+}
+const aGo=t=>{aTab=t;drawA();};
+async function aOver(m){
+ const today=new Date();today.setHours(0,0,0,0);
+ const[{count:all},{count:td},{count:on},{count:done},{data:apps},{data:cmp},{data:rv},{count:us}]=await Promise.all([
+  db.from('rides').select('*',{count:'exact',head:true}),
+  db.from('rides').select('*',{count:'exact',head:true}).gte('created_at',today.toISOString()),
+  db.from('users').select('*',{count:'exact',head:true}).eq('status','online'),
+  db.from('rides').select('*',{count:'exact',head:true}).eq('status','completed'),
+  db.from('users').select('id').eq('driver_status','pending'),
+  db.from('complaints').select('*').eq('status','pending'),
+  db.from('reviews').select('*').order('created_at',{ascending:false}).limit(5),
+  db.from('users').select('*',{count:'exact',head:true})
+ ]);
+ const avg=rv&&rv.length?(rv.reduce((s,r)=>s+r.rating,0)/rv.length).toFixed(1):'—';
  m.innerHTML=`<div class="head"><h2>Панель · Бомбилы</h2><span class="m">${me.staff_role}</span></div>
- <div class="agrid"><div class="ast"><div class="n g">${rides||0}</div><div class="l">всего заявок</div></div><div class="ast"><div class="n">${on||0}</div><div class="l">на линии</div></div><div class="ast"><div class="n a">${(apps||[]).length}</div><div class="l">заявок в водители</div></div><div class="ast"><div class="n">${(us||[]).length}</div><div class="l">пользователей</div></div></div>
- <div class="head"><h2>Заявки в водители</h2></div><div style="padding:6px 0">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt">${esc(a.name)}</div><div class="rm">${esc(a.phone)||'без телефона'} · ID ${a.telegram_id}</div><div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty">Новых заявок нет</div>'}</div>
- <div class="head"><h2>Пользователи</h2><span class="m">роли</span></div><div style="padding:6px 0 24px">${(us||[]).map(u=>{
-   const mine=u.id===me.id;
-   const can=(me.staff_role==='owner'&&!mine&&u.staff_role!=='owner')||(me.staff_role==='admin'&&!mine&&!['owner','admin'].includes(u.staff_role));
-   const bd=u.staff_role&&u.staff_role!=='none'?`<span class="badge am">${u.staff_role==='owner'?'владелец':u.staff_role==='admin'?'админ':'модератор'}</span>`:'';
-   return `<div class="ai"><div class="ava">${esc(u.name)[0]||'?'}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''}</div><div style="font-size:11.5px;color:var(--dim)">${u.role}${u.car?' · '+esc(u.car):''} · ${u.status}</div></div>${bd}${can?`<button class="rolebtn" onclick="cyc('${u.id}','${u.staff_role||'none'}')">роль ⇄</button>`:''}</div>`;
- }).join('')}</div>`;
+ <div class="agrid">
+  <div class="ast"><div class="n g">${td||0}</div><div class="l">заявок сегодня</div></div>
+  <div class="ast"><div class="n">${on||0}</div><div class="l">на линии</div></div>
+  <div class="ast"><div class="n">${done||0}</div><div class="l">завершено поездок</div></div>
+  <div class="ast"><div class="n">${all||0}</div><div class="l">заявок всего</div></div>
+  <div class="ast" onclick="aGo('apps')" style="cursor:pointer"><div class="n a">${(apps||[]).length}</div><div class="l">заявок в водители ›</div></div>
+  <div class="ast" onclick="aGo('cmp')" style="cursor:pointer"><div class="n" style="color:var(--red)">${(cmp||[]).length}</div><div class="l">жалоб открыто ›</div></div>
+  <div class="ast"><div class="n a">${avg}</div><div class="l">средняя оценка</div></div>
+  <div class="ast"><div class="n">${us||0}</div><div class="l">пользователей</div></div>
+ </div>
+ <div class="sec">Последние отзывы</div>
+ ${(rv&&rv.length)?rv.map(r=>`<div class="rv"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13.5px;font-weight:600">${esc(r.from_name)} → ${esc(r.target_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div></div>`).join(''):'<div class="empty">Отзывов пока нет</div>'}
+ <div style="height:20px"></div>`;
+}
+async function aApps(m){
+ const{data:apps}=await db.from('users').select('*').eq('driver_status','pending');
+ m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt">${esc(a.name)}</div><div class="rm">${esc(a.phone)||'без телефона'} · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div><div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>`;
 }
 async function okDrv(id){
  const c=document.getElementById('ac'+id).value.trim(),p=document.getElementById('ap'+id).value.trim();
@@ -411,16 +567,43 @@ async function okDrv(id){
  T('Водитель одобрен');drawA();
 }
 async function noDrv(id){await db.from('users').update({driver_status:'none'}).eq('id',id);T('Отклонено');drawA();}
-async function cyc(id,cur){
- let n;
- if(me.staff_role==='owner')n=cur==='none'?'moderator':cur==='moderator'?'admin':'none';
- else n=cur==='none'?'moderator':'none';
- await db.from('users').update({staff_role:n}).eq('id',id);
- T(n==='none'?'Права сняты':'Назначен: '+(n==='admin'?'админ':'модератор'));drawA();
+async function aCmp(m){
+ const{data}=await db.from('complaints').select('*').eq('status','pending').order('created_at',{ascending:false});
+ m.innerHTML=`<div class="head"><h2>Жалобы</h2><span class="m">${(data||[]).length} открыто</span></div><div style="padding:8px 0 24px">${(data||[]).length?data.map(c=>`<div class="cp"><span class="badge red">жалоба</span><div class="rs">На: ${esc(c.target_name)}</div><div class="mt">от ${esc(c.from_name)} · ${new Date(c.created_at).toLocaleDateString('ru')}</div><div class="rs" style="font-weight:500;font-size:13.5px">${esc(c.reason)}</div>${c.comment?'<div class="mt">«'+esc(c.comment)+'»</div>':''}<div class="ra"><button class="o" onclick="resolveCmp('${c.id}','dismiss')">Отклонить</button><button class="w" onclick="resolveCmp('${c.id}','warn')">Предупредить</button><button class="b" onclick="resolveCmp('${c.id}','ban','${c.target_id}')">Забанить</button></div></div>`).join(''):'<div class="empty"><b>Жалоб нет</b>Все обращения разобраны.</div>'}</div>`;
+}
+async function resolveCmp(id,act,target){
+ await db.from('complaints').update({status:'done'}).eq('id',id);
+ if(act==='ban'&&target)await db.from('users').update({is_banned:true,status:'offline'}).eq('id',target);
+ T({dismiss:'Жалоба отклонена',warn:'Предупреждение вынесено',ban:'Пользователь заблокирован'}[act]);
+ drawA();
+}
+async function aPpl(m){
+ const{data:us}=await db.from('users').select('*').order('created_at',{ascending:false}).limit(60);
+ m.innerHTML=`<div class="head"><h2>Пользователи</h2><span class="m">${(us||[]).length}</span></div><div style="padding:6px 0 24px">${(us||[]).map(u=>{
+   const mine=u.id===me.id;
+   const can=(me.staff_role==='owner'&&!mine&&u.staff_role!=='owner')||(me.staff_role==='admin'&&!mine&&!['owner','admin'].includes(u.staff_role));
+   const bd=u.staff_role&&u.staff_role!=='none'?`<span class="badge am">${u.staff_role==='owner'?'владелец':u.staff_role==='admin'?'админ':'модератор'}</span>`:'';
+   const bn=u.is_banned?'<span class="badge red">бан</span>':'';
+   return `<div class="ai"><div class="ava">${esc(u.name)[0]||'?'}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''}</div><div style="font-size:11.5px;color:var(--dim)">${u.role}${u.car?' · '+esc(u.car):''} · ${u.status}</div></div>${bn}${bd}${can?`<button class="rolebtn" onclick="roleSheet('${u.id}','${esc(u.name)}','${u.staff_role||'none'}')">права</button>`:''}</div>`;
+ }).join('')}</div>`;
+}
+function roleSheet(id,name,cur){
+ let sel=cur;
+ const opts=me.staff_role==='owner'
+   ? [['none','Без прав','обычный пользователь'],['moderator','Модератор','жалобы и заявки водителей'],['admin','Админ','всё + назначение модераторов']]
+   : [['none','Без прав','обычный пользователь'],['moderator','Модератор','жалобы и заявки водителей']];
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Права · ${name}</h3><div class="s">Выберите уровень доступа и подтвердите</div><div id="ol"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="applyRole('${id}')">Подтвердить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ const draw=()=>{document.getElementById('ol').innerHTML=opts.map(o=>`<div class="opt ${o[0]===sel?'sel':''}" onclick="window._sr('${o[0]}')"><div class="rd"></div><div class="tx">${o[1]}<small>${o[2]}</small></div></div>`).join('');};
+ window._sr=v=>{sel=v;draw();};window._srGet=()=>sel;draw();
+}
+async function applyRole(id){
+ const v=window._srGet();
+ await db.from('users').update({staff_role:v}).eq('id',id);
+ closeSh();T(v==='none'?'Права сняты':'Назначен: '+(v==='admin'?'админ':'модератор'));drawA();
 }
 boot();
 </script>
 </body>
 </html>
-
-
