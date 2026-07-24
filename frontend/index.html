@@ -264,7 +264,7 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 <div id="boot">
    <div class="mark">Бом<em>билы</em></div>
    <div class="car"><div class="road"></div><div class="dotcar"></div></div>
-   <div class="cap">свои водители рядом</div>
+   <div class="cap" id="bootcap">свои водители рядом</div>
    <div class="strip"></div>
  </div>
 <script>
@@ -336,16 +336,22 @@ async function checkSchema(){
  if(ste)missing.add('db-10.sql');
  return [...missing];
 }
+function bstep(s){const e=document.getElementById('bootcap');if(e)e.textContent=s;}
 async function boot(){
  try{
+  bstep('связь с базой…');
   let{data}=await db.from('users').select('*').eq('telegram_id',tgId).maybeSingle();
+  bstep('профиль загружен…');
   if(!data){const r=await db.from('users').insert({telegram_id:tgId,name:tgName}).select().single();if(r.error)throw r.error;data=r.data;}
   me=data;
+  bstep('настройки…');
   await loadSettings();
+  bstep('проверка базы…');
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){await db.from('users').update({staff_role:'owner'}).eq('id',me.id);me.staff_role='owner';}
   if(me.is_banned){document.getElementById('boot').innerHTML='<div style="color:#e2585a"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return;}
   document.getElementById('boot').style.display='none';
   const miss=await checkSchema();
+  bstep('почти готово…');
   if(miss.length){
    document.getElementById('boot').style.display='flex';
    document.getElementById('boot').innerHTML='<div style="color:#e2585a;line-height:1.6"><b>База не обновлена</b><br><br>Не выполнены файлы:<br><b>'+miss.join('<br>')+'</b><br><br>Откройте Supabase → SQL Editor и выполните их, затем перезапустите приложение.</div>';
@@ -364,7 +370,7 @@ async function boot(){
   if(START==='order'){targetDrv=null;pTab=active?'ride':'order';drawP();}
   if(START==='profile'){pTab='profile';drawP();}
   if(START==='driver'){ if(isDrv()){setRole('driver');} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
- }catch(e){document.getElementById('boot').innerHTML='<div style="color:#e2585a">Ошибка базы:<br><br>'+e.message+'<br><br>Выполните db-4.sql в Supabase.</div>';}
+ }catch(e){document.getElementById('boot').innerHTML='<div style="color:#e2585a;padding:20px;line-height:1.6"><b>Ошибка загрузки</b><br><br>Шаг: '+(document.getElementById('bootcap')?document.getElementById('bootcap').textContent:'')+'<br><br>'+(e&&e.message||e)+'</div>';}
 }
 const OB=[
  ['🚕','Своё такси в городе','Здесь собраны местные водители — те же бомбилы, что в чатах, только заявка уходит всем сразу и не теряется среди сообщений.'],
@@ -1218,8 +1224,4 @@ async function userCard(id){
  <h3>${esc(u.name)}</h3><div class="s">ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')} · поездок ${(rd||[]).length}</div>
  <div class="fr"><label>Имя</label><input id="e_name" value="${esc(u.name)}"></div>
  <div class="fr"><label>Телефон</label><input id="e_phone" value="${esc(u.phone)}"></div>
- <div class="fr"><label>Возраст</label><input id="e_age" value="${u.age||''}" inputmode="numeric"></div>
- <div class="fr"><label>Марка машины</label><input id="e_car" value="${esc(u.car)}"></div>
- <div class="fr"><label>Гос. номер</label><input id="e_plate" value="${esc(u.plate)}"></div>
- <div class="fr"><label>Где стоит</label><input id="e_spot" value="${esc(u.spot)}"></div>
- <div class="fr"><label>Рейт
+ <div class="fr"><label>Возраст</label><input id="e_age" value="$
