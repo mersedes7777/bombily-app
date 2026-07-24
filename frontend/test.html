@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Тест</title>
+<style>
+body{background:#0c1210;color:#e8ede9;font-family:sans-serif;padding:20px;font-size:15px;line-height:1.7;}
+.ok{color:#33d17e;}.err{color:#e2585a;}.wait{color:#f2a73b;}
+b{font-size:18px;}
+</style>
+</head>
+<body>
+<b>Диагностика Бомбилы</b>
+<div id="log"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+const log=document.getElementById('log');
+function L(t,c){log.innerHTML+='<div class="'+(c||'')+'">'+t+'</div>';}
+
+L('1. Скрипт запустился','ok');
+
+if(window.supabase){L('2. Библиотека Supabase загрузилась','ok');}
+else{L('2. Библиотека Supabase НЕ загрузилась (сеть/VPN блокирует cdn.jsdelivr.net)','err');}
+
+if(window.Telegram&&window.Telegram.WebApp){L('3. Telegram WebApp есть','ok');}
+else{L('3. Telegram WebApp нет (открыто в браузере — это нормально)','wait');}
+
+const URL="https://wygmuydnodwpbtsdfjuq.supabase.co";
+const KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5Z211eWRub2R3cGJ0c2RmanVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1ODA5MTAsImV4cCI6MjEwMDE1NjkxMH0.hrU9TwCQzplTLkShaF8djP9PqANbBrTCJuvlNk84dGw";
+
+if(window.supabase){
+  L('4. Пробую подключиться к базе…','wait');
+  try{
+    const db=supabase.createClient(URL,KEY);
+    L('5. Клиент создан, делаю запрос…','wait');
+    db.from('users').select('id').limit(1).then(r=>{
+      if(r.error)L('6. ОШИБКА базы: '+r.error.message,'err');
+      else L('6. База ответила! Записей получено: '+(r.data?r.data.length:0),'ok');
+      L('<br><b>Готово. Пришлите мне скриншот этого экрана.</b>');
+    }).catch(e=>{L('6. Запрос упал: '+e.message,'err');});
+  }catch(e){L('5. Не смог создать клиент: '+e.message,'err');}
+}
+</script>
+</body>
+</html>
