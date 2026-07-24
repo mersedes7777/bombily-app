@@ -194,6 +194,24 @@ async function notifyLoop() {
       }
       await db.from('shifts').update({ notified: true }).eq('id', s.id);
     }
+
+    // водитель приехал -> пассажиру
+    const { data: arr } = await db.from('rides').select('*').eq('arrived', true).eq('arrived_notified', false);
+    for (const r of arr || []) {
+      const tid = await tgIdOf(r.passenger_id);
+      if (tid) await send(tid, `🚗 <b>Водитель на месте</b>\n${r.from_address}\nМашина ждёт вас.`);
+      await db.from('rides').update({ arrived_notified: true }).eq('id', r.id);
+    }
+
+    // отзывы становятся видимыми, когда обе стороны оценили
+    const { data: hidden } = await db.from('reviews').select('*').eq('visible', false);
+    for (const rv of hidden || []) {
+      const { data: pair } = await db.from('reviews').select('id').eq('ride_id', rv.ride_id).neq('id', rv.id).limit(1);
+      const old = Date.now() - new Date(rv.created_at).getTime() > 24 * 3600 * 1000;
+      if ((pair && pair.length) || old) {
+        await db.from('reviews').update({ visible: true }).eq('ride_id', rv.ride_id);
+      }
+    }
   } catch (e) { console.error('notify', e.message); }
   setTimeout(notifyLoop, 4000);
 }
@@ -213,6 +231,42 @@ async function expireLoop() {
   setTimeout(expireLoop, 60000);
 }
 
+
+/* ---------- неактивные водители: предупреждение и снятие с линии ---------- */
+async function idleLoop() {
+  try {
+    const warnCut = new Date(Date.now() - 60 * 60 * 1000).toISOString();   // 1 час
+    const offCut  = new Date(Date.now() - 75 * 60 * 1000).toISOString();   // ещё 15 минут
+
+    // предупреждение
+    const { data: warn } = await db.from('users').select('*')
+      .eq('status', 'online').eq('idle_warned', false).lt('last_active', warnCut);
+    for (const u of warn || []) {
+      if (u.telegram_id) await send(u.telegram_id,
+        `⚠️ <b>Вы всё ещё на линии?</b>\nПриложение не открывалось больше часа. Если не отметитесь в течение 15 минут, мы автоматически снимем вас с линии и закроем смену — чтобы пассажиры не звали вас впустую.`,
+        { reply_markup: { inline_keyboard: [[wa('Я на линии', 'driver')]] } });
+      await db.from('users').update({ idle_warned: true }).eq('id', u.id);
+    }
+
+    // снятие
+    const { data: off } = await db.from('users').select('*')
+      .eq('status', 'online').lt('last_active', offCut);
+    for (const u of off || []) {
+      await db.from('users').update({ status: 'offline', idle_warned: false }).eq('id', u.id);
+      const { data: sh } = await db.from('shifts').select('*').eq('driver_id', u.id).is('ended_at', null).limit(1);
+      if (sh && sh.length) {
+        const s = sh[0];
+        const mins = Math.max(1, Math.round((Date.now() - new Date(s.started_at)) / 60000));
+        await db.from('shifts').update({ ended_at: new Date().toISOString(), minutes: mins }).eq('id', s.id);
+      }
+      if (u.telegram_id) await send(u.telegram_id,
+        `🌙 <b>Вы сняты с линии</b>\nПриложение долго не открывалось, смена закрыта автоматически. Когда снова выйдете на линию — заявки начнут приходить.`,
+        { reply_markup: { inline_keyboard: [[wa('Выйти на линию', 'driver')]] } });
+    }
+  } catch (e) { console.error('idle', e.message); }
+  setTimeout(idleLoop, 5 * 60 * 1000);
+}
+
 /* ---------- health ---------- */
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -223,3 +277,4 @@ setupBot();
 poll();
 notifyLoop();
 expireLoop();
+idleLoop();
