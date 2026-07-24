@@ -224,6 +224,11 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .ob .dots{display:flex;gap:7px;justify-content:center;margin:22px 0 16px;}
 .ob .dots i{width:7px;height:7px;border-radius:50%;background:var(--line2);}
 .ob .dots i.on{background:var(--g);width:20px;border-radius:100px;}
+
+.cbar{display:flex;align-items:center;gap:8px;padding:9px 16px;background:var(--surf);border-bottom:1px solid var(--line);flex-shrink:0;font-size:12.5px;}
+.cbar .lbl{color:var(--dim);}
+.cbar b{color:var(--ink);font-weight:600;}
+.cbar .ch{margin-left:auto;color:var(--g);font-weight:600;cursor:pointer;}
 #toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%) translateY(16px);background:var(--g);color:#06120b;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:700;opacity:0;transition:.28s;z-index:90;pointer-events:none;max-width:88%;text-align:center;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 #boot{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;color:var(--dim);font-size:14px;padding:20px;text-align:center;}
@@ -233,7 +238,8 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 <div class="device" id="device">
   <div class="checker"></div>
   <div class="rsw" id="rsw" style="display:none"></div>
-  <div class="top"><div class="brand">Бом<em>билы</em></div><button class="citybtn" id="cityb" onclick="cityPick()">📍 <span id="cityn">город</span></button><div class="pill"><span class="dot"></span><b id="onl">0</b>&nbsp;</div></div>
+  <div class="top"><div class="brand">Бом<em>билы</em></div><div class="pill"><span class="dot"></span><b id="onl">0</b>&nbsp;</div></div>
+  <div class="cbar" id="cbar" style="display:none">📍 <span class="lbl">Ваш город:</span> <b id="cityn">—</b><span class="ch" onclick="cityPick()">сменить</span></div>
   <div class="body" id="main"></div>
   <div id="abar"></div>
   <nav id="nav"></nav>
@@ -286,6 +292,25 @@ const favs=()=>jget('favs');
 const isStaff=()=>me&&['owner','admin','moderator'].includes(me.staff_role);
 const isDrv=()=>me&&(me.role==='driver'||me.role==='both');
 
+const MIG=[
+ ['users','city','db-7.sql'],
+ ['users','onboarded','db-9.sql'],
+ ['users','cancel_as_driver','db-8.sql'],
+ ['users','doc_license','db-5.sql'],
+ ['users','favs','db-4.sql'],
+ ['rides','arrived','db-9.sql'],
+ ['reviews','visible','db-9.sql']
+];
+async function checkSchema(){
+ const missing=new Set();
+ for(const[t,c,f] of MIG){
+  const{error}=await db.from(t).select(c).limit(1);
+  if(error)missing.add(f);
+ }
+ const{error:se}=await db.from('shifts').select('id').limit(1);
+ if(se)missing.add('db-7.sql');
+ return [...missing];
+}
 async function boot(){
  try{
   let{data}=await db.from('users').select('*').eq('telegram_id',tgId).maybeSingle();
@@ -294,10 +319,16 @@ async function boot(){
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){await db.from('users').update({staff_role:'owner'}).eq('id',me.id);me.staff_role='owner';}
   if(me.is_banned){document.getElementById('boot').innerHTML='<div style="color:#e2585a"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return;}
   document.getElementById('boot').style.display='none';
+  const miss=await checkSchema();
+  if(miss.length){
+   document.getElementById('boot').style.display='flex';
+   document.getElementById('boot').innerHTML='<div style="color:#e2585a;line-height:1.6"><b>База не обновлена</b><br><br>Не выполнены файлы:<br><b>'+miss.join('<br>')+'</b><br><br>Откройте Supabase → SQL Editor и выполните их, затем перезапустите приложение.</div>';
+   return;
+  }
   if(!me.onboarded){onboard(0);return;}
   if(!me.phone){phoneGate();return;}
   if(!me.city){cityGate();return;}
-  document.getElementById('cityn').textContent=me.city;
+  paintCity();
   drawRoles();count();setInterval(count,12000);
   await restore();await restoreD();
   setRole('passenger');
@@ -323,7 +354,7 @@ async function finishOb(){
  me.onboarded=true;
  if(!me.phone){phoneGate();return;}
  if(!me.city){cityGate();return;}
- document.getElementById('cityn').textContent=me.city;
+ paintCity();
  drawRoles();count();await restore();await restoreD();setRole('passenger');
 }
 const CITIES=['Донецк','Макеевка','Харцызск','Горловка','Енакиево'];
@@ -334,11 +365,17 @@ function cityGate(){
  document.getElementById('cl').innerHTML=CITIES.map(c=>`<div class="opt" onclick="setCity('${c}')"><div class="rd"></div><div class="tx">${c}</div></div>`).join('');
 }
 async function setCity(c){
- await db.from('users').update({city:c}).eq('id',me.id);
- me.city=c;closeSh();T('Город: '+c);
- document.getElementById('cityn').textContent=c;
+ const{error}=await Q(db.from('users').update({city:c}).eq('id',me.id),'Не удалось сохранить город');
+ if(error)return;
+ me.city=c;closeSh();T('Город сохранён: '+c);
+ paintCity();
  drawRoles();count();
  await restore();await restoreD();setRole('passenger');
+}
+function paintCity(){
+ const b=document.getElementById('cbar');
+ if(me&&me.city){document.getElementById('cityn').textContent=me.city;b.style.display='flex';}
+ else b.style.display='none';
 }
 function cityPick(){
  const m=document.createElement('div');m.className='mask';m.id='sh';
@@ -358,7 +395,7 @@ async function saveGate(){
  if(error)return;
  me.name=n;me.phone=p;T('Спасибо!');
  if(!me.city){cityGate();return;}
- document.getElementById('cityn').textContent=me.city;
+ paintCity();
  drawRoles();count();await restore();await restoreD();setRole('passenger');
 }
 setInterval(async()=>{
@@ -449,12 +486,12 @@ const pGo=t=>{pTab=t;drawP();};
 
 async function home(m){
  m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;pTab='order';drawP()">Заявка всем водителям</button></div><div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
- const{data:ds}=await db.from('users').select('*').eq('status','online').eq('city',me.city).in('role',['driver','both']);
+ const{data:ds,error:dsE}=await Q(db.from('users').select('*').eq('status','online').eq('city',me.city).in('role',['driver','both']),'Не удалось загрузить водителей');
  const{count:rc}=await db.from('rides').select('*',{count:'exact',head:true}).eq('status','created').eq('city',me.city);
  const a=document.getElementById('c1');if(a)a.textContent=(ds||[]).length;
  const b=document.getElementById('c2');if(b)b.textContent=rc||0;
   const l=document.getElementById('dl');if(!l)return;
- if(!ds||!ds.length){l.innerHTML='<div class="empty"><b>В городе '+esc(me.city)+' сейчас никого нет</b>Как только водитель выйдет на линию — он появится здесь.</div>';return;}
+ if(!ds||!ds.length){l.innerHTML='<div class="empty"><b>В городе '+esc(me.city)+' сейчас никого нет</b>Как только водитель выйдет на линию — он появится здесь. Если тестируете сами: у водителя должен быть выбран тот же город и включён тумблер «на линии».</div>';return;}
  l.innerHTML=ds.map(d=>drvCard(d)).join('');
 }
 function drvCard(d){
@@ -793,6 +830,11 @@ function drawD(){
 const dGo=t=>{dTab=t;drawD();};
 async function inbox(m){
  const on=me.status==='online';
+ if(on&&!curShift){
+  const{data:sh}=await db.from('shifts').select('*').eq('driver_id',me.id).is('ended_at',null).order('started_at',{ascending:false}).limit(1);
+  if(sh&&sh.length)curShift=sh[0];
+  else{const{data:ns}=await Q(db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString()}).select().single(),'Не удалось открыть смену');if(ns)curShift=ns;}
+ }
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</span></div><div class="clk" id="sclk">0:00</div></div>`:''}
@@ -836,24 +878,25 @@ async function pullOff(id){
 }
 async function tglOn(){
  const s=me.status==='online'?'offline':'online';
- await db.from('users').update({status:s,last_active:new Date().toISOString()}).eq('id',me.id);
+ const{error:stE}=await Q(db.from('users').update({status:s,last_active:new Date().toISOString()}).eq('id',me.id),'Не удалось сменить статус');
+ if(stE)return;
  me.status=s;
  if(s==='online'){
-   const{data}=await db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString()}).select().single();
-   curShift=data;T('Смена начата');
+   const{data,error}=await Q(db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString()}).select().single(),'Не удалось открыть смену');
+   if(!error){curShift=data;T('Смена начата');}
  }else{
    if(inCh){db.removeChannel(inCh);inCh=null;}
    if(curShift){
      const end=new Date();const mins=Math.max(1,Math.round((end-new Date(curShift.started_at))/60000));
-     await db.from('shifts').update({ended_at:end.toISOString(),minutes:mins}).eq('id',curShift.id);
+     await Q(db.from('shifts').update({ended_at:end.toISOString(),minutes:mins}).eq('id',curShift.id),'Не удалось закрыть смену');
      const st=curShift.started_at;curShift=null;shiftDone(mins,st,end);
-   }
+   }else{T('Вы вышли с линии');}
  }
  drawD();count();
 }
 async function shiftDone(mins,from,to){
  const h=Math.floor(mins/60),mm=mins%60;
- const{data}=await db.from('rides').select('price').eq('driver_id',me.id).eq('status','completed').gte('created_at',from).lte('created_at',to.toISOString());
+ const{data}=await Q(db.from('rides').select('price').eq('driver_id',me.id).eq('status','completed').gte('created_at',from).lte('created_at',to.toISOString()),'Не удалось посчитать смену');
  const n=(data||[]).length;
  const sum=(data||[]).reduce((a,x)=>a+(Number(x.price)||0),0);
  const perH=mins>0?Math.round(sum/(mins/60)):0;
