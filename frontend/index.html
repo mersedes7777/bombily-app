@@ -225,28 +225,45 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .ob .dots i{width:7px;height:7px;border-radius:50%;background:var(--line2);}
 .ob .dots i.on{background:var(--g);width:20px;border-radius:100px;}
 
-.cbar{display:flex;align-items:center;gap:8px;padding:9px 16px;background:var(--surf);border-bottom:1px solid var(--line);flex-shrink:0;font-size:12.5px;}
-.cbar .lbl{color:var(--dim);}
-.cbar b{color:var(--ink);font-weight:600;}
-.cbar .ch{margin-left:auto;color:var(--g);font-weight:600;cursor:pointer;}
+.citychip{margin-left:auto;background:var(--surf);border:1px solid var(--line);border-radius:100px;padding:6px 10px;font-size:11.5px;color:var(--dim);cursor:pointer;display:flex;align-items:center;gap:4px;}
+.citychip b{color:var(--ink);font-weight:600;font-size:11.5px;}
+.pill{margin-left:6px!important;}
+.act-card{display:flex;align-items:center;gap:12px;margin:14px 18px 0;padding:13px 14px;background:var(--gs);border:1px solid var(--g);border-radius:14px;cursor:pointer;}
+.act-card .t{flex:1;}
+.act-card .t b{font-size:13.5px;display:block;}
+.act-card .t span{font-size:11.5px;color:var(--dim);}
 #toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%) translateY(16px);background:var(--g);color:#06120b;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:700;opacity:0;transition:.28s;z-index:90;pointer-events:none;max-width:88%;text-align:center;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-#boot{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;color:var(--dim);font-size:14px;padding:20px;text-align:center;}
+#boot{position:fixed;inset:0;background:radial-gradient(circle at 50% 42%,#141e19 0%,#0c1210 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:200;color:var(--dim);font-size:14px;padding:20px;text-align:center;}
+#boot .logo{width:200px;height:200px;max-width:56vw;max-height:56vw;object-fit:contain;opacity:0;transform:scale(.86);animation:logoIn .9s cubic-bezier(.2,.8,.3,1) forwards,logoPulse 2.6s ease-in-out 1s infinite;filter:drop-shadow(0 8px 30px rgba(0,0,0,.6));}
+@keyframes logoIn{to{opacity:1;transform:scale(1);}}
+@keyframes logoPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.035);}}
+#boot .spin{margin-top:30px;width:34px;height:34px;border-radius:50%;border:3px solid rgba(51,209,126,.18);border-top-color:var(--g);animation:spin .8s linear infinite;opacity:0;animation-delay:.5s;animation-fill-mode:forwards;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#boot .cap{margin-top:16px;font-size:12.5px;color:var(--dim);letter-spacing:.5px;opacity:0;animation:fadeUp .7s ease .7s forwards;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+#boot .strip{position:absolute;left:0;right:0;bottom:0;height:10px;background-image:linear-gradient(45deg,#e8ede9 25%,transparent 25%),linear-gradient(-45deg,#e8ede9 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e8ede9 75%),linear-gradient(-45deg,transparent 75%,#e8ede9 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0;opacity:.07;animation:slide 1s linear infinite;}
+@keyframes slide{to{background-position:20px 0,20px 10px,30px -10px,10px 0;}}
+#boot .msg{max-width:320px;line-height:1.6;}
 </style>
 </head>
 <body>
 <div class="device" id="device">
   <div class="checker"></div>
   <div class="rsw" id="rsw" style="display:none"></div>
-  <div class="top"><div class="brand">Бом<em>билы</em></div><div class="pill"><span class="dot"></span><b id="onl">0</b>&nbsp;</div></div>
-  <div class="cbar" id="cbar" style="display:none">📍 <span class="lbl">Ваш город:</span> <b id="cityn">—</b><span class="ch" onclick="cityPick()">сменить</span></div>
+  <div class="top"><img src="logo.png" style="width:30px;height:30px;object-fit:contain;margin-right:2px" alt=""><div class="brand">Бом<em>билы</em></div><button class="citychip" id="cbar" onclick="cityPick()" style="display:none">📍 <b id="cityn">—</b></button><div class="pill"><span class="dot"></span><b id="onl">0</b>&nbsp;</div></div>
   <div class="body" id="main"></div>
   <div id="abar"></div>
   <nav id="nav"></nav>
   <div id="toast"></div>
   <div id="err"><span class="x" onclick="hideErr()">✕</span><b>Что-то пошло не так</b><span id="errt"></span></div>
 </div>
-<div id="boot">Загрузка…</div>
+<div id="boot">
+   <img src="logo.png" class="logo" alt="Бомбилы">
+   <div class="spin"></div>
+   <div class="cap">свои водители рядом</div>
+   <div class="strip"></div>
+ </div>
 <script>
 const SUPABASE_URL="https://wygmuydnodwpbtsdfjuq.supabase.co";
 const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5Z211eWRub2R3cGJ0c2RmanVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1ODA5MTAsImV4cCI6MjEwMDE1NjkxMH0.hrU9TwCQzplTLkShaF8djP9PqANbBrTCJuvlNk84dGw";
@@ -331,7 +348,10 @@ async function boot(){
   paintCity();
   drawRoles();count();setInterval(count,12000);
   await restore();await restoreD();
-  setRole('passenger');
+  let last='passenger';try{last=localStorage.getItem('bmb_role')||'passenger';}catch(e){}
+  if(last==='driver'&&!isDrv())last='passenger';
+  if(last==='admin'&&!isStaff())last='passenger';
+  setRole(last);
   if(START==='order'){targetDrv=null;pTab=active?'ride':'order';drawP();}
   if(START==='profile'){pTab='profile';drawP();}
   if(START==='driver'){ if(isDrv()){setRole('driver');} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
@@ -458,6 +478,7 @@ function drawRoles(){
 }
 function setRole(r){
  if(r==='admin'&&!isStaff())return T('Нет доступа');
+ try{localStorage.setItem('bmb_role',r);}catch(e){}
  if(r==='driver'&&!isDrv())return T('Сначала пройдите модерацию');
  role=r;drawRoles();
  if(r==='passenger'){pTab='home';drawP();}
@@ -682,7 +703,8 @@ async function openRideFrom(id){
 }
 
 function profHTML(){
- return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">отмен как пассажир: ${me.cancel_as_passenger||0}${isDrv()?' · как водитель: '+(me.cancel_as_driver||0):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 900 000-00-00"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div><div class="mi" onclick="T('Поддержка: напишите в бот, кнопка «Связь с админом»')"><span>Поддержка</span><span class="c">›</span></div></div>`;
+ const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
+ return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">отмен как пассажир: ${me.cancel_as_passenger||0}${isDrv()?' · как водитель: '+(me.cancel_as_driver||0):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 900 000-00-00"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div><div class="mi" onclick="T('Поддержка: напишите в бот, кнопка «Связь с админом»')"><span>Поддержка</span><span class="c">›</span></div></div>`;
 }
 function disputeRev(rid,about,text){
  let reason='Отзыв не соответствует действительности';
@@ -966,15 +988,15 @@ async function dRide(m){
  if(!r||!['confirmed','in_progress'].includes(r.status)){dActive=null;T('Заказ закрыт');dGo('inbox');return;}
  dActive=r;subRide(r.id);
  const{data:p}=await db.from('users').select('*').eq('id',r.passenger_id).single();
- m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.status==='in_progress'?'Везёте пассажира':'Вас выбрали!'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p>
+ m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.arrived?'Вы на месте':'Вас выбрали!'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p>
  <div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">отмен как пассажир: ${p?.cancel_as_passenger||0}</div><div class="sub">${r.status==='in_progress'?'в машине':'ждёт вас'}</div>${p&&p.phone?'<div class="sub">📞 '+esc(p.phone)+'</div>':'<div class="sub" style="color:var(--dim)">телефон не указан</div>'}</div></div>
  ${p&&p.phone?`<a href="tel:${esc(p.phone)}" style="text-decoration:none"><button class="btn ghost" style="margin-top:14px">📞 Позвонить пассажиру</button></a>`:''}
  <button class="btn" onclick="openChat('${r.id}','driver')">Написать пассажиру</button>
- ${r.status==='confirmed'?`${r.arrived?'<div class="note">Пассажир уведомлён, что вы на месте</div>':`<button class="btn ghost" onclick="dArrived()">Я на месте</button>`}<button class="btn ghost" onclick="dStart()">Пассажир в машине</button>`:`<button class="btn ghost" onclick="dDone()">Завершить поездку</button>`}
+ ${r.arrived?'<div class="note">✅ Пассажир уведомлён, что вы подъехали</div>':`<button class="btn ghost" onclick="dArrived()">Я подъехал</button>`}
+ <button class="btn ghost" onclick="dDone()">Завершить поездку</button>
  <button class="btn dang" onclick="dCancel()">Отказаться от заказа</button></div>`;
 }
 async function dArrived(){await Q(db.from('rides').update({arrived:true}).eq('id',dActive.id),'Не удалось отметить');dActive.arrived=true;T('Пассажиру ушло уведомление');dGo('ride');}
-async function dStart(){await db.from('rides').update({status:'in_progress'}).eq('id',dActive.id);dActive.status='in_progress';T('Поехали');dGo('ride');}
 async function dDone(){
  const r=dActive;await db.from('rides').update({status:'completed'}).eq('id',r.id);dActive=null;T('Поездка завершена');
  rateSheet(r.id,r.passenger_id,r.passenger_name||'Пассажир','passenger',"dGo('inbox')");
