@@ -33,6 +33,18 @@ const mainKb = {
   ]
 };
 
+// постоянная клавиатура внизу чата — видна всегда, без /start
+const kb = {
+  keyboard: [
+    [{ text: '🚕 Заказать поездку', web_app: { url: `${APP_URL}?s=order` } }],
+    [{ text: '🚗 Стать водителем', web_app: { url: `${APP_URL}?s=driver` } },
+     { text: '👤 Кабинет', web_app: { url: `${APP_URL}?s=profile` } }],
+    [{ text: '💬 Связь с админом' }]
+  ],
+  resize_keyboard: true,
+  is_persistent: true
+};
+
 async function setupBot() {
   await tg('setMyCommands', { commands: [
     { command: 'start',   description: 'Главное меню' },
@@ -75,13 +87,14 @@ async function onUpdate(u) {
 
   if (text.startsWith('/start')) {
     waitingSupport.delete(chat);
-    return send(chat, `<b>Бомбилы</b>\nСервис для поиска машины в городе.\n\nВыберите, что нужно:`, { reply_markup: mainKb });
+    await send(chat, `<b>Бомбилы</b>\nСервис для поиска машины в городе.\nКнопки внизу всегда под рукой — писать команды не нужно.`, { reply_markup: kb });
+    return send(chat, 'Что нужно сделать?', { reply_markup: mainKb });
   }
   if (text.startsWith('/order') || text.startsWith('/driver') || text.startsWith('/profile')) {
     const s = text.slice(1).split(/[\s@]/)[0];
     return send(chat, 'Открываю приложение:', { reply_markup: { inline_keyboard: [[wa('Открыть', s)]] } });
   }
-  if (text.startsWith('/support')) {
+  if (text === '💬 Связь с админом' || text.startsWith('/support')) {
     waitingSupport.add(chat);
     return send(chat, 'Напишите ваше сообщение одним текстом — оно уйдёт администратору.');
   }
@@ -95,7 +108,8 @@ async function onUpdate(u) {
     return send(chat, '✅ Сообщение отправлено администратору. Ответ придёт сюда.');
   }
 
-  return send(chat, 'Не понял команду. Нажмите /start', { reply_markup: mainKb });
+  await send(chat, 'Выберите действие кнопками ниже 👇', { reply_markup: kb });
+  return send(chat, 'Или откройте приложение:', { reply_markup: mainKb });
 }
 
 /* ---------- long polling ---------- */
@@ -270,7 +284,7 @@ async function idleLoop() {
 /* ---------- health ---------- */
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ ok: true, service: 'bombily-backend' }));
+  res.end(JSON.stringify({ ok: true, service: 'bombily-backend', version: 'v5-arrived-keyboard' }));
 }).listen(PORT, () => console.log('listening on ' + PORT));
 
 setupBot();
