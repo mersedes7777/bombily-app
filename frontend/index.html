@@ -212,6 +212,18 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .shift .t b{font-size:13.5px;display:block;}
 .shift .t span{font-size:11.5px;color:var(--dim);}
 .shift .clk{font-family:'Roboto Mono',monospace;font-weight:700;font-size:17px;color:var(--g);}
+
+#err{position:fixed;left:10px;right:10px;bottom:70px;background:#3a1518;border:1px solid var(--red);color:#ffd7d9;padding:12px 14px;border-radius:12px;font-size:12.5px;z-index:95;display:none;line-height:1.5;}
+#err b{display:block;margin-bottom:3px;color:var(--red);}
+#err .x{position:absolute;top:8px;right:10px;color:var(--dim);cursor:pointer;}
+.cd{font-family:'Roboto Mono',monospace;font-size:13px;color:var(--am);font-weight:700;margin-top:8px;}
+.ob{padding:36px 24px;text-align:center;display:flex;flex-direction:column;height:100%;}
+.ob .em{font-size:56px;margin-bottom:18px;}
+.ob h2{font-family:Oswald,sans-serif;font-size:22px;margin-bottom:10px;}
+.ob p{font-size:14px;color:var(--dim);line-height:1.65;}
+.ob .dots{display:flex;gap:7px;justify-content:center;margin:22px 0 16px;}
+.ob .dots i{width:7px;height:7px;border-radius:50%;background:var(--line2);}
+.ob .dots i.on{background:var(--g);width:20px;border-radius:100px;}
 #toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%) translateY(16px);background:var(--g);color:#06120b;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:700;opacity:0;transition:.28s;z-index:90;pointer-events:none;max-width:88%;text-align:center;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 #boot{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;color:var(--dim);font-size:14px;padding:20px;text-align:center;}
@@ -226,6 +238,7 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
   <div id="abar"></div>
   <nav id="nav"></nav>
   <div id="toast"></div>
+  <div id="err"><span class="x" onclick="hideErr()">✕</span><b>Что-то пошло не так</b><span id="errt"></span></div>
 </div>
 <div id="boot">Загрузка…</div>
 <script>
@@ -245,6 +258,26 @@ let me=null,role='passenger',pTab='home',dTab='inbox',aTab='over';
 let curShift=null,shiftTick=null;
 let active=null,dActive=null,offCh=null,inCh=null,myCh=null,rideCh=null,reqs=[],myOffs=[],targetDrv=null;
 
+function showErr(msg){const e=document.getElementById('err');document.getElementById('errt').textContent=msg;e.style.display='block';}
+function hideErr(){document.getElementById('err').style.display='none';}
+function netMsg(e){
+ const m=(e&&e.message)||String(e||'');
+ if(!navigator.onLine)return 'Нет интернета. Проверьте связь и повторите.';
+ if(/Failed to fetch|NetworkError|network/i.test(m))return 'Связь с сервером пропала. Проверьте интернет и повторите.';
+ if(/column .* does not exist|schema cache/i.test(m))return 'Приложение обновилось, а база — нет. Нужно выполнить последний SQL в Supabase.\n\n'+m;
+ if(/row-level security|permission/i.test(m))return 'Нет прав на это действие.\n\n'+m;
+ return m;
+}
+async function Q(promise,what){
+ try{
+  const r=await promise;
+  if(r&&r.error){showErr((what?what+': ':'')+netMsg(r.error));return{data:null,error:r.error};}
+  hideErr();return r;
+ }catch(e){showErr((what?what+': ':'')+netMsg(e));return{data:null,error:e};}
+}
+window.addEventListener('unhandledrejection',e=>showErr(netMsg(e.reason)));
+window.addEventListener('offline',()=>showErr('Нет интернета. Данные не обновляются.'));
+window.addEventListener('online',()=>{hideErr();T('Связь восстановлена');});
 const T=t=>{const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(window._t);window._t=setTimeout(()=>e.classList.remove('show'),2600);};
 const esc=s=>String(s==null?'':s).replace(/[<>"']/g,'');
 const jget=f=>{try{return JSON.parse(me[f]||'[]')}catch(e){return[]}};
@@ -261,6 +294,7 @@ async function boot(){
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){await db.from('users').update({staff_role:'owner'}).eq('id',me.id);me.staff_role='owner';}
   if(me.is_banned){document.getElementById('boot').innerHTML='<div style="color:#e2585a"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return;}
   document.getElementById('boot').style.display='none';
+  if(!me.onboarded){onboard(0);return;}
   if(!me.phone){phoneGate();return;}
   if(!me.city){cityGate();return;}
   document.getElementById('cityn').textContent=me.city;
@@ -271,6 +305,26 @@ async function boot(){
   if(START==='profile'){pTab='profile';drawP();}
   if(START==='driver'){ if(isDrv()){setRole('driver');} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
  }catch(e){document.getElementById('boot').innerHTML='<div style="color:#e2585a">Ошибка базы:<br><br>'+e.message+'<br><br>Выполните db-4.sql в Supabase.</div>';}
+}
+const OB=[
+ ['🚕','Своё такси в городе','Здесь собраны местные водители — те же бомбилы, что в чатах, только заявка уходит всем сразу и не теряется среди сообщений.'],
+ ['💬','Цену называет водитель','Вы пишете, куда едете. Водители присылают свою цену — вы выбираете, кто устраивает. Никаких тарифов и наценок.'],
+ ['♥','Свои водители','Понравился водитель — жмите сердечко. Потом сможете звать его напрямую, а он увидит, что заявка лично от вас.']
+];
+function onboard(i){
+ document.getElementById('rsw').style.display='none';
+ document.getElementById('nav').innerHTML='';
+ document.getElementById('abar').innerHTML='';
+ const[em,h,p]=OB[i];
+ document.getElementById('main').innerHTML=`<div class="ob"><div style="flex:1;display:flex;flex-direction:column;justify-content:center"><div class="em">${em}</div><h2>${h}</h2><p>${p}</p></div><div class="dots">${OB.map((_,k)=>`<i class="${k===i?'on':''}"></i>`).join('')}</div><button class="btn" onclick="${i<OB.length-1?`onboard(${i+1})`:'finishOb()'}">${i<OB.length-1?'Дальше':'Начать'}</button>${i<OB.length-1?'<button class="btn ghost" onclick="finishOb()">Пропустить</button>':''}</div>`;
+}
+async function finishOb(){
+ await db.from('users').update({onboarded:true}).eq('id',me.id);
+ me.onboarded=true;
+ if(!me.phone){phoneGate();return;}
+ if(!me.city){cityGate();return;}
+ document.getElementById('cityn').textContent=me.city;
+ drawRoles();count();await restore();await restoreD();setRole('passenger');
 }
 const CITIES=['Донецк','Макеевка','Харцызск','Горловка','Енакиево'];
 function cityGate(){
@@ -300,11 +354,18 @@ async function saveGate(){
  const n=document.getElementById('g1').value.trim(),p=document.getElementById('g2').value.trim();
  if(!n)return T('Введите имя');
  if(p.replace(/\D/g,'').length<7)return T('Введите корректный телефон');
- await db.from('users').update({name:n,phone:p}).eq('id',me.id);
+ const{error}=await Q(db.from('users').update({name:n,phone:p}).eq('id',me.id),'Не удалось сохранить');
+ if(error)return;
  me.name=n;me.phone=p;T('Спасибо!');
- drawRoles();count();setInterval(count,12000);
- await restore();await restoreD();setRole('passenger');
+ if(!me.city){cityGate();return;}
+ document.getElementById('cityn').textContent=me.city;
+ drawRoles();count();await restore();await restoreD();setRole('passenger');
 }
+setInterval(async()=>{
+ if(me&&me.status==='online'){
+   await db.from('users').update({last_active:new Date().toISOString(),idle_warned:false}).eq('id',me.id);
+ }
+},120000);
 async function count(){const{count:c}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city||'');const e=document.getElementById('onl');if(e)e.textContent=c||0;}
 
 async function restore(){
@@ -457,8 +518,8 @@ async function send(did){
  if(!t)return T('Укажите, куда едем');
  const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city};
  if(did)row.target_driver_id=did;
- const{data,error}=await db.from('rides').insert(row).select().single();
- if(error)return T('Ошибка: '+error.message);
+ const{data,error}=await Q(db.from('rides').insert(row).select().single(),'Не удалось создать заявку');
+ if(error)return;
  active=data;targetDrv=null;subOffers(data.id);pTab='ride';drawP();
 }
 function subOffers(id){
@@ -482,11 +543,25 @@ async function openRide(){
  if(r.status==='confirmed'){
    const{data:d}=await db.from('users').select('*').eq('id',r.driver_id).single();
    const on=favs().includes(r.driver_id);
-   m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>Бомбила выехал</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div><div class="sub">⭐ ${d?.rating||5} · отказов: ${d?.cancel_as_driver||0}</div>${d?.phone?'<div class="sub">📞 '+esc(d.phone)+'</div>':''}</div><button class="fav ${on?'on':''}" onclick="togFav('${r.driver_id}')">♥</button></div>${d&&d.phone?`<a href="tel:${esc(d.phone)}" style="text-decoration:none"><button class="btn ghost" style="margin-top:14px">📞 Позвонить водителю</button></a>`:''}<button class="btn" onclick="openChat('${r.id}','passenger')">Написать водителю</button><button class="btn ghost" onclick="doneRide('${d?.id}','${esc(d?.name)}')">Поездка завершена</button><button class="btn dang" onclick="complain('${r.id}','${d?.id}','${esc(d?.name)}')">Пожаловаться</button></div>`;
+   m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.arrived?'Водитель на месте':'Бомбила выехал'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div><div class="sub">⭐ ${d?.rating||5} · отказов: ${d?.cancel_as_driver||0}</div>${d?.phone?'<div class="sub">📞 '+esc(d.phone)+'</div>':''}</div><button class="fav ${on?'on':''}" onclick="togFav('${r.driver_id}')">♥</button></div>${d&&d.phone?`<a href="tel:${esc(d.phone)}" style="text-decoration:none"><button class="btn ghost" style="margin-top:14px">📞 Позвонить водителю</button></a>`:''}<button class="btn" onclick="openChat('${r.id}','passenger')">Написать водителю</button><button class="btn ghost" onclick="doneRide('${d?.id}','${esc(d?.name)}')">Поездка завершена</button><button class="btn dang" onclick="complain('${r.id}','${d?.id}','${esc(d?.name)}')">Пожаловаться</button></div>`;
    return;
  }
  const{data:offs}=await db.from('offers').select('*').eq('ride_id',r.id).eq('status','pending');
- m.innerHTML=`<div class="wait"><div class="bea"><i></i><i></i><i></i><b></b></div><h3>${r.target_driver_id?'Ждём ответ водителя':'Ищем свободных'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p></div><div class="list">${(offs&&offs.length)?offs.map(o=>`<div class="card"><div class="ava">${esc(o.driver_name)[0]||'?'}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div></div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}',${o.price})">Принять</button></div></div>`).join(''):'<div class="empty">Ждём предложений по цене…</div>'}</div><div style="padding:0 18px 24px"><button class="btn dang" onclick="cancelRide()">Отменить заявку</button></div>`;
+ m.innerHTML=`<div class="wait"><div class="bea"><i></i><i></i><i></i><b></b></div><h3>${r.target_driver_id?'Ждём ответ водителя':'Ищем свободных'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="cd" id="rcd"></div></div><div class="list">${(offs&&offs.length)?offs.map(o=>`<div class="card"><div class="ava">${esc(o.driver_name)[0]||'?'}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div></div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}',${o.price})">Принять</button></div></div>`).join(''):'<div class="empty">Ждём предложений по цене…</div>'}</div><div style="padding:0 18px 24px"><button class="btn dang" onclick="cancelRide()">Отменить заявку</button></div>`;
+ startCd(r.created_at);
+}
+let cdTick=null;
+function startCd(created){
+ if(cdTick)clearInterval(cdTick);
+ const end=new Date(created).getTime()+10*60000;
+ const upd=()=>{
+  const e=document.getElementById('rcd');
+  if(!e){clearInterval(cdTick);cdTick=null;return;}
+  const ms=end-Date.now();
+  if(ms<=0){e.textContent='время вышло — заявка закрывается';clearInterval(cdTick);cdTick=null;return;}
+  e.textContent='заявка живёт ещё '+Math.floor(ms/60000)+':'+String(Math.floor(ms%60000/1000)).padStart(2,'0');
+ };
+ upd();cdTick=setInterval(upd,1000);
 }
 async function accept(oid,did,price){
  await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null}).eq('id',active.id);
@@ -510,7 +585,7 @@ function rateSheet(rid,did,dn,kind,after){
  kind=kind||'driver';
  let val=5;
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>${kind==='driver'?'Как поездка?':'Оцените пассажира'}</h3><div class="s">${kind==='driver'?'Оценка поможет другим пассажирам':'Это увидят другие водители'}</div><div class="stars" id="st"></div><textarea class="ta" id="rc" placeholder="Комментарий (не обязательно)"></textarea><div class="sa"><button class="c" onclick="closeSh();${after||"pGo('home')"}">Пропустить</button><button class="o" onclick="sendRate('${rid}','${did}','${dn}','${kind}')">Отправить</button></div></div>`;
+ m.innerHTML=`<div class="sheet"><h3>${kind==='driver'?'Как поездка?':'Оцените пассажира'}</h3><div class="s">${kind==='driver'?'Оценка поможет другим пассажирам':'Это увидят другие водители'}<br><span style="color:var(--g)">Отзыв откроется, когда оценит и вторая сторона</span></div><div class="stars" id="st"></div><textarea class="ta" id="rc" placeholder="Комментарий (не обязательно)"></textarea><div class="sa"><button class="c" onclick="closeSh();${after||"pGo('home')"}">Пропустить</button><button class="o" onclick="sendRate('${rid}','${did}','${dn}','${kind}')">Отправить</button></div></div>`;
  document.getElementById('device').appendChild(m);
  window._after=after;
  const draw=()=>{document.getElementById('st').innerHTML=[1,2,3,4,5].map(i=>`<span class="${i<=val?'on':''}" onclick="window._rv(${i})">★</span>`).join('');};
@@ -519,7 +594,7 @@ function rateSheet(rid,did,dn,kind,after){
 async function sendRate(rid,did,dn,kind){
  const v=window._rvGet();
  await db.from('reviews').insert({ride_id:rid,from_id:me.id,from_name:me.name,target_id:did,target_name:dn,rating:v,kind:kind||'driver',comment:document.getElementById('rc').value.trim()});
- const{data:all}=await db.from('reviews').select('rating').eq('target_id',did);
+ const{data:all}=await db.from('reviews').select('rating').eq('target_id',did).eq('visible',true);
  if(all&&all.length){const avg=(all.reduce((s,r)=>s+r.rating,0)/all.length).toFixed(1);await db.from('users').update({rating:avg}).eq('id',did);}
  closeSh();T('Спасибо за оценку!');
  if(kind==='driver')pGo('home');else dGo('inbox');
@@ -586,7 +661,7 @@ async function sendDispute(rid){
  closeSh();T('Жалоба на отзыв отправлена модерации');
 }
 async function myReviews(){
- const{data}=await db.from('reviews').select('*').eq('target_id',me.id).order('created_at',{ascending:false}).limit(20);
+ const{data}=await db.from('reviews').select('*').eq('target_id',me.id).eq('visible',true).order('created_at',{ascending:false}).limit(20);
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:80vh;overflow-y:auto"><h3>Отзывы обо мне</h3><div class="s">Что о вас пишут водители</div>${(data||[]).length?data.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="closeSh();disputeRev('${r.id}','${esc(r.from_name)}','${esc(r.comment)}')">оспорить</button></div>`).join(''):'<div class="sub" style="padding:10px 0">Отзывов пока нет</div>'}<div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div></div>`;
  document.getElementById('device').appendChild(m);
@@ -594,8 +669,8 @@ async function myReviews(){
 async function saveP(){
  const n=document.getElementById('f1').value.trim();if(!n)return T('Введите имя');
  const p={name:n,phone:document.getElementById('f2').value.trim(),age:parseInt(document.getElementById('f3').value)||null};
- const{error}=await db.from('users').update(p).eq('id',me.id);
- if(error)return T('Ошибка: '+error.message);
+ const{error}=await Q(db.from('users').update(p).eq('id',me.id),'Не удалось сохранить профиль');
+ if(error)return;
  Object.assign(me,p);T('Сохранено');drawP();
 }
 function applyDrv(){
@@ -615,6 +690,22 @@ function markUp(n,url){
  const s=document.getElementById('s'+n);if(s)s.textContent='готово ✓';
  const i=document.getElementById('i'+n);if(i)i.innerHTML=`<img src="${url}">`;
 }
+function shrink(file,max){
+ return new Promise((res,rej)=>{
+  const img=new Image();const rd=new FileReader();
+  rd.onload=e=>{img.src=e.target.result;};
+  rd.onerror=()=>rej(new Error('не удалось прочитать файл'));
+  img.onload=()=>{
+   let{width:w,height:h}=img;
+   if(w>max||h>max){if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;}}
+   const c=document.createElement('canvas');c.width=w;c.height=h;
+   c.getContext('2d').drawImage(img,0,0,w,h);
+   c.toBlob(b=>b?res(b):rej(new Error('не удалось сжать')),'image/jpeg',0.8);
+  };
+  img.onerror=()=>rej(new Error('это не изображение'));
+  rd.readAsDataURL(file);
+ });
+}
 function pick(kind){
  const inp=document.createElement('input');inp.type='file';inp.accept='image/*';
  inp.onchange=async e=>{
@@ -622,8 +713,9 @@ function pick(kind){
   const n={license:1,pts:2,car:3}[kind];
   const s=document.getElementById('s'+n);if(s)s.textContent='загрузка…';
   try{
+   const small=await shrink(f,1200);
    const path=`${me.id}/${kind}_${Date.now()}.jpg`;
-   const{error}=await db.storage.from('docs').upload(path,f,{upsert:true});
+   const{error}=await db.storage.from('docs').upload(path,small,{upsert:true,contentType:'image/jpeg'});
    if(error)throw error;
    const url=db.storage.from('docs').getPublicUrl(path).data.publicUrl;
    const col={license:'doc_license',pts:'doc_pts',car:'doc_car'}[kind];
@@ -814,8 +906,8 @@ function subMine(){
 async function offer(rid){
  const v=document.getElementById('p'+rid).value;
  if(!v)return T('Укажите цену');
- const{error}=await db.from('offers').insert({ride_id:rid,driver_id:me.id,driver_name:me.name,car:me.car,price:Number(v),eta_minutes:5});
- if(error)return T('Ошибка: '+error.message);
+ const{error}=await Q(db.from('offers').insert({ride_id:rid,driver_id:me.id,driver_name:me.name,car:me.car,price:Number(v),eta_minutes:5}),'Не удалось отправить цену');
+ if(error)return;
  const{data:nofr}=await db.from('offers').select('*').eq('ride_id',rid).eq('driver_id',me.id).eq('status','pending').limit(1);
  if(nofr&&nofr.length)myOffs.unshift(nofr[0]);
  reqs=reqs.filter(r=>r.id!==rid);drawReqs();drawMyOffs();T('Цена отправлена: '+v+' ₽');
@@ -832,12 +924,13 @@ async function dRide(m){
  dActive=r;subRide(r.id);
  const{data:p}=await db.from('users').select('*').eq('id',r.passenger_id).single();
  m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.status==='in_progress'?'Везёте пассажира':'Вас выбрали!'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p>
- <div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">⭐ ${p?.rating||5} · отмен как пассажир: ${p?.cancel_as_passenger||0}</div><div class="sub">${r.status==='in_progress'?'в машине':'ждёт вас'}</div>${p&&p.phone?'<div class="sub">📞 '+esc(p.phone)+'</div>':'<div class="sub" style="color:var(--dim)">телефон не указан</div>'}</div></div>
+ <div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">отмен как пассажир: ${p?.cancel_as_passenger||0}</div><div class="sub">${r.status==='in_progress'?'в машине':'ждёт вас'}</div>${p&&p.phone?'<div class="sub">📞 '+esc(p.phone)+'</div>':'<div class="sub" style="color:var(--dim)">телефон не указан</div>'}</div></div>
  ${p&&p.phone?`<a href="tel:${esc(p.phone)}" style="text-decoration:none"><button class="btn ghost" style="margin-top:14px">📞 Позвонить пассажиру</button></a>`:''}
  <button class="btn" onclick="openChat('${r.id}','driver')">Написать пассажиру</button>
- ${r.status==='confirmed'?`<button class="btn ghost" onclick="dStart()">Пассажир в машине</button>`:`<button class="btn ghost" onclick="dDone()">Завершить поездку</button>`}
+ ${r.status==='confirmed'?`${r.arrived?'<div class="note">Пассажир уведомлён, что вы на месте</div>':`<button class="btn ghost" onclick="dArrived()">Я на месте</button>`}<button class="btn ghost" onclick="dStart()">Пассажир в машине</button>`:`<button class="btn ghost" onclick="dDone()">Завершить поездку</button>`}
  <button class="btn dang" onclick="dCancel()">Отказаться от заказа</button></div>`;
 }
+async function dArrived(){await Q(db.from('rides').update({arrived:true}).eq('id',dActive.id),'Не удалось отметить');dActive.arrived=true;T('Пассажиру ушло уведомление');dGo('ride');}
 async function dStart(){await db.from('rides').update({status:'in_progress'}).eq('id',dActive.id);dActive.status='in_progress';T('Поехали');dGo('ride');}
 async function dDone(){
  const r=dActive;await db.from('rides').update({status:'completed'}).eq('id',r.id);dActive=null;T('Поездка завершена');
@@ -856,7 +949,7 @@ async function dCancelYes(){
 }
 async function myRev(m){
  m.innerHTML='<div class="head"><h2>Мои отзывы</h2></div><div class="empty">Загрузка…</div>';
- const{data}=await db.from('reviews').select('*').eq('target_id',me.id).order('created_at',{ascending:false}).limit(30);
+ const{data}=await db.from('reviews').select('*').eq('target_id',me.id).eq('visible',true).order('created_at',{ascending:false}).limit(30);
  const avg=data&&data.length?(data.reduce((s,r)=>s+r.rating,0)/data.length).toFixed(1):'—';
  m.innerHTML=`<div class="head"><h2>Мои отзывы</h2><span class="m">средняя ${avg}</span></div>${(data&&data.length)?data.map(r=>`<div class="rv"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13.5px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="disputeRev('${r.id}','${esc(r.from_name)}','${esc(r.comment)}')">оспорить</button></div>`).join(''):'<div class="empty"><b>Отзывов пока нет</b>Они появятся после первых поездок.</div>'}`;
 }
@@ -927,7 +1020,7 @@ async function aOver(m){
   db.from('rides').select('*',{count:'exact',head:true}).eq('status','completed'),
   db.from('users').select('id').eq('driver_status','pending'),
   db.from('complaints').select('*').eq('status','pending'),
-  db.from('reviews').select('*').order('created_at',{ascending:false}).limit(5),
+  db.from('reviews').select('*').eq('visible',true).order('created_at',{ascending:false}).limit(5),
   db.from('users').select('*',{count:'exact',head:true})
  ]);
  const avg=rv&&rv.length?(rv.reduce((s,r)=>s+r.rating,0)/rv.length).toFixed(1):'—';
