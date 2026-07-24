@@ -149,6 +149,51 @@ async function notifyLoop() {
       }
       await db.from('rides').update({ driver_notified: true }).eq('id', r.id);
     }
+
+    // сообщения чата -> второй стороне
+    const { data: msgs } = await db.from('messages').select('*').eq('notified', false);
+    for (const msg of msgs || []) {
+      const { data: ride } = await db.from('rides').select('passenger_id,driver_id').eq('id', msg.ride_id).maybeSingle();
+      if (ride) {
+        const other = msg.sender_id === ride.passenger_id ? ride.driver_id : ride.passenger_id;
+        if (other) {
+          const tid = await tgIdOf(other);
+          if (tid) await send(tid, `💬 <b>${msg.sender_name || 'Сообщение'}</b>\n${msg.text}`,
+            { reply_markup: { inline_keyboard: [[wa('Ответить', 'order')]] } });
+        }
+      }
+      await db.from('messages').update({ notified: true }).eq('id', msg.id);
+    }
+
+    // поездка завершена -> обоим
+    const { data: fin } = await db.from('rides').select('*').eq('status', 'completed').eq('done_notified', false);
+    for (const r of fin || []) {
+      const txt = `🏁 <b>Поездка завершена</b>\n${r.from_address} → ${r.to_address}${r.price ? `\nСумма: ${r.price} ₽` : ''}`;
+      for (const uid of [r.passenger_id, r.driver_id]) {
+        if (!uid) continue;
+        const tid = await tgIdOf(uid);
+        if (tid) await send(tid, txt);
+      }
+      await db.from('rides').update({ done_notified: true }).eq('id', r.id);
+    }
+
+    // смена закончилась -> итог водителю
+    const { data: sh } = await db.from('shifts').select('*').eq('notified', false).not('ended_at', 'is', null);
+    for (const s of sh || []) {
+      const tid = await tgIdOf(s.driver_id);
+      if (tid) {
+        const h = Math.floor((s.minutes || 0) / 60), mm = (s.minutes || 0) % 60;
+        const { data: rr } = await db.from('rides')
+          .select('price')
+          .eq('driver_id', s.driver_id).eq('status', 'completed')
+          .gte('created_at', s.started_at).lte('created_at', s.ended_at);
+        const done = (rr || []).length;
+        const earned = (rr || []).reduce((a, x) => a + (Number(x.price) || 0), 0);
+        const perHour = s.minutes > 0 ? Math.round(earned / (s.minutes / 60)) : 0;
+        await send(tid, `🏁 <b>Смена окончена</b>\nНа линии: <b>${h} ч ${mm} мин</b>\nПоездок: <b>${done}</b>\nЗаработано: <b>${earned} ₽</b>${done ? `\nВ среднем: ${Math.round(earned / done)} ₽ за поездку · ${perHour} ₽ в час` : ''}\n\nОтдыхайте, возвращайтесь когда будет удобно.`);
+      }
+      await db.from('shifts').update({ notified: true }).eq('id', s.id);
+    }
   } catch (e) { console.error('notify', e.message); }
   setTimeout(notifyLoop, 4000);
 }
