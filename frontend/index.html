@@ -5,19 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <title>Бомбилы</title>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-window.addEventListener('DOMContentLoaded',function(){
-  if(!window.supabase){
-    var s=document.createElement('script');
-    s.src="https://unpkg.com/@supabase/supabase-js@2";
-    s.onload=function(){if(window.__bootRetry)window.__bootRetry();};
-    s.onerror=function(){var b=document.getElementById('boot');if(b)b.innerHTML='<div style="color:#e2585a;padding:24px;line-height:1.6"><b>Не загрузилась библиотека</b><br><br>Похоже, соединение блокирует загрузку. Если включён VPN — попробуйте выключить его и открыть заново.</div>';};
-    document.head.appendChild(s);
-  }
-});
-</script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{--bg:#0c1210;--elev:#111a16;--surf:#16211c;--line:#26352e;--line2:#35473d;--ink:#e8ede9;--dim:#7f8d86;--g:#33d17e;--g2:#28b46a;--gs:#12291f;--am:#f2a73b;--red:#e2585a;--sh:0 2px 12px rgba(0,0,0,.32);}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
@@ -283,9 +272,7 @@ const SUPABASE_URL="https://wygmuydnodwpbtsdfjuq.supabase.co";
 const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5Z211eWRub2R3cGJ0c2RmanVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1ODA5MTAsImV4cCI6MjEwMDE1NjkxMH0.hrU9TwCQzplTLkShaF8djP9PqANbBrTCJuvlNk84dGw";
 const OWNER_ID=8672930773;
 
-let db=null;
-function initDb(){ if(window.supabase){ db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY); return true;} return false; }
-initDb();
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const tg=window.Telegram?.WebApp;try{tg?.ready();tg?.expand();}catch(e){}
 const tu=tg?.initDataUnsafe?.user;
 const START=new URLSearchParams(location.search).get('s')||tg?.initDataUnsafe?.start_param||'';
@@ -350,10 +337,8 @@ async function checkSchema(){
  return [...missing];
 }
 function bstep(s){const e=document.getElementById('bootcap');if(e)e.textContent=s;}
-window.__bootRetry=function(){ if(!db&&!initDb())return; boot(); };
 async function boot(){
  try{
-  if(!db){ if(!initDb()){ bstep('загрузка библиотеки…'); return; } }
   bstep('связь с базой…');
   let{data}=await db.from('users').select('*').eq('telegram_id',tgId).maybeSingle();
   bstep('профиль загружен…');
@@ -1230,4 +1215,13 @@ async function aPpl(m){
 }
 async function userCard(id){
  const{data:u}=await db.from('users').select('*').eq('id',id).single();
- const{data:rv}=await db.from('reviews').select('*').eq('target_id',id).order('created_at',{a
+ const{data:rv}=await db.from('reviews').select('*').eq('target_id',id).order('created_at',{ascending:false}).limit(10);
+ const{data:rd}=await db.from('rides').select('id,status').or(`passenger_id.eq.${id},driver_id.eq.${id}`);
+ const own=me.staff_role==='owner';
+ const canRole=(own&&u.staff_role!=='owner')||(me.staff_role==='admin'&&!['owner','admin'].includes(u.staff_role));
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto">
+ <h3>${esc(u.name)}</h3><div class="s">ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')} · поездок ${(rd||[]).length}</div>
+ <div class="fr"><label>Имя</label><input id="e_name" value="${esc(u.name)}"></div>
+ <div class="fr"><label>Телефон</label><input id="e_phone" value="${esc(u.phone)}"></div>
+ <div class="fr"><label>Возраст</label><input id="e_age" value="$
