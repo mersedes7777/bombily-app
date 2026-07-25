@@ -432,7 +432,23 @@ async function restoreD(){
  const{data:sh}=await db.from('shifts').select('*').eq('driver_id',me.id).is('ended_at',null).order('started_at',{ascending:false}).limit(1);
  curShift=(sh&&sh.length)?sh[0]:null;
 }
+let ridePoll=null;
+function startRidePoll(){
+ if(ridePoll)clearInterval(ridePoll);
+ ridePoll=setInterval(async()=>{
+  if(role!=='passenger'||!active){clearInterval(ridePoll);ridePoll=null;return;}
+  try{
+   const{data:r}=await db.from('rides').select('*').eq('id',active.id).single();
+   if(!r)return;
+   if(r.status==='completed'){ const done=active; active=null; clearInterval(ridePoll);ridePoll=null; if(rideCh){db.removeChannel(rideCh);rideCh=null;} passengerDone(done); return; }
+   if(r.status==='confirmed'&&active.status!=='confirmed'){active=r;if(pTab==='ride')openRide();else drawBar();}
+   if(r.arrived&&!active.arrived){active.arrived=true;if(pTab==='ride')openRide();else drawBar();T('Водитель на месте');}
+   if((r.status==='created'&&!r.driver_id)&&active.status==='confirmed'){active=r;T('Водитель отменил — ищем снова');subOffers(r.id);if(pTab==='ride')openRide();else drawBar();}
+  }catch(e){}
+ },5000);
+}
 function subRide(id){
+ startRidePoll();
  if(rideCh)db.removeChannel(rideCh);
  rideCh=db.channel('r'+id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'rides',filter:'id=eq.'+id},p=>{
   const r=p.new;
@@ -1220,14 +1236,4 @@ function roleSheet(id,name,cur){
  m.innerHTML=`<div class="sheet"><h3>Права · ${name}</h3><div class="s">Выберите уровень доступа и подтвердите</div><div id="ol"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="applyRole('${id}')">Подтвердить</button></div></div>`;
  document.getElementById('device').appendChild(m);
  const draw=()=>{document.getElementById('ol').innerHTML=opts.map(o=>`<div class="opt ${o[0]===sel?'sel':''}" onclick="window._sr('${o[0]}')"><div class="rd"></div><div class="tx">${o[1]}<small>${o[2]}</small></div></div>`).join('');};
- window._sr=v=>{sel=v;draw();};window._srGet=()=>sel;draw();
-}
-async function applyRole(id){
- const v=window._srGet();
- await db.from('users').update({staff_role:v}).eq('id',id);
- closeSh();T(v==='none'?'Права сняты':'Назначен: '+(v==='admin'?'админ':'модератор'));drawA();
-}
-boot();
-</script>
-</body>
-</html>
+ window.
