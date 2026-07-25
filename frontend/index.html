@@ -339,9 +339,14 @@ async function checkSchema(){
 
  return [...missing];
 }
+function withTimeout(promise,ms,label){
+ return Promise.race([promise,new Promise((_,rej)=>setTimeout(()=>rej(new Error('Таймаут: '+(label||'база не ответила за '+ms+'мс'))),ms))]);
+}
 async function boot(){
  try{
-  let{data}=await db.from('users').select('*').eq('telegram_id',tgId).maybeSingle();
+  document.getElementById('boot').innerHTML='<div style="color:#7f8d86">Подключение к базе…</div>';
+  let{data,error:qerr}=await withTimeout(db.from('users').select('*').eq('telegram_id',tgId).maybeSingle(),10000,'запрос пользователя');
+  if(qerr)throw qerr;
   if(!data){const r=await db.from('users').insert({telegram_id:tgId,name:tgName}).select().single();if(r.error)throw r.error;data=r.data;}
   me=data;
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){await db.from('users').update({staff_role:'owner'}).eq('id',me.id);me.staff_role='owner';}
@@ -1242,7 +1247,4 @@ function roleSheet(id,name,cur){
  const opts=me.staff_role==='owner'
    ? [['none','Без прав','обычный пользователь'],['moderator','Модератор','жалобы и заявки водителей'],['admin','Админ','всё + назначение модераторов']]
    : [['none','Без прав','обычный пользователь'],['moderator','Модератор','жалобы и заявки водителей']];
- const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>Права · ${name}</h3><div class="s">Выберите уровень доступа и подтвердите</div><div id="ol"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="applyRole('${id}')">Подтвердить</button></div></div>`;
- document.getElementById('device').appendChild(m);
- const draw=()
+ const m=document.createElement('div');m.className='mask';m.id
