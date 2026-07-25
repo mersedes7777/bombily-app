@@ -23,27 +23,35 @@ const send = (chat_id, text, extra = {}) =>
   tg('sendMessage', { chat_id, text, parse_mode: 'HTML', ...extra });
 
 /* ---------- кнопки ---------- */
-const wa = (text, s) => ({ text, web_app: { url: `${APP_URL}?s=${s}` } });
-const mainKb = {
-  inline_keyboard: [
-    [wa('🚕 Заказать поездку', 'order')],
-    [wa('🚗 Стать водителем', 'driver')],
-    [wa('👤 Личный кабинет', 'profile')],
-    [{ text: '💬 Связь с админом', callback_data: 'support' }]
-  ]
-};
-
-// постоянная клавиатура внизу чата — видна всегда, без /start
-const kb = {
-  keyboard: [
-    [{ text: '🚕 Заказать поездку', web_app: { url: `${APP_URL}?s=order` } }],
-    [{ text: '🚗 Стать водителем', web_app: { url: `${APP_URL}?s=driver` } },
-     { text: '👤 Кабинет', web_app: { url: `${APP_URL}?s=profile` } }],
-    [{ text: '💬 Связь с админом' }]
-  ],
-  resize_keyboard: true,
-  is_persistent: true
-};
+// вшиваем telegram id и имя пользователя в ссылку — чтобы апка всегда точно знала, кто открыл
+function appUrl(s, u) {
+  const uid = u ? u.id : '';
+  const nm = u && u.first_name ? encodeURIComponent(u.first_name) : '';
+  return `${APP_URL}?s=${s}&uid=${uid}&nm=${nm}`;
+}
+const wa = (text, s, u) => ({ text, web_app: { url: appUrl(s, u) } });
+function mainKbFor(u) {
+  return {
+    inline_keyboard: [
+      [wa('🚕 Заказать поездку', 'order', u)],
+      [wa('🚗 Стать водителем', 'driver', u)],
+      [wa('👤 Личный кабинет', 'profile', u)],
+      [{ text: '💬 Связь с админом', callback_data: 'support' }]
+    ]
+  };
+}
+function kbFor(u) {
+  return {
+    keyboard: [
+      [{ text: '🚕 Заказать поездку', web_app: { url: appUrl('order', u) } }],
+      [{ text: '🚗 Стать водителем', web_app: { url: appUrl('driver', u) } },
+       { text: '👤 Кабинет', web_app: { url: appUrl('profile', u) } }],
+      [{ text: '💬 Связь с админом' }]
+    ],
+    resize_keyboard: true,
+    is_persistent: true
+  };
+}
 
 async function setupBot() {
   await tg('setMyCommands', { commands: [
@@ -87,12 +95,12 @@ async function onUpdate(u) {
 
   if (text.startsWith('/start')) {
     waitingSupport.delete(chat);
-    await send(chat, `<b>Бомбилы</b>\nСервис для поиска машины в городе.\nКнопки внизу всегда под рукой — писать команды не нужно.`, { reply_markup: kb });
-    return send(chat, 'Что нужно сделать?', { reply_markup: mainKb });
+    await send(chat, `<b>Бомбилы</b>\nСервис для поиска машины в городе.\nКнопки внизу всегда под рукой — писать команды не нужно.`, { reply_markup: kbFor(m.from) });
+    return send(chat, 'Что нужно сделать?', { reply_markup: mainKbFor(m.from) });
   }
   if (text.startsWith('/order') || text.startsWith('/driver') || text.startsWith('/profile')) {
     const s = text.slice(1).split(/[\s@]/)[0];
-    return send(chat, 'Открываю приложение:', { reply_markup: { inline_keyboard: [[wa('Открыть', s)]] } });
+    return send(chat, 'Открываю приложение:', { reply_markup: { inline_keyboard: [[wa('Открыть', s, m.from)]] } });
   }
   if (text === '💬 Связь с админом' || text.startsWith('/support')) {
     waitingSupport.add(chat);
@@ -108,8 +116,8 @@ async function onUpdate(u) {
     return send(chat, '✅ Сообщение отправлено администратору. Ответ придёт сюда.');
   }
 
-  await send(chat, 'Выберите действие кнопками ниже 👇', { reply_markup: kb });
-  return send(chat, 'Или откройте приложение:', { reply_markup: mainKb });
+  await send(chat, 'Выберите действие кнопками ниже 👇', { reply_markup: kbFor(m.from) });
+  return send(chat, 'Или откройте приложение:', { reply_markup: mainKbFor(m.from) });
 }
 
 /* ---------- long polling ---------- */

@@ -267,25 +267,36 @@ const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{
 const tg=window.Telegram?.WebApp;try{tg?.ready();tg?.expand();}catch(e){}
 let START='',tu=null,tgId=null,tgName='Гость';
 try{
- START=new URLSearchParams(location.search).get('s')||(tg&&tg.initDataUnsafe&&tg.initDataUnsafe.start_param)||'';
+ const qs=new URLSearchParams(location.search);
+ START=qs.get('s')||(tg&&tg.initDataUnsafe&&tg.initDataUnsafe.start_param)||'';
+ // 1) приоритет — id из ссылки кнопки бота (?uid=...)
+ const urlUid=qs.get('uid');
+ const urlNm=qs.get('nm');
+ // 2) данные пользователя из Telegram
  tu=(tg&&tg.initDataUnsafe&&tg.initDataUnsafe.user)||null;
  if(!tu&&tg&&tg.initData){
   try{const p=new URLSearchParams(tg.initData);const uStr=p.get('user');if(uStr)tu=JSON.parse(uStr);}catch(e){}
  }
- const inTelegram=!!(tg&&tg.initData&&tg.initData.length>0);
- tgId=(tu&&tu.id)||null;
- if(!tgId){
-  if(inTelegram){
-   let h=0;const base=(tg.initData||'').slice(0,64);
-   for(let i=0;i<base.length;i++){h=(h*31+base.charCodeAt(i))>>>0;}
-   tgId=h||1;
-  }else{
+ if(urlUid&&/^[0-9]+$/.test(urlUid)){
+  tgId=Number(urlUid);
+  // запомним для будущих открытий без uid (например через кнопку меню)
+  try{localStorage.setItem('bmb_tgid',String(tgId));}catch(e){}
+  if(urlNm)try{tgName=decodeURIComponent(urlNm);}catch(e){}
+ } else if(tu&&tu.id){
+  tgId=tu.id;
+  try{localStorage.setItem('bmb_tgid',String(tgId));}catch(e){}
+ } else {
+  // ни ссылки, ни telegram-данных — берём сохранённый ранее настоящий id
+  let saved=null;try{saved=localStorage.getItem('bmb_tgid');}catch(e){}
+  if(saved){tgId=Number(saved);}
+  else{
+   // совсем нет данных (браузер/тест) — стабильный локальный id
    let s=null;try{s=localStorage.getItem('bmb_id');}catch(e){}
    if(!s){s=Math.floor(Math.random()*1e9);try{localStorage.setItem('bmb_id',s);}catch(e){}}
    tgId=Number(s);
   }
  }
- tgName=(tu&&tu.first_name)||('Гость'+String(tgId).slice(-3));
+ if(!tgName||tgName==='Гость')tgName=(tu&&tu.first_name)||('Гость'+String(tgId).slice(-3));
 }catch(e){
  tgId=Math.floor(Math.random()*1e9);tgName='Гость';
 }
@@ -448,7 +459,7 @@ async function count(){const{count:c}=await db.from('users').select('*',{count:'
 
 async function restore(){
  const{data}=await db.from('rides').select('*').eq('passenger_id',me.id).in('status',['created','confirmed','in_progress']).order('created_at',{ascending:false}).limit(1);
- if(data&&data.length){active=data[0];if(active.status==='created')subOffers(active.id);if(active.status==='confirmed'||active.status==='in_progress')subRide(active.id);}
+ if(data&&data.length){active=data[0];if(active.status==='created')subOffers(active.id);if(active.status==='confirmed'||active.status==='in_progress'){subRide(active.id);watchCompletion();}}
  // недавно завершённая поездка, которую пассажир ещё не оценил
  const dayAgo=new Date(Date.now()-24*3600*1000).toISOString();
  const{data:fin}=await db.from('rides').select('*').eq('passenger_id',me.id).eq('status','completed').gte('created_at',dayAgo).order('created_at',{ascending:false}).limit(1);
@@ -654,7 +665,7 @@ function startCd(created){
 }
 async function accept(oid,did,price){
  await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null}).eq('id',active.id);
- active.status='confirmed';active.driver_id=did;subRide(active.id);
+ active.status='confirmed';active.driver_id=did;subRide(active.id);watchCompletion();
  await db.from('offers').update({status:'selected'}).eq('id',oid);
  await db.from('offers').update({status:'declined'}).eq('ride_id',active.id).neq('id',oid);
  if(offCh){db.removeChannel(offCh);offCh=null;}
@@ -670,6 +681,26 @@ async function doneRide(did,dn){
  await db.from('rides').update({status:'completed'}).eq('id',active.id);
  const rid=active.id;active=null;
  rateSheet(rid,did,dn);
+}
+let doneWatch=null;
+function watchCompletion(){
+ if(doneWatch)clearInterval(doneWatch);
+ doneWatch=setInterval(async()=>{
+  if(role!=='passenger'||!active||!active.id){clearInterval(doneWatch);doneWatch=null;return;}
+  if(!['confirmed','in_progress'].includes(active.status)){return;}
+  try{
+   const{data:r}=await db.from('rides').select('*').eq('id',active.id).maybeSingle();
+   if(!r)return;
+   if(r.status==='completed'){
+    const done=active;active=null;clearInterval(doneWatch);doneWatch=null;
+    if(rideCh){db.removeChannel(rideCh);rideCh=null;}
+    const{data:rev}=await db.from('reviews').select('id').eq('ride_id',done.id).eq('from_id',me.id).limit(1);
+    if(!rev||!rev.length)passengerDone(done);else{pTab='home';drawP();}
+   } else if(r.arrived&&!active.arrived){
+    active.arrived=true;if(pTab==='ride')openRide();else{drawBar();T('Водитель на месте');}
+   }
+  }catch(e){}
+ },8000);
 }
 async function passengerDone(r){
  let d=null;
