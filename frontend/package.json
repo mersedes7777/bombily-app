@@ -1,10 +1,19 @@
 {
   "name": "bombily-frontend",
   "version": "1.0.0",
+  "type": "module",
   "scripts": {
-    "start": "npx serve . -l ${PORT:-3000} -s"
+    "dev": "vite",
+    "build": "vite build",
+    "start": "vite preview --host 0.0.0.0 --port ${PORT:-3000}"
   },
   "dependencies": {
-    "serve": "^14.2.3"
+    "@supabase/supabase-js": "^2.45.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.0"
   }
 }

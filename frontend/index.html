@@ -1247,4 +1247,29 @@ function roleSheet(id,name,cur){
  const opts=me.staff_role==='owner'
    ? [['none','Без прав','обычный пользователь'],['moderator','Модератор','жалобы и заявки водителей'],['admin','Админ','всё + назначение модераторов']]
    : [['none','Без прав','обычный пользователь'],['moderator','Модератор','жалобы и заявки водителей']];
- const m=document.createElement('div');m.className='mask';m.id
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Права · ${name}</h3><div class="s">Выберите уровень доступа и подтвердите</div><div id="ol"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="applyRole('${id}')">Подтвердить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ const draw=()=>{document.getElementById('ol').innerHTML=opts.map(o=>`<div class="opt ${o[0]===sel?'sel':''}" onclick="window._sr('${o[0]}')"><div class="rd"></div><div class="tx">${o[1]}<small>${o[2]}</small></div></div>`).join('');};
+ window._sr=v=>{sel=v;draw();};window._srGet=()=>sel;draw();
+}
+async function applyRole(id){
+ const v=window._srGet();
+ await db.from('users').update({staff_role:v}).eq('id',id);
+ closeSh();T(v==='none'?'Права сняты':'Назначен: '+(v==='admin'?'админ':'модератор'));drawA();
+}
+document.addEventListener('visibilitychange',async()=>{
+ if(document.visibilityState!=='visible'||!me||role!=='passenger')return;
+ try{
+  const dayAgo=new Date(Date.now()-24*3600*1000).toISOString();
+  const{data:fin}=await db.from('rides').select('*').eq('passenger_id',me.id).eq('status','completed').gte('created_at',dayAgo).order('created_at',{ascending:false}).limit(1);
+  if(fin&&fin.length&&fin[0].driver_id&&!document.getElementById('sh')){
+   const{data:rev}=await db.from('reviews').select('id').eq('ride_id',fin[0].id).eq('from_id',me.id).limit(1);
+   if(!rev||!rev.length){active=null;passengerDone(fin[0]);}
+  }
+ }catch(e){}
+});
+boot();
+</script>
+</body>
+</html>
