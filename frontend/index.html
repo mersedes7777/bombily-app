@@ -619,6 +619,7 @@ function startCd(created){
 }
 async function accept(oid,did,price){
  await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null}).eq('id',active.id);
+ active.status='confirmed';active.driver_id=did;subRide(active.id);
  await db.from('offers').update({status:'selected'}).eq('id',oid);
  await db.from('offers').update({status:'declined'}).eq('ride_id',active.id).neq('id',oid);
  if(offCh){db.removeChannel(offCh);offCh=null;}
