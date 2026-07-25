@@ -259,7 +259,11 @@ if(!window.supabase){
  document.getElementById('boot').innerHTML='<div style="color:#e2585a;padding:20px;line-height:1.6"><b>Не загрузилась библиотека</b><br><br>Обновите страницу. Если не помогает и включён VPN — попробуйте выключить его.</div>';
  throw new Error('supabase not loaded');
 }
-const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{
+ auth:{persistSession:false,autoRefreshToken:false},
+ global:{headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY}},
+ realtime:{params:{eventsPerSecond:2}}
+});
 const tg=window.Telegram?.WebApp;try{tg?.ready();tg?.expand();}catch(e){}
 let START='',tu=null,tgId=null,tgName='Гость';
 try{
