@@ -264,6 +264,7 @@ const tgName=tu?.first_name||('Гость'+String(tgId).slice(-3));
 
 let me=null,role='passenger',pTab='home',dTab='inbox',aTab='over';
 let curShift=null,shiftTick=null;
+let pendingDone=null;
 let active=null,dActive=null,offCh=null,inCh=null,myCh=null,rideCh=null,reqs=[],myOffs=[],targetDrv=null;
 
 function showErr(msg){const e=document.getElementById('err');document.getElementById('errt').textContent=msg;e.style.display='block';}
@@ -338,6 +339,7 @@ async function boot(){
   if(last==='driver'&&!isDrv())last='passenger';
   if(last==='admin'&&!isStaff())last='passenger';
   setRole(last);
+  if(pendingDone){const pd=pendingDone;pendingDone=null;setTimeout(()=>passengerDone(pd),400);}
   if(START==='order'){targetDrv=null;pTab=active?'ride':'order';drawP();}
   if(START==='profile'){pTab='profile';drawP();}
   if(START==='driver'){ if(isDrv()){setRole('driver');} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
@@ -412,8 +414,15 @@ setInterval(async()=>{
 async function count(){const{count:c}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city||'');const e=document.getElementById('onl');if(e)e.textContent=c||0;}
 
 async function restore(){
- const{data}=await db.from('rides').select('*').eq('passenger_id',me.id).in('status',['created','confirmed']).order('created_at',{ascending:false}).limit(1);
- if(data&&data.length){active=data[0];if(active.status==='created')subOffers(active.id);}
+ const{data}=await db.from('rides').select('*').eq('passenger_id',me.id).in('status',['created','confirmed','in_progress']).order('created_at',{ascending:false}).limit(1);
+ if(data&&data.length){active=data[0];if(active.status==='created')subOffers(active.id);if(active.status==='confirmed'||active.status==='in_progress')subRide(active.id);}
+ // недавно завершённая поездка, которую пассажир ещё не оценил
+ const dayAgo=new Date(Date.now()-24*3600*1000).toISOString();
+ const{data:fin}=await db.from('rides').select('*').eq('passenger_id',me.id).eq('status','completed').gte('created_at',dayAgo).order('created_at',{ascending:false}).limit(1);
+ if(fin&&fin.length&&fin[0].driver_id){
+   const{data:rev}=await db.from('reviews').select('id').eq('ride_id',fin[0].id).eq('from_id',me.id).limit(1);
+   if(!rev||!rev.length){pendingDone=fin[0];}
+ }
 }
 async function restoreD(){
  const{data}=await db.from('rides').select('*').eq('driver_id',me.id).in('status',['confirmed','in_progress']).order('created_at',{ascending:false}).limit(1);
@@ -428,10 +437,11 @@ function subRide(id){
  rideCh=db.channel('r'+id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'rides',filter:'id=eq.'+id},p=>{
   const r=p.new;
   if(role==='passenger'&&active&&active.id===r.id){
+    if(r.status==='completed'){ const done=active; active=null; if(rideCh){db.removeChannel(rideCh);rideCh=null;} passengerDone(done); return; }
     active=r;
     if(r.status==='created'&&!r.driver_id){T('Водитель отменил — ищем снова');subOffers(r.id);}
     if(pTab==='ride')openRide();
- if(pTab==='chat')openChat(active?.id,'passenger');else drawBar();
+    else if(pTab==='chat')openChat(active?.id,'passenger');else drawBar();
   }
   if(role==='driver'&&dActive&&dActive.id===r.id){
     if(['completed','cancelled_by_passenger_free'].includes(r.status)){dActive=null;T('Пассажир завершил заказ');drawD();}
@@ -624,6 +634,28 @@ async function doneRide(did,dn){
  await db.from('rides').update({status:'completed'}).eq('id',active.id);
  const rid=active.id;active=null;
  rateSheet(rid,did,dn);
+}
+async function passengerDone(r){
+ let d=null;
+ if(r.driver_id){const q=await db.from('users').select('name,car,plate').eq('id',r.driver_id).maybeSingle();d=q.data;}
+ pTab='home';drawP();
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Поездка завершена</h3><div class="s">${esc(r.from_address)} → ${esc(r.to_address)}</div>
+ <div class="dbox" style="margin-top:0"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)||'Водитель'}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div></div>${r.price?`<div class="price">${r.price} ₽</div>`:''}</div>
+ <div style="margin-top:14px;font-size:13px;color:var(--dim);text-align:center">Оцените поездку</div>
+ <div class="stars" id="st"></div>
+ <textarea class="ta" id="rc" placeholder="Комментарий (не обязательно)"></textarea>
+ <div class="sa"><button class="c" onclick="closeSh()">Пропустить</button><button class="o" onclick="finishPRate('${r.id}','${r.driver_id}','${esc(d?.name)||'Водитель'}')">Отправить оценку</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ let val=5;const draw=()=>{document.getElementById('st').innerHTML=[1,2,3,4,5].map(i=>`<span class="${i<=val?'on':''}" onclick="window._rv(${i})">★</span>`).join('');};
+ window._rv=v=>{val=v;draw();};window._rvGet=()=>val;draw();
+}
+async function finishPRate(rid,did,dn){
+ const v=window._rvGet();
+ await db.from('reviews').insert({ride_id:rid,from_id:me.id,from_name:me.name,target_id:did,target_name:dn,rating:v,kind:'driver',comment:document.getElementById('rc').value.trim()});
+ const{data:all}=await db.from('reviews').select('rating').eq('target_id',did).eq('visible',true);
+ if(all&&all.length){const avg=(all.reduce((s,r)=>s+r.rating,0)/all.length).toFixed(1);await db.from('users').update({rating:avg}).eq('id',did);}
+ closeSh();T('Спасибо за оценку!');pGo('home');
 }
 function rateSheet(rid,did,dn,kind,after){
  kind=kind||'driver';
