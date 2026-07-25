@@ -256,10 +256,32 @@ const OWNER_ID=8672930773;
 
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const tg=window.Telegram?.WebApp;try{tg?.ready();tg?.expand();}catch(e){}
-const tu=tg?.initDataUnsafe?.user;
 const START=new URLSearchParams(location.search).get('s')||tg?.initDataUnsafe?.start_param||'';
-let tgId=tu?.id;
-if(!tgId){let s=localStorage.getItem('bmb_id');if(!s){s=Math.floor(Math.random()*1e9);localStorage.setItem('bmb_id',s);}tgId=Number(s);}
+// надёжно определяем пользователя Telegram
+let tu=tg?.initDataUnsafe?.user||null;
+// если user не пришёл в initDataUnsafe, пробуем разобрать initData вручную
+if(!tu&&tg?.initData){
+ try{
+  const p=new URLSearchParams(tg.initData);
+  const uStr=p.get('user');
+  if(uStr)tu=JSON.parse(uStr);
+ }catch(e){}
+}
+const inTelegram=!!(tg&&tg.initData&&tg.initData.length>0);
+let tgId=tu?.id||null;
+if(!tgId){
+ if(inTelegram){
+  // внутри Telegram, но ID не отдался — привяжемся к стабильному значению из initData, чтобы не плодить анкеты
+  let h=0; const base=(tg.initData||'').slice(0,64);
+  for(let i=0;i<base.length;i++){h=(h*31+base.charCodeAt(i))>>>0;}
+  tgId = h || 1;
+ } else {
+  // обычный браузер (тест) — стабильный localStorage id
+  let s=localStorage.getItem('bmb_id');
+  if(!s){s=Math.floor(Math.random()*1e9);localStorage.setItem('bmb_id',s);}
+  tgId=Number(s);
+ }
+}
 const tgName=tu?.first_name||('Гость'+String(tgId).slice(-3));
 
 let me=null,role='passenger',pTab='home',dTab='inbox',aTab='over';
@@ -591,7 +613,9 @@ async function openRide(){
  document.getElementById('nav').innerHTML=`<button class="nb active" onclick="openRide()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>Заказ</button><button class="nb" onclick="pGo('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Главная</button>`;
  document.getElementById('abar').innerHTML='';
  const{data:r}=await db.from('rides').select('*').eq('id',active.id).single();
- if(!r||['completed','cancelled_by_passenger_free'].includes(r.status)){active=null;pGo('home');return;}
+ if(!r){active=null;pGo('home');return;}
+ if(r.status==='cancelled_by_passenger_free'){active=null;pGo('home');return;}
+ if(r.status==='completed'){const done=active||r;active=null;const{data:rev}=await db.from('reviews').select('id').eq('ride_id',r.id).eq('from_id',me.id).limit(1);if(!rev||!rev.length){passengerDone(done);}else{pGo('home');}return;}
  if(r.status==='in_progress')r.status='confirmed';
  active=r;subRide(r.id);
  if(r.status==='confirmed'){
@@ -1220,14 +1244,4 @@ function roleSheet(id,name,cur){
  m.innerHTML=`<div class="sheet"><h3>Права · ${name}</h3><div class="s">Выберите уровень доступа и подтвердите</div><div id="ol"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="applyRole('${id}')">Подтвердить</button></div></div>`;
  document.getElementById('device').appendChild(m);
  const draw=()=>{document.getElementById('ol').innerHTML=opts.map(o=>`<div class="opt ${o[0]===sel?'sel':''}" onclick="window._sr('${o[0]}')"><div class="rd"></div><div class="tx">${o[1]}<small>${o[2]}</small></div></div>`).join('');};
- window._sr=v=>{sel=v;draw();};window._srGet=()=>sel;draw();
-}
-async function applyRole(id){
- const v=window._srGet();
- await db.from('users').update({staff_role:v}).eq('id',id);
- closeSh();T(v==='none'?'Права сняты':'Назначен: '+(v==='admin'?'админ':'модератор'));drawA();
-}
-boot();
-</script>
-</body>
-</html>
+ window._sr=v=>{sel
