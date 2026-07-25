@@ -252,7 +252,7 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 <script>
 window.onerror=function(msg){var b=document.getElementById('boot');if(b){b.style.display='flex';b.innerHTML='<div style="color:#e2585a;padding:20px;line-height:1.6">Ошибка запуска:<br><br>'+msg+'</div>';}};
 const SUPABASE_URL="https://wygmuydnodwpbtsdfjuq.supabase.co";
-const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5Z211eWRub2R3cGJ0c2RmanVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1ODA5MTAsImV4cCI6MjEwMDE1NjkxMH0.hrU9TwCQzplTLkShaF8djP9PqANbBrTCJuvlNk84dGw";
+const SUPABASE_ANON_KEY="sb_publishable_BYSmJx0oJGxvoomZrOPTJQ_mxVHZMT1";
 const OWNER_ID=8672930773;
 
 if(!window.supabase){
@@ -1243,4 +1243,6 @@ function roleSheet(id,name,cur){
    ? [['none','Без прав','обычный пользователь'],['moderator','Модератор','жалобы и заявки водителей'],['admin','Админ','всё + назначение модераторов']]
    : [['none','Без прав','обычный пользователь'],['moderator','Модератор','жалобы и заявки водителей']];
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>Права · ${name}</h3><div class="s">Выберите уровень доступа и подтвердите</div><div id="ol"></div><div class="sa"><button class="c" onclick="closeSh()">
+ m.innerHTML=`<div class="sheet"><h3>Права · ${name}</h3><div class="s">Выберите уровень доступа и подтвердите</div><div id="ol"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="applyRole('${id}')">Подтвердить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ const draw=()
