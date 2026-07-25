@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const TOKEN   = process.env.BOT_TOKEN;
 const APP_URL = process.env.MINI_APP_URL;
-const OWNER   = Number(process.env.OWNER_ID || 8672930773);
+const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
