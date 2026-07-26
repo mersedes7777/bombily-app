@@ -784,10 +784,9 @@ async function passengerDone(r){
 }
 async function finishPRate(rid,did,dn){
  const v=window._rvGet();
- await db.from('reviews').insert({ride_id:rid,from_id:me.id,from_name:me.name,target_id:did,target_name:dn,rating:v,kind:'driver',comment:document.getElementById('rc').value.trim()});
- const{data:all}=await db.from('reviews').select('rating').eq('target_id',did).eq('visible',true);
- if(all&&all.length){const avg=(all.reduce((s,r)=>s+r.rating,0)/all.length).toFixed(1);await db.from('users').update({rating:avg}).eq('id',did);}
- closeSh();T('Спасибо за оценку!');pGo('home');
+ const r=await api('/api/review',{ride_id:rid,target_id:did,target_name:dn,rating:v,kind:'driver',comment:document.getElementById('rc').value.trim()});
+ if(r.error&&r.error!=='already')T('Не удалось отправить оценку');
+ closeSh();if(!r.error)T('Спасибо за оценку!');pGo('home');
 }
 function rateSheet(rid,did,dn,kind,after){
  kind=kind||'driver';
@@ -801,10 +800,9 @@ function rateSheet(rid,did,dn,kind,after){
 }
 async function sendRate(rid,did,dn,kind){
  const v=window._rvGet();
- await db.from('reviews').insert({ride_id:rid,from_id:me.id,from_name:me.name,target_id:did,target_name:dn,rating:v,kind:kind||'driver',comment:document.getElementById('rc').value.trim()});
- const{data:all}=await db.from('reviews').select('rating').eq('target_id',did).eq('visible',true);
- if(all&&all.length){const avg=(all.reduce((s,r)=>s+r.rating,0)/all.length).toFixed(1);await db.from('users').update({rating:avg}).eq('id',did);}
- closeSh();T('Спасибо за оценку!');
+ const r=await api('/api/review',{ride_id:rid,target_id:did,target_name:dn,rating:v,kind:kind||'driver',comment:document.getElementById('rc').value.trim()});
+ if(r.error&&r.error!=='already')T('Не удалось отправить оценку');
+ closeSh();if(!r.error)T('Спасибо за оценку!');
  if(kind==='driver')pGo('home');else dGo('inbox');
 }
 function subSheet(){
@@ -871,7 +869,7 @@ function complain(rid,did,dn){
  window._cr=r=>{reason=r;draw();};window._crGet=()=>reason;draw();
 }
 async function sendComplain(rid,did,dn){
- await db.from('complaints').insert({ride_id:rid,from_id:me.id,from_name:me.name,target_id:did,target_name:dn,reason:window._crGet(),comment:document.getElementById('cc').value.trim()});
+ await api('/api/complaint',{target_id:did,target_name:dn,reason:window._crGet(),comment:document.getElementById('cc').value.trim(),kind:'user'});
  closeSh();T('Жалоба отправлена');
 }
 
@@ -906,7 +904,7 @@ async function openRideFrom(id){
  openRide();
 }
 
-async function markRevSeen(){if(unreadRev){try{await db.from('reviews').update({seen_by_target:true}).eq('target_id',me.id).eq('seen_by_target',false);}catch(e){}unreadRev=0;}}
+async function markRevSeen(){unreadRev=0;}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
  return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">отмен как пассажир: ${me.cancel_as_passenger||0}${isDrv()?' · как водитель: '+(me.cancel_as_driver||0):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 900 000-00-00"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div><div class="mi" onclick="T('Поддержка: напишите в бот, кнопка «Связь с админом»')"><span>Поддержка</span><span class="c">›</span></div></div>`;
@@ -921,11 +919,11 @@ function disputeRev(rid,about,text){
  window._dr=r=>{reason=r;draw();};window._drGet=()=>reason;draw();
 }
 async function sendDispute(rid){
- await db.from('complaints').insert({from_id:me.id,from_name:me.name,target_id:me.id,target_name:me.name,reason:'Спор по отзыву: '+window._drGet(),comment:document.getElementById('dc').value.trim(),review_id:rid,kind:'review'});
+ await api('/api/complaint',{reason:'Спор по отзыву: '+window._drGet(),comment:document.getElementById('dc').value.trim(),review_id:rid,kind:'review'});
  closeSh();T('Жалоба на отзыв отправлена модерации');
 }
 async function myReviews(){
- if(unreadRev){await db.from('reviews').update({seen_by_target:true}).eq('target_id',me.id).eq('seen_by_target',false);unreadRev=0;drawP();}
+
  const{data}=await db.from('reviews').select('*').eq('target_id',me.id).eq('visible',true).order('created_at',{ascending:false}).limit(20);
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:80vh;overflow-y:auto"><h3>Отзывы обо мне</h3><div class="s">Что о вас пишут водители</div>${(data||[]).length?data.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="closeSh();disputeRev('${r.id}','${esc(r.from_name)}','${esc(r.comment)}')">оспорить</button></div>`).join(''):'<div class="sub" style="padding:10px 0">Отзывов пока нет</div>'}<div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div></div>`;
@@ -993,7 +991,8 @@ function pick(kind){
 async function sendApp(){
  const p=document.getElementById('ap').value.trim();if(!p)return T('Введите телефон');
  if(!me.doc_license||!me.doc_car)return T('Загрузите права и фото машины');
- await db.from('users').update({phone:p,driver_status:'pending'}).eq('id',me.id);
+ const r=await api('/api/apply-driver',{phone:p});
+ if(r.error)return T(r.error==='bad_phone'?'Введите корректный телефон':r.error==='already'?'Вы уже водитель':'Не удалось отправить заявку');
  me.phone=p;me.driver_status='pending';closeSh();T('Заявка отправлена на модерацию');drawP();
 }
 const closeSh=()=>{const s=document.getElementById('sh');if(s)s.remove();};
@@ -1221,7 +1220,7 @@ async function dCancelYes(){
 }
 async function myRev(m){
  m.innerHTML='<div class="head"><h2>Мои отзывы</h2></div><div class="empty">Загрузка…</div>';
- if(unreadRev){await db.from('reviews').update({seen_by_target:true}).eq('target_id',me.id).eq('seen_by_target',false);unreadRev=0;drawD();}
+
  const{data}=await db.from('reviews').select('*').eq('target_id',me.id).eq('visible',true).order('created_at',{ascending:false}).limit(30);
  const avg=data&&data.length?(data.reduce((s,r)=>s+r.rating,0)/data.length).toFixed(1):'—';
  m.innerHTML=`<div class="head"><h2>Мои отзывы</h2><span class="m">средняя ${avg}</span></div>${(data&&data.length)?data.map(r=>`<div class="rv"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13.5px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="disputeRev('${r.id}','${esc(r.from_name)}','${esc(r.comment)}')">оспорить</button></div>`).join(''):'<div class="empty"><b>Отзывов пока нет</b>Они появятся после первых поездок.</div>'}`;
@@ -1292,7 +1291,8 @@ function drawA(){
 }
 const aGo=t=>{aTab=t;drawA();};
 async function supportList(){
- const{data}=await db.from('support_msgs').select('*').eq('answered',false).order('created_at',{ascending:false}).limit(50);
+ const _r=await api('/api/admin',{action:'support-list'});
+ const data=_r.items||[];
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Обращения в поддержку</h3><div class="s">Новые сообщения от пользователей. Выберите, кому ответить.</div>
  ${(data&&data.length)?data.map(s=>`<div class="cp"><div class="rs">${esc(s.from_name)}</div><div class="mt">${new Date(s.created_at).toLocaleString('ru')}</div><div class="rs" style="font-weight:500;font-size:13.5px">«${esc(s.text)}»</div><div class="ra"><button class="o" onclick="answerSupport('${s.id}','${s.from_user||''}','${s.from_tg}','${esc(s.from_name)}')">Ответить</button><button class="c" onclick="markAnswered('${s.id}')">Скрыть</button></div></div>`).join(''):'<div class="empty"><b>Нет новых обращений</b></div>'}
@@ -1307,18 +1307,11 @@ function answerSupport(sid,uid,tg,name){
 async function sendSupportAns(sid,uid,tg){
  const t=document.getElementById('ansmsg').value.trim();
  if(!t)return T('Введите ответ');
- // доставим через admin_msgs (по user_id если есть)
- if(uid){await db.from('admin_msgs').insert({to_user:uid,text:t});}
- else{
-  // нет user_id — создаём временную запись по tg через users lookup
-  const{data:u}=await db.from('users').select('id').eq('telegram_id',tg).maybeSingle();
-  if(u)await db.from('admin_msgs').insert({to_user:u.id,text:t});
-  else return T('Не удалось найти пользователя');
- }
- await db.from('support_msgs').update({answered:true}).eq('id',sid);
+ const r=await api('/api/admin',{action:'support-answer',to_user:uid||null,to_tg:tg||null,text:t,support_id:sid});
+ if(r.error)return T(r.error==='no_user'?'Не удалось найти пользователя':'Ошибка');
  document.getElementById('sh2').remove();T('Ответ отправлен');supportList();
 }
-async function markAnswered(sid){await db.from('support_msgs').update({answered:true}).eq('id',sid);T('Скрыто');const sh=document.getElementById('sh');if(sh)sh.remove();supportList();}
+async function markAnswered(sid){const r=await api('/api/admin',{action:'support-hide',support_id:sid});if(r.error)return T('Ошибка');T('Скрыто');const sh=document.getElementById('sh');if(sh)sh.remove();supportList();}
 async function aOver(m){
  const today=new Date();today.setHours(0,0,0,0);
  const[{count:all},{count:td},{count:on},{count:done},{data:apps},{data:cmp},{data:rv},{count:us},{count:supCount}]=await Promise.all([
@@ -1330,11 +1323,13 @@ async function aOver(m){
   db.from('complaints').select('*').eq('status','pending'),
   db.from('reviews').select('*').eq('visible',true).order('created_at',{ascending:false}).limit(5),
   db.from('users').select('*',{count:'exact',head:true}),
-  db.from('support_msgs').select('*',{count:'exact',head:true}).eq('answered',false)
+  Promise.resolve({count:0})
  ]);
+ const _sc=await api('/api/admin',{action:'support-count'});
+ const supCountReal=_sc.count||0;
  const avg=rv&&rv.length?(rv.reduce((s,r)=>s+r.rating,0)/rv.length).toFixed(1):'—';
  m.innerHTML=`<div class="head"><h2>Панель · Бомбилы</h2><span class="m">${me.staff_role}</span></div>
- ${supCount?`<div class="act-card" onclick="supportList()"><div class="ava" style="width:36px;height:36px;font-size:16px;border-radius:11px">📨</div><div class="t"><b>${supCount} новых обращений</b><span>нажмите, чтобы ответить</span></div><span class="go">Открыть ›</span></div>`:`<div class="act-card" style="background:var(--surf);border-color:var(--line)" onclick="supportList()"><div class="ava" style="width:36px;height:36px;font-size:16px;border-radius:11px;background:var(--line2)">📨</div><div class="t"><b>Обращения</b><span>новых нет</span></div><span class="go">Открыть ›</span></div>`}
+ ${supCountReal?`<div class="act-card" onclick="supportList()"><div class="ava" style="width:36px;height:36px;font-size:16px;border-radius:11px">📨</div><div class="t"><b>${supCountReal} новых обращений</b><span>нажмите, чтобы ответить</span></div><span class="go">Открыть ›</span></div>`:`<div class="act-card" style="background:var(--surf);border-color:var(--line)" onclick="supportList()"><div class="ava" style="width:36px;height:36px;font-size:16px;border-radius:11px;background:var(--line2)">📨</div><div class="t"><b>Обращения</b><span>новых нет</span></div><span class="go">Открыть ›</span></div>`}
  <div class="agrid">
   <div class="ast"><div class="n g">${td||0}</div><div class="l">заявок сегодня</div></div>
   <div class="ast"><div class="n">${on||0}</div><div class="l">на линии</div></div>
@@ -1426,17 +1421,19 @@ async function finPromo(c){
  loadPromos();
 }
 async function finBack(c){
- const{data:q}=await db.from('winback_queue').select('*').eq('status','pending').order('created_at',{ascending:false});
+ const _r=await api('/api/admin',{action:'winback-list'});
+ const q=_r.items||[];
  c.innerHTML=`<div class="note" style="margin:10px 18px">Водители, которые оплачивали подписку, но давно не заходили и подписка кончилась. Одобрите — им придёт промокод на 2 дня в бота.</div>
  ${(q||[]).length?q.map(w=>`<div class="cp"><span class="badge am">спящий</span><div class="rs">${esc(w.user_name)}</div><div class="mt">не заходил с ${new Date(w.last_active).toLocaleDateString('ru')}</div><div class="ra"><button class="o" onclick="approveBack('${w.id}')">Отправить промокод</button><button class="b" onclick="dismissBack('${w.id}')">Пропустить</button></div></div>`).join(''):'<div class="empty"><b>Пусто</b>Пока некого возвращать.</div>'}`;
 }
-async function approveBack(id){await db.from('winback_queue').update({status:'approved'}).eq('id',id);T('Промокод отправится в бота');aFin(document.getElementById('main'));}
-async function dismissBack(id){await db.from('winback_queue').update({status:'dismissed'}).eq('id',id);T('Пропущено');aFin(document.getElementById('main'));}
+async function approveBack(id){const r=await api('/api/admin',{action:'winback-set',queue_id:id,status:'approved'});if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');T('Промокод отправится в бота');aFin(document.getElementById('main'));}
+async function dismissBack(id){const r=await api('/api/admin',{action:'winback-set',queue_id:id,status:'dismissed'});if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');T('Пропущено');aFin(document.getElementById('main'));}
 async function loadPromos(){
 
  const el=document.getElementById('promolist');if(!el)return;
- const{data}=await db.from('promos').select('*').order('created_at',{ascending:false}).limit(40);
- if(!data||!data.length){el.innerHTML='<div class="empty">Промокодов пока нет</div>';return;}
+ const _r=await api('/api/admin',{action:'promo-list'});
+ const data=_r.items||[];
+ if(_r.error||!data.length){el.innerHTML='<div class="empty">Промокодов пока нет</div>';return;}
  el.innerHTML=data.map(p=>{
   const exp=p.expires_at&&new Date(p.expires_at)<new Date();
   const st=p.used?'использован':exp?'истёк':'активен';
@@ -1465,33 +1462,43 @@ async function saveNewPromo(){
  if(!val)return T('Укажите значение');
  const expd=parseInt(document.getElementById('np_exp').value);
  const kind=window._npkGet();
- const row={code,days:kind==='days'?val:0,amount:kind==='money'?val:0};
- if(expd&&expd>0)row.expires_at=new Date(Date.now()+expd*86400000).toISOString();
- const{error}=await db.from('promos').insert(row);
- if(error)return T(error.message.includes('duplicate')?'Такой код уже есть':'Ошибка: '+error.message);
+ const r=await api('/api/admin',{action:'promo-create',code,days:kind==='days'?val:0,amount:kind==='money'?val:0,expires_days:expd||0});
+ if(r.error)return T(r.error==='duplicate'?'Такой код уже есть':r.error==='forbidden'?'Нет прав':'Ошибка');
  closeSh();T('Промокод создан: '+code);loadPromos();
 }
 async function delPromo(id){
- await db.from('promos').delete().eq('id',id);T('Удалён');loadPromos();
+ const r=await api('/api/admin',{action:'promo-delete',promo_id:id});
+ if(r.error)return T('Ошибка');
+ T('Удалён');loadPromos();
 }
 async function togglePaid(){
  const v=!SETTINGS.paid_mode;
- await db.from('settings').update({paid_mode:v}).eq('id',1);SETTINGS.paid_mode=v;
+ const r=await api('/api/admin',{action:'settings-update',fields:{paid_mode:v}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ if(r.settings)SETTINGS=r.settings;
  T(v?'Платный режим включён':'Вернули бесплатно');aFin(document.getElementById('main'));
 }
 async function toggleRef(){
  const v=!SETTINGS.ref_enabled;
- await db.from('settings').update({ref_enabled:v}).eq('id',1);SETTINGS.ref_enabled=v;
+ const r=await api('/api/admin',{action:'settings-update',fields:{ref_enabled:v}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ if(r.settings)SETTINGS=r.settings;
  T(v?'Рефералка включена':'Рефералка выключена');aFin(document.getElementById('main'));
 }
 async function saveRefBonus(){
- const b=parseInt(document.getElementById('refb').value)||100;
- await db.from('settings').update({ref_bonus:b}).eq('id',1);SETTINGS.ref_bonus=b;T('Бонус сохранён: '+b+' \u20bd');
+ const v=parseInt(document.getElementById('refb').value)||100;
+ const r=await api('/api/admin',{action:'settings-update',fields:{ref_bonus:v}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ if(r.settings)SETTINGS=r.settings;
+ T('Бонус сохранён: '+v+' \u20bd');
 }
 async function savePrices(){
  const g=x=>parseInt(document.getElementById('pr_'+x).value)||0;
  const p={price_1:g('1'),price_3:g('3'),price_7:g('7'),price_30:g('30')};
- await db.from('settings').update(p).eq('id',1);Object.assign(SETTINGS,p);T('Тарифы сохранены');
+ const r=await api('/api/admin',{action:'settings-update',fields:p});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ if(r.settings)SETTINGS=r.settings;
+ T('Тарифы сохранены');
 }
 async function adjBal(){
  const uid=document.getElementById('fu').value;const amt=parseFloat(document.getElementById('fa').value);
@@ -1535,8 +1542,8 @@ function writeUser(uid,name){
 async function sendUserMsg(uid){
  const t=document.getElementById('amsg').value.trim();
  if(!t)return T('Введите текст');
- const{error}=await db.from('admin_msgs').insert({to_user:uid,text:t});
- if(error)return T('Ошибка: '+error.message);
+ const r=await api('/api/admin',{action:'send-msg',to_user:uid,text:t});
+ if(r.error)return T('Ошибка');
  document.getElementById('sh2').remove();T('Сообщение отправлено — придёт в бота');
 }
 async function userCard(id){

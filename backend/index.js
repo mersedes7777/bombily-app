@@ -428,7 +428,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v6-secure' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v7-locked' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -487,6 +487,52 @@ http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, days: p.days, amount: p.amount, sub_until: upd.sub_until || me.sub_until, balance: upd.balance ?? me.balance });
     }
 
+    // --- подача заявки в водители (сам пользователь) ---
+    if (req.url === '/api/apply-driver') {
+      const phone = String(body.phone || '').slice(0, 30);
+      if (phone.replace(/\D/g, '').length < 7) return json(res, 400, { error: 'bad_phone' });
+      if (me.driver_status === 'approved') return json(res, 400, { error: 'already' });
+      await db.from('users').update({ phone, driver_status: 'pending' }).eq('id', me.id);
+      if (OWNER) await send(OWNER, `🚗 <b>Новая заявка в водители</b>\n${me.name} · ${phone}\nОткройте панель → Заявки.`);
+      return json(res, 200, { ok: true });
+    }
+
+    // --- отправка отзыва (сам пользователь) ---
+    if (req.url === '/api/review') {
+      const target = body.target_id;
+      if (!target || !body.ride_id) return json(res, 400, { error: 'bad_input' });
+      const rating = Math.max(1, Math.min(5, Number(body.rating) || 5));
+      // не даём оценить одну поездку дважды
+      const { data: dup } = await db.from('reviews').select('id').eq('ride_id', body.ride_id).eq('from_id', me.id).limit(1);
+      if (dup && dup.length) return json(res, 400, { error: 'already' });
+      await db.from('reviews').insert({
+        ride_id: body.ride_id, from_id: me.id, from_name: me.name,
+        target_id: target, target_name: body.target_name || '',
+        rating, kind: body.kind === 'passenger' ? 'passenger' : 'driver',
+        comment: String(body.comment || '').slice(0, 500)
+      });
+      // пересчёт рейтинга по видимым отзывам
+      const { data: all } = await db.from('reviews').select('rating').eq('target_id', target).eq('visible', true);
+      if (all && all.length) {
+        const avg = (all.reduce((s, r) => s + r.rating, 0) / all.length).toFixed(1);
+        await db.from('users').update({ rating: avg }).eq('id', target);
+      }
+      return json(res, 200, { ok: true });
+    }
+
+    // --- жалоба / спор по отзыву (сам пользователь) ---
+    if (req.url === '/api/complaint') {
+      await db.from('complaints').insert({
+        from_id: me.id, from_name: me.name,
+        target_id: body.target_id || me.id, target_name: body.target_name || me.name,
+        reason: String(body.reason || '').slice(0, 200),
+        comment: String(body.comment || '').slice(0, 500),
+        review_id: body.review_id || null,
+        kind: body.kind || 'user'
+      });
+      return json(res, 200, { ok: true });
+    }
+
     // --- админские операции (только staff) ---
     if (req.url === '/api/admin') {
       if (!isStaff(me)) return json(res, 403, { error: 'forbidden' });
@@ -529,6 +575,130 @@ http.createServer(async (req, res) => {
         await db.from('users').update({ rating: avg }).eq('id', tid);
         return json(res, 200, { ok: true });
       }
+      // --- промокоды (staff) ---
+      if (act === 'create-promo') {
+        let code = String(body.code || '').trim().toUpperCase();
+        if (!code) code = 'BMB' + Math.random().toString(36).slice(2, 6).toUpperCase();
+        const row = { code, days: Number(body.days) || 0, amount: Number(body.amount) || 0 };
+        if (body.expires_days && Number(body.expires_days) > 0)
+          row.expires_at = new Date(Date.now() + Number(body.expires_days) * 86400000).toISOString();
+        const { error } = await db.from('promos').insert(row);
+        if (error) return json(res, 400, { error: String(error.message).includes('duplicate') ? 'duplicate' : 'insert_failed' });
+        return json(res, 200, { ok: true, code });
+      }
+      if (act === 'delete-promo') {
+        await db.from('promos').delete().eq('id', body.promo_id);
+        return json(res, 200, { ok: true });
+      }
+
+      // --- настройки сервиса (только owner/admin) ---
+      if (act === 'save-settings' && isAdminUp(me)) {
+        const f = body.fields || {};
+        const allowed = {};
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus'].forEach(k => {
+          if (f[k] !== undefined) allowed[k] = f[k];
+        });
+        if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
+        await db.from('settings').update(allowed).eq('id', 1);
+        return json(res, 200, { ok: true });
+      }
+
+      // --- написать пользователю через бота (staff) ---
+      if (act === 'send-msg') {
+        if (!body.text || !String(body.text).trim()) return json(res, 400, { error: 'empty' });
+        await db.from('admin_msgs').insert({ to_user: tid, text: String(body.text).slice(0, 2000) });
+        return json(res, 200, { ok: true });
+      }
+
+      // --- обращения в поддержку (staff) ---
+      if (act === 'support-answered') {
+        await db.from('support_msgs').update({ answered: true }).eq('id', body.support_id);
+        return json(res, 200, { ok: true });
+      }
+
+      // --- очередь возврата спящих (staff) ---
+      if (act === 'winback') {
+        const st = body.status === 'approved' ? 'approved' : 'dismissed';
+        await db.from('winback_queue').update({ status: st }).eq('id', body.queue_id);
+        return json(res, 200, { ok: true });
+      }
+
+      // --- жалобы (staff) ---
+      if (act === 'resolve-complaint') {
+        await db.from('complaints').update({ status: 'done' }).eq('id', body.complaint_id);
+        if (body.ban_target) await db.from('users').update({ is_banned: true, status: 'offline' }).eq('id', body.ban_target);
+        return json(res, 200, { ok: true });
+      }
+
+      // ---- промокоды ----
+      if (act === 'promo-list') {
+        const { data } = await db.from('promos').select('*').order('created_at', { ascending: false }).limit(60);
+        return json(res, 200, { ok: true, items: data || [] });
+      }
+      if (act === 'promo-create' && isAdminUp(me)) {
+        const row = { code: String(body.code || '').toUpperCase(), days: Number(body.days) || 0, amount: Number(body.amount) || 0 };
+        if (body.expires_days > 0) row.expires_at = new Date(Date.now() + Number(body.expires_days) * 86400000).toISOString();
+        const { error } = await db.from('promos').insert(row);
+        if (error) return json(res, 400, { error: error.message.includes('duplicate') ? 'duplicate' : 'db' });
+        return json(res, 200, { ok: true, code: row.code });
+      }
+      if (act === 'promo-delete' && isAdminUp(me)) {
+        await db.from('promos').delete().eq('id', body.promo_id);
+        return json(res, 200, { ok: true });
+      }
+
+      // ---- настройки ----
+      if (act === 'settings-update' && isAdminUp(me)) {
+        const f = body.fields || {};
+        const allowed = {};
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        await db.from('settings').update(allowed).eq('id', 1);
+        const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+        return json(res, 200, { ok: true, settings: data });
+      }
+
+      // ---- обращения в поддержку ----
+      if (act === 'support-list') {
+        const { data } = await db.from('support_msgs').select('*').eq('answered', false).order('created_at', { ascending: false }).limit(60);
+        return json(res, 200, { ok: true, items: data || [] });
+      }
+      if (act === 'support-count') {
+        const { count } = await db.from('support_msgs').select('*', { count: 'exact', head: true }).eq('answered', false);
+        return json(res, 200, { ok: true, count: count || 0 });
+      }
+      if (act === 'support-answer') {
+        let uid = body.to_user;
+        if (!uid && body.to_tg) {
+          const { data: u } = await db.from('users').select('id').eq('telegram_id', body.to_tg).maybeSingle();
+          if (u) uid = u.id;
+        }
+        if (!uid) return json(res, 400, { error: 'no_user' });
+        await db.from('admin_msgs').insert({ to_user: uid, text: body.text });
+        if (body.support_id) await db.from('support_msgs').update({ answered: true }).eq('id', body.support_id);
+        return json(res, 200, { ok: true });
+      }
+      if (act === 'support-hide') {
+        await db.from('support_msgs').update({ answered: true }).eq('id', body.support_id);
+        return json(res, 200, { ok: true });
+      }
+
+      // ---- сообщение пользователю от администрации ----
+      if (act === 'send-msg') {
+        if (!body.to_user || !body.text) return json(res, 400, { error: 'bad_input' });
+        await db.from('admin_msgs').insert({ to_user: body.to_user, text: body.text });
+        return json(res, 200, { ok: true });
+      }
+
+      // ---- очередь возврата спящих ----
+      if (act === 'winback-list') {
+        const { data } = await db.from('winback_queue').select('*').eq('status', 'pending').order('created_at', { ascending: false });
+        return json(res, 200, { ok: true, items: data || [] });
+      }
+      if (act === 'winback-set' && isAdminUp(me)) {
+        await db.from('winback_queue').update({ status: body.status }).eq('id', body.queue_id);
+        return json(res, 200, { ok: true });
+      }
+
       return json(res, 400, { error: 'bad_action' });
     }
 
@@ -545,5 +715,3 @@ notifyLoop();
 expireLoop();
 idleLoop();
 winbackLoop();
-// build 1785032040
-// v6 deploy 1785032984
