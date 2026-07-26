@@ -242,6 +242,8 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .uinfo{background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:8px;font-size:12.5px;line-height:1.9;}
 .nb .dot{position:absolute;top:6px;right:calc(50% - 16px);width:8px;height:8px;background:var(--red);border-radius:50%;border:1.5px solid var(--surf);}
 .nb{position:relative;}
+.refbox{display:flex;align-items:center;gap:12px;margin-top:12px;padding:14px;background:var(--bg);border:1px dashed var(--g);border-radius:12px;}
+.refcode{flex:1;font-family:'Roboto Mono',monospace;font-size:22px;font-weight:700;letter-spacing:3px;color:var(--g);text-align:center;}
 .subcard{display:flex;align-items:center;gap:12px;margin:0 18px 14px;padding:14px;background:linear-gradient(135deg,rgba(51,209,126,.12),rgba(51,209,126,.03));border:1px solid var(--g);border-radius:14px;}
 .subcard .sct{font-size:15px;}.subcard .scs{font-size:11.5px;color:var(--dim);margin-top:3px;}
 .subbtn{background:var(--g);color:#06120b;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;}
@@ -314,7 +316,7 @@ try{
  tgId=Math.floor(Math.random()*1e9);tgName='Гость';
 }
 
-let SETTINGS={paid_mode:false,price_1:160,price_3:420,price_7:840,price_30:3000};
+let SETTINGS={paid_mode:false,price_1:160,price_3:420,price_7:840,price_30:3000,ref_enabled:false,ref_bonus:100};
 const subActive=()=>me&&me.sub_until&&new Date(me.sub_until)>new Date();
 let unreadRev=0;
 async function loadUnreadRev(){try{const{count}=await db.from('reviews').select('*',{count:'exact',head:true}).eq('target_id',me.id).eq('visible',true).eq('seen_by_target',false);unreadRev=count||0;}catch(e){unreadRev=0;}}
@@ -582,7 +584,7 @@ function drawP(){
  if(pTab==='chat')openChat(active?.id,'passenger');
  if(pTab==='favs')favsView(m);
  if(pTab==='trips')trips(m);
- if(pTab==='profile')m.innerHTML=profHTML();
+ if(pTab==='profile'){m.innerHTML=profHTML();if(unreadRev){markRevSeen().then(()=>drawP());}}
  drawBar();
 }
 const pGo=t=>{pTab=t;drawP();};
@@ -789,10 +791,48 @@ function subSheet(){
  let pick=30;
  const perDay=(d,p)=>Math.round(p/d);
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>Подписка водителя</h3><div class="s">${SETTINGS.paid_mode?'Оплата спишется с баланса. Чем больше срок — тем дешевле день.':'Сейчас всё бесплатно — подписка активируется без списания.'}</div><div id="pl"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="buySub()">${SETTINGS.paid_mode?'Оплатить с баланса':'Активировать'}</button></div></div>`;
+ m.innerHTML=`<div class="sheet"><h3>Подписка водителя</h3><div class="s">${SETTINGS.paid_mode?'Оплата спишется с баланса. Чем больше срок — тем дешевле день.':'Сейчас всё бесплатно — подписка активируется без списания.'}</div><div id="pl"></div><div class="sa" style="flex-wrap:wrap"><button class="c" onclick="closeSh();promoSheet()">Промокод</button>${SETTINGS.ref_enabled?`<button class="c" onclick="closeSh();refSheet()">Пригласить</button>`:''}<button class="o" onclick="buySub()">${SETTINGS.paid_mode?'Оплатить':'Активировать'}</button></div></div>`;
  document.getElementById('device').appendChild(m);
  const draw=()=>{document.getElementById('pl').innerHTML=plans.map(([d,p])=>`<div class="plan ${d===pick?'on':''}" onclick="window._pk(${d})"><div class="pd"><div class="pdt">${d} ${d===1?'день':d<5?'дня':'дней'}${d===30?'<span class=best>выгодно</span>':''}</div><div class="pds">${perDay(d,p)} ₽ в день</div></div><div class="pp">${p} ₽</div></div>`).join('');};
  window._pk=v=>{pick=v;draw();};window._pkGet=()=>pick;window._pkPrice=()=>plans.find(x=>x[0]===pick)[1];draw();
+}
+function refSheet(){
+ const link=`Приглашаю в «Бомбилы» — сервис заказа машины. Регистрируйся и работай: используй мой код при входе — ${me.ref_code||'—'}`;
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Пригласить водителя</h3><div class="s">Ваш друг вводит этот код при регистрации. Когда он впервые оплатит подписку — вам начислится <b>${SETTINGS.ref_bonus||100} ₽</b> на баланс.</div>
+ <div class="refbox"><div class="refcode">${me.ref_code||'—'}</div><button class="subbtn" onclick="copyRef('${me.ref_code||''}')">Копировать</button></div>
+ <div class="s" style="margin-top:12px">Отправьте другу код или текст приглашения. Бонус — без ограничений по количеству.</div>
+ <div class="sa"><button class="o" onclick="closeSh()">Готово</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+function copyRef(code){try{navigator.clipboard.writeText(code);}catch(e){}T('Код скопирован: '+code);}
+function promoSheet(){
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Промокод</h3><div class="s">Введите промокод — например из уведомления о возврате или подарочный.</div><div class="fr"><label>Код</label><input id="pcode" placeholder="BACK1234" style="text-transform:uppercase"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="redeemPromo()">Применить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function redeemPromo(){
+ const code=(document.getElementById('pcode').value||'').trim().toUpperCase();
+ if(!code)return T('Введите код');
+ const{data:p}=await db.from('promos').select('*').eq('code',code).maybeSingle();
+ if(!p)return T('Код не найден');
+ if(p.used)return T('Код уже использован');
+ if(p.for_user&&p.for_user!==me.id)return T('Код не для вашего аккаунта');
+ if(p.expires_at&&new Date(p.expires_at)<new Date())return T('Срок кода истёк');
+ // применяем
+ if(p.days>0){
+  const base=subActive()?new Date(me.sub_until):new Date();
+  base.setDate(base.getDate()+p.days);
+  await db.from('users').update({sub_until:base.toISOString()}).eq('id',me.id);
+  me.sub_until=base.toISOString();
+ }
+ if(Number(p.amount)>0){
+  await db.from('users').update({balance:(me.balance||0)+Number(p.amount)}).eq('id',me.id);
+  me.balance=(me.balance||0)+Number(p.amount);
+ }
+ await db.from('promos').update({used:true,used_by:me.id}).eq('id',p.id);
+ await db.from('payments').insert({user_id:me.id,user_name:me.name,amount:Number(p.amount)||0,kind:'promo',days:p.days||null,note:'промокод '+code});
+ closeSh();T(p.days?`+${p.days} дн подписки!`:`+${p.amount} ₽ на баланс!`);drawD();
 }
 async function buySub(){
  const days=window._pkGet(),price=window._pkPrice();
@@ -806,6 +846,20 @@ async function buySub(){
  await db.from('users').update({sub_until:base.toISOString()}).eq('id',me.id);
  me.sub_until=base.toISOString();
  await db.from('payments').insert({user_id:me.id,user_name:me.name,amount:SETTINGS.paid_mode?-price:0,kind:'sub',days,note:SETTINGS.paid_mode?'':'бесплатный период'});
+ // отметим, что оплачивал (для рефералки и возврата)
+ if(SETTINGS.paid_mode&&!me.ever_paid){
+  await db.from('users').update({ever_paid:true}).eq('id',me.id);me.ever_paid=true;
+  // начислить бонус пригласившему — один раз
+  if(SETTINGS.ref_enabled&&me.ref_by&&!me.ref_paid){
+   const{data:inv}=await db.from('users').select('id,balance,name,telegram_id').eq('id',me.ref_by).maybeSingle();
+   if(inv){
+    const bonus=Number(SETTINGS.ref_bonus)||100;
+    await db.from('users').update({balance:(Number(inv.balance)||0)+bonus}).eq('id',inv.id);
+    await db.from('payments').insert({user_id:inv.id,user_name:inv.name,amount:bonus,kind:'referral',note:'бонус за '+me.name});
+    await db.from('users').update({ref_paid:true}).eq('id',me.id);me.ref_paid=true;
+   }
+  }
+ }
  closeSh();T('Подписка активна до '+base.toLocaleDateString('ru'));drawD();
 }
 function complain(rid,did,dn){
@@ -853,6 +907,7 @@ async function openRideFrom(id){
  openRide();
 }
 
+async function markRevSeen(){if(unreadRev){try{await db.from('reviews').update({seen_by_target:true}).eq('target_id',me.id).eq('seen_by_target',false);}catch(e){}unreadRev=0;}}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
  return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">отмен как пассажир: ${me.cancel_as_passenger||0}${isDrv()?' · как водитель: '+(me.cancel_as_driver||0):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 900 000-00-00"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div><div class="mi" onclick="T('Поддержка: напишите в бот, кнопка «Связь с админом»')"><span>Поддержка</span><span class="c">›</span></div></div>`;
@@ -888,6 +943,7 @@ function applyDrv(){
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet"><h3>Стать бомбилой</h3><div class="s">Загрузите документы — их увидит только администрация. Марку и номер впишет админ после проверки.</div>
  <div class="fr"><label>Телефон</label><input id="ap" value="${esc(me.phone)}" placeholder="+7 900 000-00-00" inputmode="tel"></div>
+ ${(!me.ref_by&&SETTINGS.ref_enabled)?'<div class="fr"><label>Код приглашения (если есть)</label><input id="apref" placeholder="от того, кто позвал" style="text-transform:uppercase"></div>':''}
  <div class="up" id="u1" onclick="pick('license')"><div class="ic" id="i1">🪪</div><div class="tx">Водительские права<small>разворот, чтобы читалось</small></div><span class="st" id="s1">загрузить</span></div>
  <div class="up" id="u2" onclick="pick('pts')"><div class="ic" id="i2">📄</div><div class="tx">ПТС / СТС<small>документ на машину</small></div><span class="st" id="s2">загрузить</span></div>
  <div class="up" id="u3" onclick="pick('car')"><div class="ic" id="i3">🚗</div><div class="tx">Машина с правами<small>чтобы был виден госномер</small></div><span class="st" id="s3">загрузить</span></div>
@@ -939,8 +995,15 @@ function pick(kind){
 async function sendApp(){
  const p=document.getElementById('ap').value.trim();if(!p)return T('Введите телефон');
  if(!me.doc_license||!me.doc_car)return T('Загрузите права и фото машины');
- await db.from('users').update({phone:p,driver_status:'pending'}).eq('id',me.id);
- me.phone=p;me.driver_status='pending';closeSh();T('Заявка отправлена на модерацию');drawP();
+ const upd={phone:p,driver_status:'pending'};
+ const refEl=document.getElementById('apref');
+ if(refEl&&refEl.value.trim()){
+  const code=refEl.value.trim().toUpperCase();
+  const q=await db.from('users').select('id').eq('ref_code',code).maybeSingle();
+  if(q.data&&q.data.id!==me.id){upd.ref_by=q.data.id;}
+ }
+ await db.from('users').update(upd).eq('id',me.id);
+ Object.assign(me,upd);closeSh();T('Заявка отправлена на модерацию');drawP();
 }
 const closeSh=()=>{const s=document.getElementById('sh');if(s)s.remove();};
 
@@ -1305,6 +1368,8 @@ async function aFin(m){
  const{data:recent}=await db.from('payments').select('*').order('created_at',{ascending:false}).limit(25);
  m.innerHTML=`<div class="head"><h2>Финансы</h2><span class="m">${SETTINGS.paid_mode?'платно':'бесплатно'}</span></div>
  <div class="shift" style="border-color:${SETTINGS.paid_mode?'var(--am)':'var(--line2)'};background:${SETTINGS.paid_mode?'rgba(242,167,59,.08)':'var(--surf)'}"><div class="t"><b>${SETTINGS.paid_mode?'Платный режим включён':'Сейчас всё бесплатно'}</b><span>${SETTINGS.paid_mode?'без подписки на линию нельзя':'подписки не списываются'}</span></div><div class="tg ${SETTINGS.paid_mode?'on':''}" onclick="togglePaid()"><b></b></div></div>
+ <div class="shift" style="border-color:var(--line2);background:var(--surf)"><div class="t"><b>Реферальная программа</b><span>${SETTINGS.ref_enabled?'бонус '+(SETTINGS.ref_bonus||100)+' \u20bd за приглашённого':'выключена'}</span></div><div class="tg ${SETTINGS.ref_enabled?'on':''}" onclick="toggleRef()"><b></b></div></div>
+ ${SETTINGS.ref_enabled?`<div style="padding:0 14px"><div class="fr"><label>Бонус за приглашённого, \u20bd</label><input id="refb" value="${SETTINGS.ref_bonus||100}" inputmode="numeric"></div><button class="btn ghost" onclick="saveRefBonus()">Сохранить бонус</button></div>`:''}
  <div class="sec">Тарифы (₽) · чем больше срок — тем дешевле день</div>
  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;padding:0 14px">
   ${[['1',SETTINGS.price_1],['3',SETTINGS.price_3],['7',SETTINGS.price_7],['30',SETTINGS.price_30]].map(t=>`<div class="fr" style="margin:0"><label>${t[0]} дн</label><input id="pr_${t[0]}" value="${t[1]}" inputmode="numeric" style="font-family:'Roboto Mono',monospace"></div>`).join('')}
@@ -1317,14 +1382,67 @@ async function aFin(m){
   <div class="fr"><label>Комментарий</label><input id="fn" placeholder="не обязательно"></div>
   <button class="btn" onclick="adjBal()">Применить</button>
  </div>
+ <div class="sec">Промокоды <button class="rolebtn" style="float:right" onclick="newPromo()">+ создать</button></div>
+ <div id="promolist"><div class="empty">Загрузка…</div></div>
  <div class="sec">Последние операции</div>
  ${(recent||[]).length?recent.map(p=>{const plus=Number(p.amount)>0;return `<div class="card"><div style="flex:1;min-width:0"><div class="nm" style="font-size:14px">${esc(p.user_name)}</div><div class="sub">${p.kind}${p.days?' · '+p.days+' дн':''} · ${new Date(p.created_at).toLocaleDateString('ru')}</div></div><div class="price" style="color:${plus?'var(--g)':'var(--red)'}">${plus?'+':''}${p.amount} ₽</div></div>`;}).join(''):'<div class="empty">Операций пока нет</div>'}
  <div style="height:20px"></div>`;
+ loadPromos();
+}
+async function loadPromos(){
+ const el=document.getElementById('promolist');if(!el)return;
+ const{data}=await db.from('promos').select('*').order('created_at',{ascending:false}).limit(40);
+ if(!data||!data.length){el.innerHTML='<div class="empty">Промокодов пока нет</div>';return;}
+ el.innerHTML=data.map(p=>{
+  const exp=p.expires_at&&new Date(p.expires_at)<new Date();
+  const st=p.used?'использован':exp?'истёк':'активен';
+  const cl=p.used?'var(--dim)':exp?'var(--red)':'var(--g)';
+  const gives=p.days>0?p.days+' дн':(p.amount>0?p.amount+' ₽':'—');
+  return `<div class="card"><div style="flex:1;min-width:0"><div class="nm" style="font-family:'Roboto Mono',monospace;font-size:14px">${esc(p.code)}</div><div class="sub">даёт ${gives}${p.for_user?' · персональный':' · для всех'} · <span style="color:${cl}">${st}</span></div></div>${!p.used?`<button class="rolebtn" onclick="delPromo('${p.id}')">удалить</button>`:''}</div>`;
+ }).join('');
+}
+function newPromo(){
+ let kind='days';
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Новый промокод</h3><div class="s">Создайте код вручную — для акций или конкретного человека.</div>
+ <div class="fr"><label>Код (или оставьте пустым для авто)</label><input id="np_code" placeholder="напр. LETO2026" style="text-transform:uppercase"></div>
+ <div class="seg" style="padding:4px 0"><div id="np_kd" class="on" onclick="window._npk('days')">Дни подписки</div><div id="np_km" onclick="window._npk('money')">Рубли на баланс</div></div>
+ <div class="fr"><label id="np_lbl">Сколько дней</label><input id="np_val" inputmode="numeric" placeholder="2"></div>
+ <div class="fr"><label>Срок действия кода, дней (0 = бессрочно)</label><input id="np_exp" inputmode="numeric" value="7"></div>
+ <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="saveNewPromo()">Создать</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ window._npk=k=>{kind=k;window._npkGet=()=>k;document.getElementById('np_kd').className=k==='days'?'on':'';document.getElementById('np_km').className=k==='money'?'on':'';document.getElementById('np_lbl').textContent=k==='days'?'Сколько дней':'Сколько рублей';};
+ window._npkGet=()=>kind;
+}
+async function saveNewPromo(){
+ let code=(document.getElementById('np_code').value||'').trim().toUpperCase();
+ if(!code)code='BMB'+Math.random().toString(36).slice(2,6).toUpperCase();
+ const val=parseInt(document.getElementById('np_val').value)||0;
+ if(!val)return T('Укажите значение');
+ const expd=parseInt(document.getElementById('np_exp').value);
+ const kind=window._npkGet();
+ const row={code,days:kind==='days'?val:0,amount:kind==='money'?val:0};
+ if(expd&&expd>0)row.expires_at=new Date(Date.now()+expd*86400000).toISOString();
+ const{error}=await db.from('promos').insert(row);
+ if(error)return T(error.message.includes('duplicate')?'Такой код уже есть':'Ошибка: '+error.message);
+ closeSh();T('Промокод создан: '+code);loadPromos();
+}
+async function delPromo(id){
+ await db.from('promos').delete().eq('id',id);T('Удалён');loadPromos();
 }
 async function togglePaid(){
  const v=!SETTINGS.paid_mode;
  await db.from('settings').update({paid_mode:v}).eq('id',1);SETTINGS.paid_mode=v;
  T(v?'Платный режим включён':'Вернули бесплатно');aFin(document.getElementById('main'));
+}
+async function toggleRef(){
+ const v=!SETTINGS.ref_enabled;
+ await db.from('settings').update({ref_enabled:v}).eq('id',1);SETTINGS.ref_enabled=v;
+ T(v?'Рефералка включена':'Рефералка выключена');aFin(document.getElementById('main'));
+}
+async function saveRefBonus(){
+ const b=parseInt(document.getElementById('refb').value)||100;
+ await db.from('settings').update({ref_bonus:b}).eq('id',1);SETTINGS.ref_bonus=b;T('Бонус сохранён: '+b+' \u20bd');
 }
 async function savePrices(){
  const g=x=>parseInt(document.getElementById('pr_'+x).value)||0;
