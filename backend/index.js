@@ -99,6 +99,26 @@ async function onUpdate(u) {
 
   if (text.startsWith('/start')) {
     waitingSupport.delete(chat);
+    // реферальная ссылка: /start ref_CODE
+    const parts = text.split(/\s+/);
+    const param = parts[1] || '';
+    if (param.startsWith('ref_')) {
+      const code = param.slice(4).toUpperCase();
+      try {
+        const { data: inviter } = await db.from('users').select('id,name').eq('ref_code', code).maybeSingle();
+        const { data: meRow } = await db.from('users').select('id,ref_by').eq('telegram_id', chat).maybeSingle();
+        if (inviter) {
+          if (meRow && inviter.id !== meRow.id && !meRow.ref_by) {
+            await db.from('users').update({ ref_by: inviter.id }).eq('id', meRow.id);
+            await send(chat, `👋 Вас пригласил <b>${inviter.name}</b>. Добро пожаловать в Бомбилы!`);
+          } else if (!meRow) {
+            // ещё не зарегистрирован — запомним код, апка подхватит
+            await db.from('pending_refs').upsert({ tg_id: chat, ref_code: code });
+            await send(chat, `👋 Вас пригласил <b>${inviter.name}</b>. Откройте приложение, чтобы начать.`);
+          }
+        }
+      } catch (e) {}
+    }
     await send(chat, `<b>Бомбилы</b>\nСервис для поиска машины в городе.\nКнопки внизу всегда под рукой — писать команды не нужно.`, { reply_markup: kbFor(m.from) });
     return send(chat, 'Что нужно сделать?', { reply_markup: mainKbFor(m.from) });
   }
@@ -115,7 +135,12 @@ async function onUpdate(u) {
   if (waitingSupport.has(chat)) {
     waitingSupport.delete(chat);
     const who = `${m.from.first_name || ''} ${m.from.username ? '@' + m.from.username : ''} (ID ${chat})`;
-    const r = await send(OWNER, `📨 <b>Сообщение в поддержку</b>\nОт: ${who}\n\n${text}\n\n<i>Ответьте на это сообщение — ответ уйдёт человеку.</i>`);
+    // сохраним в базу для списка в панели
+    try {
+      const { data: uRow } = await db.from('users').select('id').eq('telegram_id', chat).maybeSingle();
+      await db.from('support_msgs').insert({ from_tg: chat, from_name: (m.from.first_name || 'Гость'), from_user: uRow ? uRow.id : null, text });
+    } catch (e) {}
+    const r = await send(OWNER, `📨 <b>Сообщение в поддержку</b>\nОт: ${who}\n\n${text}\n\n<i>Ответьте на это сообщение — ответ уйдёт человеку. Либо ответьте из панели.</i>`);
     if (r?.result?.message_id) fwdMap.set(r.result.message_id, chat);
     return send(chat, '✅ Сообщение отправлено администратору. Ответ придёт сюда.');
   }

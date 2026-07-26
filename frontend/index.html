@@ -247,6 +247,7 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .arrived-btn{background:var(--am)!important;color:#1a1206!important;border:none!important;font-weight:700;}
 .refbox{display:flex;align-items:center;gap:12px;margin-top:12px;padding:14px;background:var(--bg);border:1px dashed var(--g);border-radius:12px;}
 .refcode{flex:1;font-family:'Roboto Mono',monospace;font-size:22px;font-weight:700;letter-spacing:3px;color:var(--g);text-align:center;}
+.reflink{flex:1;font-family:'Roboto Mono',monospace;font-size:12px;color:var(--g);word-break:break-all;line-height:1.5;}
 .subcard{display:flex;align-items:center;gap:12px;margin:0 18px 14px;padding:14px;background:linear-gradient(135deg,rgba(51,209,126,.12),rgba(51,209,126,.03));border:1px solid var(--g);border-radius:14px;}
 .subcard .sct{font-size:15px;}.subcard .scs{font-size:11.5px;color:var(--dim);margin-top:3px;}
 .subbtn{background:var(--g);color:#06120b;border:none;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;}
@@ -277,6 +278,7 @@ window.onerror=function(msg){var b=document.getElementById('boot');if(b){b.style
 const SUPABASE_URL="https://wygmuydnodwpbtsdfjuq.supabase.co";
 const SUPABASE_ANON_KEY="sb_publishable_BYSmJx0oJGxvoomZrOPTJQ_mxVHZMT1";
 const OWNER_ID=8672930773;
+const BOT_USERNAME='bombily_bot';
 
 if(!window.supabase){
  document.getElementById('boot').innerHTML='<div style="color:#e2585a;padding:20px;line-height:1.6"><b>Не загрузилась библиотека</b><br><br>Обновите страницу. Если не помогает и включён VPN — попробуйте выключить его.</div>';
@@ -384,7 +386,13 @@ async function boot(){
   document.getElementById('boot').innerHTML='<div style="color:#7f8d86">Подключение к базе…</div>';
   let{data,error:qerr}=await withTimeout(db.from('users').select('*').eq('telegram_id',tgId).maybeSingle(),10000,'запрос пользователя');
   if(qerr)throw qerr;
-  if(!data){const r=await db.from('users').insert({telegram_id:tgId,name:tgName}).select().single();if(r.error)throw r.error;data=r.data;}
+  if(!data){
+   let refBy=null;
+   try{const{data:pr}=await db.from('pending_refs').select('*').eq('tg_id',tgId).maybeSingle();
+    if(pr&&pr.ref_code){const{data:inv}=await db.from('users').select('id').eq('ref_code',pr.ref_code).maybeSingle();if(inv)refBy=inv.id;await db.from('pending_refs').delete().eq('tg_id',tgId);}
+   }catch(e){}
+   const r=await db.from('users').insert({telegram_id:tgId,name:tgName,ref_by:refBy}).select().single();if(r.error)throw r.error;data=r.data;
+  }
    me=data;
   try{const{data:st}=await db.from('settings').select('*').eq('id',1).maybeSingle();if(st)SETTINGS=st;}catch(e){}
   await loadUnreadRev();
@@ -579,7 +587,7 @@ function drawP(){
  <button class="nb ${pTab==='home'?'active':''}" onclick="pGo('home')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Главная</button>
  <button class="nb ${pTab==='favs'?'active':''}" onclick="pGo('favs')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 00-7.8 7.8l8.8 8.6 8.8-8.6a5.5 5.5 0 000-7.8z"/></svg>Свои</button>
  <button class="nb ${pTab==='trips'?'active':''}" onclick="pGo('trips')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>Поездки</button>
- <button class="nb ${pTab==='profile'?'active':''}" onclick="pGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль${unreadRev?'<i class="dot"></i>':''}</button>`;
+ <button class="nb ${pTab==='profile'?'active':''}" onclick="pGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль</button>`;
  const m=document.getElementById('main');
  if(pTab==='home')home(m);
  if(pTab==='order')m.innerHTML=`<div id="host">${formHTML(targetDrv)}</div>`;
@@ -587,7 +595,7 @@ function drawP(){
  if(pTab==='chat')openChat(active?.id,'passenger');
  if(pTab==='favs')favsView(m);
  if(pTab==='trips')trips(m);
- if(pTab==='profile'){m.innerHTML=profHTML();if(unreadRev){markRevSeen().then(()=>{const nb=document.querySelector('#nav .nb.active .dot');if(nb)nb.remove();});}}
+ if(pTab==='profile')m.innerHTML=profHTML();
  drawBar();
 }
 const pGo=t=>{pTab=t;drawP();};
@@ -800,15 +808,22 @@ function subSheet(){
  window._pk=v=>{pick=v;draw();};window._pkGet=()=>pick;window._pkPrice=()=>plans.find(x=>x[0]===pick)[1];draw();
 }
 function refSheet(){
- const link=`Приглашаю в «Бомбилы» — сервис заказа машины. Регистрируйся и работай: используй мой код при входе — ${me.ref_code||'—'}`;
+ const url=`https://t.me/${BOT_USERNAME}?start=ref_${me.ref_code||''}`;
+ const share=`Работай водителем в «Бомбилы» — заявки от пассажиров прямо в телефоне. Переходи по ссылке и регистрируйся: ${url}`;
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>Пригласить водителя</h3><div class="s">Ваш друг вводит этот код при регистрации. Когда он впервые оплатит подписку — вам начислится <b>${SETTINGS.ref_bonus||100} ₽</b> на баланс.</div>
- <div class="refbox"><div class="refcode">${me.ref_code||'—'}</div><button class="subbtn" onclick="copyRef('${me.ref_code||''}')">Копировать</button></div>
- <div class="s" style="margin-top:12px">Отправьте другу код или текст приглашения. Бонус — без ограничений по количеству.</div>
- <div class="sa"><button class="o" onclick="closeSh()">Готово</button></div></div>`;
+ m.innerHTML=`<div class="sheet"><h3>Пригласить водителя</h3><div class="s">Отправьте другу вашу ссылку. Он перейдёт, откроется бот — и он автоматически станет вашим рефералом. Когда впервые оплатит подписку, вам начислится <b>${SETTINGS.ref_bonus||100} ₽</b>.</div>
+ <div class="refbox"><div class="reflink">${url}</div></div>
+ <div class="sa" style="flex-wrap:wrap"><button class="c" onclick="copyRef('${url}')">Копировать ссылку</button><button class="o" onclick="shareRef('${encodeURIComponent(share)}','${encodeURIComponent(url)}')">Поделиться</button></div></div>`;
  document.getElementById('device').appendChild(m);
 }
-function copyRef(code){try{navigator.clipboard.writeText(code);}catch(e){}T('Код скопирован: '+code);}
+function copyRef(t){try{navigator.clipboard.writeText(t);}catch(e){}T('Скопировано');}
+function shareRef(text,url){
+ try{
+  if(tg&&tg.openTelegramLink){tg.openTelegramLink('https://t.me/share/url?url='+url+'&text='+text);return;}
+ }catch(e){}
+ try{if(navigator.share){navigator.share({text:decodeURIComponent(text)});return;}}catch(e){}
+ copyRef(decodeURIComponent(url));
+}
 function promoSheet(){
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet"><h3>Промокод</h3><div class="s">Введите промокод — например из уведомления о возврате или подарочный.</div><div class="fr"><label>Код</label><input id="pcode" placeholder="BACK1234" style="text-transform:uppercase"></div><div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="redeemPromo()">Применить</button></div></div>`;
@@ -946,7 +961,6 @@ function applyDrv(){
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet"><h3>Стать бомбилой</h3><div class="s">Загрузите документы — их увидит только администрация. Марку и номер впишет админ после проверки.</div>
  <div class="fr"><label>Телефон</label><input id="ap" value="${esc(me.phone)}" placeholder="+7 900 000-00-00" inputmode="tel"></div>
- ${(!me.ref_by&&SETTINGS.ref_enabled)?'<div class="fr"><label>Код приглашения (если есть)</label><input id="apref" placeholder="от того, кто позвал" style="text-transform:uppercase"></div>':''}
  <div class="up" id="u1" onclick="pick('license')"><div class="ic" id="i1">🪪</div><div class="tx">Водительские права<small>разворот, чтобы читалось</small></div><span class="st" id="s1">загрузить</span></div>
  <div class="up" id="u2" onclick="pick('pts')"><div class="ic" id="i2">📄</div><div class="tx">ПТС / СТС<small>документ на машину</small></div><span class="st" id="s2">загрузить</span></div>
  <div class="up" id="u3" onclick="pick('car')"><div class="ic" id="i3">🚗</div><div class="tx">Машина с правами<small>чтобы был виден госномер</small></div><span class="st" id="s3">загрузить</span></div>
@@ -998,15 +1012,8 @@ function pick(kind){
 async function sendApp(){
  const p=document.getElementById('ap').value.trim();if(!p)return T('Введите телефон');
  if(!me.doc_license||!me.doc_car)return T('Загрузите права и фото машины');
- const upd={phone:p,driver_status:'pending'};
- const refEl=document.getElementById('apref');
- if(refEl&&refEl.value.trim()){
-  const code=refEl.value.trim().toUpperCase();
-  const q=await db.from('users').select('id').eq('ref_code',code).maybeSingle();
-  if(q.data&&q.data.id!==me.id){upd.ref_by=q.data.id;}
- }
- await db.from('users').update(upd).eq('id',me.id);
- Object.assign(me,upd);closeSh();T('Заявка отправлена на модерацию');drawP();
+ await db.from('users').update({phone:p,driver_status:'pending'}).eq('id',me.id);
+ me.phone=p;me.driver_status='pending';closeSh();T('Заявка отправлена на модерацию');drawP();
 }
 const closeSh=()=>{const s=document.getElementById('sh');if(s)s.remove();};
 
@@ -1056,7 +1063,7 @@ function drawD(){
  ${dActive?`<button class="nb ${dTab==='ride'?'active':''}" onclick="dGo('ride')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>Заказ</button>`:''}
  <button class="nb ${dTab==='inbox'?'active':''}" onclick="dGo('inbox')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5h13L22 12v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6z"/></svg>Заявки</button>
  <button class="nb ${dTab==='earn'?'active':''}" onclick="dGo('earn')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Доход</button>
- <button class="nb ${dTab==='rev'?'active':''}" onclick="dGo('rev')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 9 22 9 17 14 19 21 12 17 5 21 7 14 2 9 9 9"/></svg>Отзывы${unreadRev?'<i class="dot"></i>':''}</button>
+ <button class="nb ${dTab==='rev'?'active':''}" onclick="dGo('rev')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 9 22 9 17 14 19 21 12 17 5 21 7 14 2 9 9 9"/></svg>Отзывы</button>
  <button class="nb ${dTab==='profile'?'active':''}" onclick="dGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль</button>`;
  const m=document.getElementById('main');
  if(dTab==='ride')dRide(m);
@@ -1303,9 +1310,37 @@ function drawA(){
  if(aTab==='fin')aFin(m);
 }
 const aGo=t=>{aTab=t;drawA();};
+async function supportList(){
+ const{data}=await db.from('support_msgs').select('*').eq('answered',false).order('created_at',{ascending:false}).limit(50);
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Обращения в поддержку</h3><div class="s">Новые сообщения от пользователей. Выберите, кому ответить.</div>
+ ${(data&&data.length)?data.map(s=>`<div class="cp"><div class="rs">${esc(s.from_name)}</div><div class="mt">${new Date(s.created_at).toLocaleString('ru')}</div><div class="rs" style="font-weight:500;font-size:13.5px">«${esc(s.text)}»</div><div class="ra"><button class="o" onclick="answerSupport('${s.id}','${s.from_user||''}','${s.from_tg}','${esc(s.from_name)}')">Ответить</button><button class="c" onclick="markAnswered('${s.id}')">Скрыть</button></div></div>`).join(''):'<div class="empty"><b>Нет новых обращений</b></div>'}
+ <div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+function answerSupport(sid,uid,tg,name){
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet"><h3>Ответ для ${esc(name)}</h3><div class="s">Ответ придёт человеку в бота.</div><textarea class="ta" id="ansmsg" placeholder="Ваш ответ" style="min-height:100px"></textarea><div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="sendSupportAns('${sid}','${uid}','${tg}')">Отправить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function sendSupportAns(sid,uid,tg){
+ const t=document.getElementById('ansmsg').value.trim();
+ if(!t)return T('Введите ответ');
+ // доставим через admin_msgs (по user_id если есть)
+ if(uid){await db.from('admin_msgs').insert({to_user:uid,text:t});}
+ else{
+  // нет user_id — создаём временную запись по tg через users lookup
+  const{data:u}=await db.from('users').select('id').eq('telegram_id',tg).maybeSingle();
+  if(u)await db.from('admin_msgs').insert({to_user:u.id,text:t});
+  else return T('Не удалось найти пользователя');
+ }
+ await db.from('support_msgs').update({answered:true}).eq('id',sid);
+ document.getElementById('sh2').remove();T('Ответ отправлен');supportList();
+}
+async function markAnswered(sid){await db.from('support_msgs').update({answered:true}).eq('id',sid);T('Скрыто');const sh=document.getElementById('sh');if(sh)sh.remove();supportList();}
 async function aOver(m){
  const today=new Date();today.setHours(0,0,0,0);
- const[{count:all},{count:td},{count:on},{count:done},{data:apps},{data:cmp},{data:rv},{count:us}]=await Promise.all([
+ const[{count:all},{count:td},{count:on},{count:done},{data:apps},{data:cmp},{data:rv},{count:us},{count:supCount}]=await Promise.all([
   db.from('rides').select('*',{count:'exact',head:true}),
   db.from('rides').select('*',{count:'exact',head:true}).gte('created_at',today.toISOString()),
   db.from('users').select('*',{count:'exact',head:true}).eq('status','online'),
@@ -1313,10 +1348,12 @@ async function aOver(m){
   db.from('users').select('id').eq('driver_status','pending'),
   db.from('complaints').select('*').eq('status','pending'),
   db.from('reviews').select('*').eq('visible',true).order('created_at',{ascending:false}).limit(5),
-  db.from('users').select('*',{count:'exact',head:true})
+  db.from('users').select('*',{count:'exact',head:true}),
+  db.from('support_msgs').select('*',{count:'exact',head:true}).eq('answered',false)
  ]);
  const avg=rv&&rv.length?(rv.reduce((s,r)=>s+r.rating,0)/rv.length).toFixed(1):'—';
  m.innerHTML=`<div class="head"><h2>Панель · Бомбилы</h2><span class="m">${me.staff_role}</span></div>
+ ${supCount?`<div class="act-card" onclick="supportList()"><div class="ava" style="width:36px;height:36px;font-size:16px;border-radius:11px">📨</div><div class="t"><b>${supCount} новых обращений</b><span>нажмите, чтобы ответить</span></div><span class="go">Открыть ›</span></div>`:`<div class="act-card" style="background:var(--surf);border-color:var(--line)" onclick="supportList()"><div class="ava" style="width:36px;height:36px;font-size:16px;border-radius:11px;background:var(--line2)">📨</div><div class="t"><b>Обращения</b><span>новых нет</span></div><span class="go">Открыть ›</span></div>`}
  <div class="agrid">
   <div class="ast"><div class="n g">${td||0}</div><div class="l">заявок сегодня</div></div>
   <div class="ast"><div class="n">${on||0}</div><div class="l">на линии</div></div>
