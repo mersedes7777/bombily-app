@@ -84,6 +84,10 @@ async function onUpdate(u) {
   const m = u.message;
   if (!m || !m.text) return;
   const chat = m.chat.id, text = m.text.trim();
+  // сохраняем username телеграма для связи из админки
+  if (m.from && m.from.username) {
+    db.from('users').update({ tg_username: m.from.username }).eq('telegram_id', chat).then(()=>{}, ()=>{});
+  }
 
   // ответ админа на пересланное сообщение
   if (chat === OWNER && m.reply_to_message && fwdMap.has(m.reply_to_message.message_id)) {
@@ -234,6 +238,17 @@ async function notifyLoop() {
         await db.from('reviews').update({ visible: true }).eq('ride_id', rv.ride_id);
       }
     }
+
+    // новые отзывы -> уведомить того, о ком отзыв (только когда отзыв стал видимым)
+    const { data: nrev } = await db.from('reviews').select('*').eq('visible', true).eq('notified', false);
+    for (const rv of nrev || []) {
+      const tid = await tgIdOf(rv.target_id);
+      if (tid) {
+        const stars = '⭐'.repeat(rv.rating);
+        await send(tid, `📝 <b>Новый отзыв о вас</b>\n${stars}${rv.comment ? '\n«' + rv.comment + '»' : ''}\n\nОткройте приложение, вкладка «Отзывы».`);
+      }
+      await db.from('reviews').update({ notified: true }).eq('id', rv.id);
+    }
   } catch (e) { console.error('notify', e.message); }
   setTimeout(notifyLoop, 4000);
 }
@@ -257,15 +272,15 @@ async function expireLoop() {
 /* ---------- неактивные водители: предупреждение и снятие с линии ---------- */
 async function idleLoop() {
   try {
-    const warnCut = new Date(Date.now() - 60 * 60 * 1000).toISOString();   // 1 час
-    const offCut  = new Date(Date.now() - 75 * 60 * 1000).toISOString();   // ещё 15 минут
+    const warnCut = new Date(Date.now() - 120 * 60 * 1000).toISOString();  // 2 часа
+    const offCut  = new Date(Date.now() - 135 * 60 * 1000).toISOString();  // ещё 15 минут
 
     // предупреждение
     const { data: warn } = await db.from('users').select('*')
       .eq('status', 'online').eq('idle_warned', false).lt('last_active', warnCut);
     for (const u of warn || []) {
       if (u.telegram_id) await send(u.telegram_id,
-        `⚠️ <b>Вы всё ещё на линии?</b>\nПриложение не открывалось больше часа. Если не отметитесь в течение 15 минут, мы автоматически снимем вас с линии и закроем смену — чтобы пассажиры не звали вас впустую.`,
+        `⚠️ <b>Вы всё ещё на линии?</b>\nПриложение не открывалось больше 2 часов. Если не отметитесь в течение 15 минут, мы автоматически снимем вас с линии и закроем смену — чтобы пассажиры не звали вас впустую.`,
         { reply_markup: { inline_keyboard: [[wa('Я на линии', 'driver')]] } });
       await db.from('users').update({ idle_warned: true }).eq('id', u.id);
     }
