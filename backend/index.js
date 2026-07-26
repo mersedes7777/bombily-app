@@ -249,6 +249,29 @@ async function notifyLoop() {
       }
       await db.from('reviews').update({ notified: true }).eq('id', rv.id);
     }
+
+    // сообщения от админа -> юзеру в бот
+    const { data: ams } = await db.from('admin_msgs').select('*').eq('sent', false);
+    for (const a of ams || []) {
+      const tid = await tgIdOf(a.to_user);
+      if (tid) await send(tid, `<b>Сообщение от администрации Бомбилы:</b>\n${a.text}`);
+      await db.from('admin_msgs').update({ sent: true }).eq('id', a.id);
+    }
+
+    // одобренный возврат -> отправить промокод
+    const { data: appr } = await db.from('winback_queue').select('*').eq('status', 'approved');
+    for (const w of appr || []) {
+      const { data: u } = await db.from('users').select('telegram_id,name').eq('id', w.user_id).maybeSingle();
+      if (u && u.telegram_id) {
+        const code = 'BACK' + Math.random().toString(36).slice(2, 6).toUpperCase();
+        const exp = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+        await db.from('promos').insert({ code, days: 2, for_user: w.user_id, expires_at: exp });
+        await db.from('users').update({ winback_sent: new Date().toISOString() }).eq('id', w.user_id);
+        await send(u.telegram_id,
+          `🎁 <b>Мы соскучились!</b>\nДержите промокод на <b>2 дня бесплатной работы</b>:\n\n<code>${code}</code>\n\nВведите в приложении → Профиль → Подписка → «Промокод». Действует 7 дней.`);
+      }
+      await db.from('winback_queue').update({ status: 'done' }).eq('id', w.id);
+    }
   } catch (e) { console.error('notify', e.message); }
   setTimeout(notifyLoop, 4000);
 }
@@ -304,6 +327,33 @@ async function idleLoop() {
   setTimeout(idleLoop, 5 * 60 * 1000);
 }
 
+
+/* ---------- возврат «спящих» водителей ---------- */
+async function winbackLoop() {
+  try {
+    const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    const sleepCut = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString(); // 14 дней без активности
+    const wbCut    = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(); // не чаще раза в 30 дней
+    const { data: sleepers } = await db.from('users').select('*')
+      .in('role', ['driver', 'both'])
+      .eq('ever_paid', true)
+      .lt('last_active', sleepCut);
+    const now = Date.now();
+    for (const u of sleepers || []) {
+      if (u.winback_sent && u.winback_sent > wbCut) continue;
+      if (!u.telegram_id) continue;
+      // не беспокоим тех, у кого подписка ещё активна — они оплатили вперёд
+      if (u.sub_until && new Date(u.sub_until).getTime() > now) continue;
+      // не дублируем предложение, если уже висит в очереди
+      const { data: exists } = await db.from('winback_queue').select('id').eq('user_id', u.id).in('status', ['pending', 'approved']).limit(1);
+      if (exists && exists.length) continue;
+      // предлагаем админу — он одобрит вручную
+      await db.from('winback_queue').insert({ user_id: u.id, user_name: u.name, last_active: u.last_active });
+    }
+  } catch (e) { console.error('winback', e.message); }
+  setTimeout(winbackLoop, 6 * 3600 * 1000); // раз в 6 часов
+}
+
 /* ---------- health ---------- */
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -315,3 +365,4 @@ poll();
 notifyLoop();
 expireLoop();
 idleLoop();
+winbackLoop();
