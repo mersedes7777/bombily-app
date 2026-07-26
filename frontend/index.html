@@ -279,6 +279,16 @@ const SUPABASE_URL="https://wygmuydnodwpbtsdfjuq.supabase.co";
 const SUPABASE_ANON_KEY="sb_publishable_BYSmJx0oJGxvoomZrOPTJQ_mxVHZMT1";
 const OWNER_ID=8672930773;
 const BOT_USERNAME='bombily_bot';
+const API_BASE='https://bombily-app-production.up.railway.app';
+async function api(path,payload){
+ const initData=(window.Telegram&&window.Telegram.WebApp&&window.Telegram.WebApp.initData)||'';
+ try{
+  const r=await fetch(API_BASE+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({initData},payload||{}))});
+  const j=await r.json();
+  if(!r.ok)return{error:j.error||'error'};
+  return j;
+ }catch(e){return{error:'network'};}
+}
 
 if(!window.supabase){
  document.getElementById('boot').innerHTML='<div style="color:#e2585a;padding:20px;line-height:1.6"><b>Не загрузилась библиотека</b><br><br>Обновите страницу. Если не помогает и включён VPN — попробуйте выключить его.</div>';
@@ -832,53 +842,24 @@ function promoSheet(){
 async function redeemPromo(){
  const code=(document.getElementById('pcode').value||'').trim().toUpperCase();
  if(!code)return T('Введите код');
- const{data:p}=await db.from('promos').select('*').eq('code',code).maybeSingle();
- if(!p)return T('Код не найден');
- if(p.used)return T('Код уже использован');
- if(p.for_user&&p.for_user!==me.id)return T('Код не для вашего аккаунта');
- if(p.expires_at&&new Date(p.expires_at)<new Date())return T('Срок кода истёк');
- // применяем
- if(p.days>0){
-  const base=subActive()?new Date(me.sub_until):new Date();
-  base.setDate(base.getDate()+p.days);
-  await db.from('users').update({sub_until:base.toISOString()}).eq('id',me.id);
-  me.sub_until=base.toISOString();
+ const r=await api('/api/redeem-promo',{code});
+ if(r.error){
+  const msg={not_found:'Код не найден',used:'Код уже использован',not_yours:'Код не для вашего аккаунта',expired:'Срок кода истёк',network:'Нет связи'}[r.error]||'Ошибка';
+  T(msg);return;
  }
- if(Number(p.amount)>0){
-  await db.from('users').update({balance:(me.balance||0)+Number(p.amount)}).eq('id',me.id);
-  me.balance=(me.balance||0)+Number(p.amount);
- }
- await db.from('promos').update({used:true,used_by:me.id}).eq('id',p.id);
- await db.from('payments').insert({user_id:me.id,user_name:me.name,amount:Number(p.amount)||0,kind:'promo',days:p.days||null,note:'промокод '+code});
- closeSh();T(p.days?`+${p.days} дн подписки!`:`+${p.amount} ₽ на баланс!`);drawD();
+ if(r.sub_until)me.sub_until=r.sub_until;if(r.balance!==undefined)me.balance=r.balance;
+ closeSh();T(r.days?`+${r.days} дн подписки!`:`+${r.amount} ₽ на баланс!`);drawD();
 }
 async function buySub(){
  const days=window._pkGet(),price=window._pkPrice();
- if(SETTINGS.paid_mode){
-  if((me.balance||0)<price){closeSh();T('Недостаточно средств. Пополните баланс — обратитесь к администратору.');return;}
-  await db.from('users').update({balance:(me.balance||0)-price}).eq('id',me.id);
-  me.balance=(me.balance||0)-price;
+ if(SETTINGS.paid_mode&&(me.balance||0)<price){closeSh();T('Недостаточно средств. Пополните баланс — обратитесь к администратору.');return;}
+ const r=await api('/api/buy-sub',{days});
+ if(r.error){
+  const msg={no_funds:'Недостаточно средств',bad_days:'Ошибка тарифа',auth:'Ошибка авторизации',network:'Нет связи с сервером'}[r.error]||'Ошибка';
+  closeSh();T(msg);return;
  }
- const base=subActive()?new Date(me.sub_until):new Date();
- base.setDate(base.getDate()+days);
- await db.from('users').update({sub_until:base.toISOString()}).eq('id',me.id);
- me.sub_until=base.toISOString();
- await db.from('payments').insert({user_id:me.id,user_name:me.name,amount:SETTINGS.paid_mode?-price:0,kind:'sub',days,note:SETTINGS.paid_mode?'':'бесплатный период'});
- // отметим, что оплачивал (для рефералки и возврата)
- if(SETTINGS.paid_mode&&!me.ever_paid){
-  await db.from('users').update({ever_paid:true}).eq('id',me.id);me.ever_paid=true;
-  // начислить бонус пригласившему — один раз
-  if(SETTINGS.ref_enabled&&me.ref_by&&!me.ref_paid){
-   const{data:inv}=await db.from('users').select('id,balance,name,telegram_id').eq('id',me.ref_by).maybeSingle();
-   if(inv){
-    const bonus=Number(SETTINGS.ref_bonus)||100;
-    await db.from('users').update({balance:(Number(inv.balance)||0)+bonus}).eq('id',inv.id);
-    await db.from('payments').insert({user_id:inv.id,user_name:inv.name,amount:bonus,kind:'referral',note:'бонус за '+me.name});
-    await db.from('users').update({ref_paid:true}).eq('id',me.id);me.ref_paid=true;
-   }
-  }
- }
- closeSh();T('Подписка активна до '+base.toLocaleDateString('ru'));drawD();
+ me.sub_until=r.sub_until;if(r.balance!==undefined)me.balance=r.balance;me.ever_paid=true;
+ closeSh();T('Подписка активна до '+new Date(r.sub_until).toLocaleDateString('ru'));drawD();
 }
 function complain(rid,did,dn){
  let reason='Завысил цену после согласования';
@@ -1376,10 +1357,11 @@ async function aApps(m){
 async function okDrv(id){
  const c=document.getElementById('ac'+id).value.trim(),p=document.getElementById('ap'+id).value.trim();
  if(!c||!p)return T('Впишите марку и номер');
- await db.from('users').update({role:'driver',driver_status:'approved',car:c,plate:p}).eq('id',id);
+ const r=await api('/api/admin',{action:'driver-status',target_id:id,status:'approved',car:c,plate:p});
+ if(r.error)return T('Ошибка: '+r.error);
  T('Водитель одобрен');drawA();
 }
-async function noDrv(id){await db.from('users').update({driver_status:'none'}).eq('id',id);T('Отклонено');drawA();}
+async function noDrv(id){const r=await api('/api/admin',{action:'driver-status',target_id:id,status:'none'});if(r.error)return T('Ошибка');T('Отклонено');drawA();}
 async function aCmp(m){
  const{data}=await db.from('complaints').select('*').eq('status','pending').order('created_at',{ascending:false});
  m.innerHTML=`<div class="head"><h2>Жалобы</h2><span class="m">${(data||[]).length} открыто</span></div><div style="padding:8px 0 24px">${(data||[]).length?data.map(c=>{
@@ -1388,11 +1370,9 @@ async function aCmp(m){
 }).join(''):'<div class="empty"><b>Жалоб нет</b>Все обращения разобраны.</div>'}</div>`;
 }
 async function killReview(cid,rid,uid){
- await db.from('reviews').delete().eq('id',rid);
+ const rr=await api('/api/admin',{action:'del-review',review_id:rid,target_id:uid});
+ if(rr.error){T('Ошибка: '+rr.error);return;}
  await db.from('complaints').update({status:'done'}).eq('id',cid);
- const{data:all}=await db.from('reviews').select('rating').eq('target_id',uid);
- const avg=all&&all.length?(all.reduce((s,r)=>s+r.rating,0)/all.length).toFixed(1):5;
- await db.from('users').update({rating:avg}).eq('id',uid);
  T('Отзыв удалён, рейтинг пересчитан');drawA();
 }
 async function resolveCmp(id,act,target){
@@ -1516,9 +1496,8 @@ async function savePrices(){
 async function adjBal(){
  const uid=document.getElementById('fu').value;const amt=parseFloat(document.getElementById('fa').value);
  if(!uid||!amt)return T('Выберите водителя и сумму');
- const{data:u}=await db.from('users').select('balance,name').eq('id',uid).single();
- await db.from('users').update({balance:(Number(u.balance)||0)+amt}).eq('id',uid);
- await db.from('payments').insert({user_id:uid,user_name:u.name,amount:amt,kind:'adjust',note:document.getElementById('fn').value.trim()||'админ'});
+ const r=await api('/api/admin',{action:'adjust-balance',target_id:uid,amount:amt,note:document.getElementById('fn').value.trim()||'админ'});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка: '+r.error);
  T('Готово: '+(amt>0?'+':'')+amt+' ₽');aFin(document.getElementById('main'));
 }
 async function aPpl(m){
@@ -1616,17 +1595,19 @@ async function userCard(id){
 }
 async function saveUser(id){
  const g=x=>document.getElementById('e_'+x).value.trim();
- const p={name:g('name'),phone:g('phone'),age:parseInt(g('age'))||null,car:g('car'),plate:g('plate'),spot:g('spot'),rating:parseFloat(g('rating'))||5,role:g('role')||'passenger',driver_status:g('ds')||'none',balance:parseFloat(g('balance'))||0};
- const{error}=await db.from('users').update(p).eq('id',id);
- if(error)return T('Ошибка: '+error.message);
+ const fields={name:g('name'),phone:g('phone'),age:parseInt(g('age'))||null,car:g('car'),plate:g('plate'),spot:g('spot'),rating:parseFloat(g('rating'))||5,role:g('role')||'passenger',driver_status:g('ds')||'none',balance:parseFloat(g('balance'))||0};
+ const r=await api('/api/admin',{action:'edit-user',target_id:id,fields});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка: '+r.error);
  closeSh();T('Изменения сохранены');drawA();
 }
 async function toggleBan(id,now){
- await db.from('users').update({is_banned:!now,status:'offline'}).eq('id',id);
+ const r=await api('/api/admin',{action:'ban',target_id:id,value:!now});
+ if(r.error)return T('Ошибка: '+r.error);
  closeSh();T(now?'Разблокирован':'Заблокирован');drawA();
 }
 async function delRev(rid,uid){
- await db.from('reviews').delete().eq('id',rid);
+ const r=await api('/api/admin',{action:'del-review',review_id:rid,target_id:uid});
+ if(r.error)return T('Ошибка: '+r.error);
  T('Отзыв удалён');closeSh();userCard(uid);
 }
 function roleSheet(id,name,cur){

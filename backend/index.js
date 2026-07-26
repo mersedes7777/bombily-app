@@ -1,4 +1,5 @@
 import http from 'http';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const TOKEN   = process.env.BOT_TOKEN;
@@ -379,10 +380,163 @@ async function winbackLoop() {
   setTimeout(winbackLoop, 6 * 3600 * 1000); // раз в 6 часов
 }
 
-/* ---------- health ---------- */
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ ok: true, service: 'bombily-backend', version: 'v5-arrived-keyboard' }));
+/* ---------- проверка подписи Telegram initData ---------- */
+function verifyInitData(initData) {
+  try {
+    const params = new URLSearchParams(initData);
+    const hash = params.get('hash');
+    if (!hash) return null;
+    params.delete('hash');
+    const pairs = [];
+    for (const [k, v] of [...params.entries()].sort()) pairs.push(`${k}=${v}`);
+    const dataCheck = pairs.join('\n');
+    const secret = crypto.createHmac('sha256', 'WebAppData').update(TOKEN).digest();
+    const calc = crypto.createHmac('sha256', secret).update(dataCheck).digest('hex');
+    if (calc !== hash) return null;
+    const userStr = params.get('user');
+    if (!userStr) return null;
+    const user = JSON.parse(userStr);
+    // проверим срок (не старше 24ч)
+    const authDate = Number(params.get('auth_date') || 0);
+    if (Date.now() / 1000 - authDate > 86400) return null;
+    return user; // { id, first_name, ... }
+  } catch (e) { return null; }
+}
+
+// достаём запись пользователя по telegram_id из проверенных данных
+async function userFromInit(initData) {
+  const tgUser = verifyInitData(initData);
+  if (!tgUser) return null;
+  const { data } = await db.from('users').select('*').eq('telegram_id', tgUser.id).maybeSingle();
+  return data || null;
+}
+const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role);
+const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
+
+function readBody(req) {
+  return new Promise(resolve => {
+    let b = '';
+    req.on('data', c => { b += c; if (b.length > 1e6) req.destroy(); });
+    req.on('end', () => { try { resolve(JSON.parse(b || '{}')); } catch { resolve({}); } });
+  });
+}
+function json(res, code, obj) {
+  res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'POST, GET, OPTIONS' });
+  res.end(JSON.stringify(obj));
+}
+
+/* ---------- защищённый API ---------- */
+http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') return json(res, 200, {});
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v6-secure' });
+
+  const body = await readBody(req);
+  const me = await userFromInit(body.initData || '');
+  if (!me) return json(res, 401, { error: 'auth' });
+
+  try {
+    // --- покупка подписки (сам пользователь) ---
+    if (req.url === '/api/buy-sub') {
+      const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+      const days = Number(body.days);
+      const priceMap = { 1: st.price_1, 3: st.price_3, 7: st.price_7, 30: st.price_30 };
+      const price = priceMap[days];
+      if (!price) return json(res, 400, { error: 'bad_days' });
+      if (st.paid_mode) {
+        if ((Number(me.balance) || 0) < price) return json(res, 400, { error: 'no_funds' });
+        await db.from('users').update({ balance: (Number(me.balance) || 0) - price }).eq('id', me.id);
+      }
+      const base = (me.sub_until && new Date(me.sub_until) > new Date()) ? new Date(me.sub_until) : new Date();
+      base.setDate(base.getDate() + days);
+      const upd = { sub_until: base.toISOString() };
+      if (st.paid_mode && !me.ever_paid) {
+        upd.ever_paid = true;
+        // реферальный бонус пригласившему
+        if (st.ref_enabled && me.ref_by && !me.ref_paid) {
+          const { data: inv } = await db.from('users').select('id,balance,name').eq('id', me.ref_by).maybeSingle();
+          if (inv) {
+            await db.from('users').update({ balance: (Number(inv.balance) || 0) + (Number(st.ref_bonus) || 100) }).eq('id', inv.id);
+            await db.from('payments').insert({ user_id: inv.id, user_name: inv.name, amount: Number(st.ref_bonus) || 100, kind: 'referral', note: 'бонус за ' + me.name });
+            upd.ref_paid = true;
+          }
+        }
+      }
+      await db.from('users').update(upd).eq('id', me.id);
+      await db.from('payments').insert({ user_id: me.id, user_name: me.name, amount: st.paid_mode ? -price : 0, kind: 'sub', days, note: st.paid_mode ? '' : 'бесплатный период' });
+      return json(res, 200, { ok: true, sub_until: base.toISOString(), balance: (st.paid_mode ? (Number(me.balance) || 0) - price : me.balance) });
+    }
+
+    // --- применить промокод (сам пользователь) ---
+    if (req.url === '/api/redeem-promo') {
+      const code = String(body.code || '').trim().toUpperCase();
+      const { data: p } = await db.from('promos').select('*').eq('code', code).maybeSingle();
+      if (!p) return json(res, 400, { error: 'not_found' });
+      if (p.used) return json(res, 400, { error: 'used' });
+      if (p.for_user && p.for_user !== me.id) return json(res, 400, { error: 'not_yours' });
+      if (p.expires_at && new Date(p.expires_at) < new Date()) return json(res, 400, { error: 'expired' });
+      const upd = {};
+      if (p.days > 0) {
+        const base = (me.sub_until && new Date(me.sub_until) > new Date()) ? new Date(me.sub_until) : new Date();
+        base.setDate(base.getDate() + p.days);
+        upd.sub_until = base.toISOString();
+      }
+      if (Number(p.amount) > 0) upd.balance = (Number(me.balance) || 0) + Number(p.amount);
+      if (Object.keys(upd).length) await db.from('users').update(upd).eq('id', me.id);
+      await db.from('promos').update({ used: true, used_by: me.id }).eq('id', p.id);
+      await db.from('payments').insert({ user_id: me.id, user_name: me.name, amount: Number(p.amount) || 0, kind: 'promo', days: p.days || null, note: 'промокод ' + code });
+      return json(res, 200, { ok: true, days: p.days, amount: p.amount, sub_until: upd.sub_until || me.sub_until, balance: upd.balance ?? me.balance });
+    }
+
+    // --- админские операции (только staff) ---
+    if (req.url === '/api/admin') {
+      if (!isStaff(me)) return json(res, 403, { error: 'forbidden' });
+      const act = body.action;
+      const tid = body.target_id;
+
+      if (act === 'adjust-balance' && isAdminUp(me)) {
+        const { data: u } = await db.from('users').select('balance,name').eq('id', tid).single();
+        await db.from('users').update({ balance: (Number(u.balance) || 0) + Number(body.amount) }).eq('id', tid);
+        await db.from('payments').insert({ user_id: tid, user_name: u.name, amount: Number(body.amount), kind: 'adjust', note: body.note || 'админ' });
+        return json(res, 200, { ok: true });
+      }
+      if (act === 'ban') {
+        await db.from('users').update({ is_banned: !!body.value, status: 'offline' }).eq('id', tid);
+        return json(res, 200, { ok: true });
+      }
+      if (act === 'set-role' && me.staff_role === 'owner') {
+        await db.from('users').update({ staff_role: body.role }).eq('id', tid);
+        return json(res, 200, { ok: true });
+      }
+      if (act === 'driver-status') {
+        const upd = { driver_status: body.status };
+        if (body.car !== undefined) upd.car = body.car;
+        if (body.plate !== undefined) upd.plate = body.plate;
+        if (body.status === 'approved') upd.role = 'both';
+        await db.from('users').update(upd).eq('id', tid);
+        return json(res, 200, { ok: true });
+      }
+      if (act === 'edit-user' && isAdminUp(me)) {
+        const f = body.fields || {};
+        const allowed = {};
+        ['name','phone','age','car','plate','spot','rating','role','driver_status','balance'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        await db.from('users').update(allowed).eq('id', tid);
+        return json(res, 200, { ok: true });
+      }
+      if (act === 'del-review') {
+        await db.from('reviews').delete().eq('id', body.review_id);
+        const { data: all } = await db.from('reviews').select('rating').eq('target_id', tid).eq('visible', true);
+        const avg = all && all.length ? (all.reduce((s, r) => s + r.rating, 0) / all.length).toFixed(1) : 5;
+        await db.from('users').update({ rating: avg }).eq('id', tid);
+        return json(res, 200, { ok: true });
+      }
+      return json(res, 400, { error: 'bad_action' });
+    }
+
+    return json(res, 404, { error: 'not_found' });
+  } catch (e) {
+    console.error('api', e.message);
+    return json(res, 500, { error: 'server' });
+  }
 }).listen(PORT, () => console.log('listening on ' + PORT));
 
 setupBot();
