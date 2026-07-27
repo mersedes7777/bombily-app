@@ -251,6 +251,17 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .nb{position:relative;}
 .promo-btn{color:var(--am)!important;border-color:var(--am)!important;}
 .arrived-btn{background:var(--am)!important;color:#1a1206!important;border:none!important;font-weight:700;}
+.appcontact{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap;}
+.acbtn{
+ flex:1;min-width:96px;display:flex;align-items:center;justify-content:center;gap:5px;
+ padding:10px 8px;border-radius:11px;font-size:12px;font-weight:600;
+ text-decoration:none;border:1px solid var(--line2);color:var(--ink);
+ background:var(--bg);font-family:Inter,sans-serif;cursor:pointer;box-sizing:border-box;
+}
+.acbtn.call{border-color:var(--g);color:var(--g);}
+.acbtn.tg{background:#229ED9;border-color:#229ED9;color:#fff;}
+.acbtn.wr{background:var(--g);border-color:var(--g);color:#06120b;}
+.acbtn.dim{color:var(--dim);background:transparent;}
 .drvbox{display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--line2);border-radius:13px;padding:13px;margin-bottom:10px;}
 .drvst{flex:1;min-width:0;}
 .drvst b{display:block;font-size:13.5px;}
@@ -1409,7 +1420,12 @@ async function aOver(m){
 async function aApps(m){
  const{data:apps}=await db.from('users').select('*').eq('driver_status','pending');
  m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt">${esc(a.full_name)||esc(a.name)}</div><div class="rm"><span id="aph${a.id}">${a.has_phone?'телефон загружается…':'без телефона'}</span> · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div>
-<div class="docs" id="docs${a.id}">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>a[d[0]]?`<div style="flex:1"><div class="docslot" data-k="${d[0]}"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">загрузка…</div></div><div class="cap">${d[1]}</div></div>`:`<div style="flex:1"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">нет</div><div class="cap">${d[1]}</div></div>`).join('')}</div><div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>`;
+<div class="docs" id="docs${a.id}">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>a[d[0]]?`<div style="flex:1"><div class="docslot" data-k="${d[0]}"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">загрузка…</div></div><div class="cap">${d[1]}</div></div>`:`<div style="flex:1"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">нет</div><div class="cap">${d[1]}</div></div>`).join('')}</div><div class="appcontact">
+  <a class="acbtn call" id="acall${a.id}" style="display:none">📞 Позвонить</a>
+  ${a.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(a.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}
+  <button class="acbtn wr" onclick="writeUser('${a.id}','${esc(a.full_name)||esc(a.name)}')">💬 В бота</button>
+ </div>
+ <div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>`;
  loadAppPhones((apps||[]).filter(x=>x.has_phone).map(x=>x.id));
  (apps||[]).forEach(x=>{if(x.doc_license||x.doc_pts||x.doc_car)loadDocs(x.id,'docs'+x.id);});
 }
@@ -1589,7 +1605,13 @@ async function loadAppPhones(ids){
  if(!ids||!ids.length)return;
  const r=await api('/api/admin',{action:'apps-phones',ids});
  if(r.error||!r.map)return;
- Object.entries(r.map).forEach(([id,ph])=>{const el=document.getElementById('aph'+id);if(el&&ph)el.textContent=ph;});
+ Object.entries(r.map).forEach(([id,ph])=>{
+  if(!ph)return;
+  const el=document.getElementById('aph'+id);
+  if(el)el.textContent=ph;
+  const cb=document.getElementById('acall'+id);
+  if(cb){cb.href='tel:'+ph;cb.style.display='';}
+ });
 }
 async function aPpl(m){
  const{data:us}=await db.from('users').select('*').order('created_at',{ascending:false}).limit(300);
