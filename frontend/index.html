@@ -113,7 +113,7 @@ body{background:#070a09;font-family:Inter,sans-serif;color:var(--ink);display:fl
 .ai .ava{width:38px;height:38px;font-size:14px;border-radius:11px;}
 .rolebtn{background:transparent;color:var(--dim);border:1px solid var(--line2);border-radius:9px;padding:7px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;}
 nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding:9px 8px calc(14px + env(safe-area-inset-bottom));flex-shrink:0;}
-.nb{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--dim);cursor:pointer;padding:4px 0;}
+.nb{flex:1;min-width:0;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--dim);cursor:pointer;padding:4px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .nb.active{color:var(--g);}
 .nb svg{width:21px;height:21px;}
 .ph{padding:24px 20px 18px;text-align:center;background:var(--elev);border-bottom:1px solid var(--line);}
@@ -200,8 +200,9 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .dcard .btns{display:flex;gap:8px;margin-top:11px;}
 .dcard .call{flex:1;background:var(--g);color:#06120b;border:none;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;}
 .tmr{font-family:'Roboto Mono',monospace;font-size:11px;color:var(--am);}
-.seg{display:flex;gap:6px;padding:12px 14px 4px;overflow-x:auto;}
-.seg div{flex-shrink:0;padding:8px 14px;border-radius:100px;border:1px solid var(--line2);font-size:12.5px;font-weight:600;color:var(--dim);cursor:pointer;white-space:nowrap;}
+.seg{display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px 6px;}
+.seg div{flex:1 1 auto;text-align:center;padding:9px 11px;border-radius:11px;border:1px solid var(--line2);font-size:12px;font-weight:600;color:var(--dim);cursor:pointer;white-space:nowrap;background:var(--surf);}
+.seg div.on{box-shadow:0 3px 12px rgba(51,209,126,.2);}
 .seg div.on{background:var(--g);border-color:var(--g);color:#06120b;}
 .dt{display:flex;gap:8px;padding:0 14px 10px;}
 .dt input{flex:1;background:var(--surf);border:1px solid var(--line);border-radius:11px;padding:10px;color:var(--ink);font-size:13px;outline:none;font-family:Inter,sans-serif;}
@@ -1696,7 +1697,7 @@ async function aPpl(m){
  else list=all;
  const seg=[['all','Все',all.length],['admin','Админы',groups.admin.length],['mod','Модеры',groups.mod.length],['driver','Водители',groups.driver.length],['pass','Пассажиры',groups.pass.length]];
  m.innerHTML=`<div class="head"><h2>Пользователи</h2><span class="m">${list.length}</span></div>
- <div class="seg">${seg.map(s=>`<div class="${pplFilter===s[0]?'on':''}" onclick="pplFilter='${s[0]}';aPpl(document.getElementById('main'))">${s[1]} · ${s[2]}</div>`).join('')}</div>
+ <div class="seg">${seg.map(s=>`<div class="${pplFilter===s[0]?'on':''}" onclick="pplFilter='${s[0]}';aPpl(document.getElementById('main'))">${s[1]}<span style="opacity:.55;font-weight:500"> ${s[2]}</span></div>`).join('')}</div>
  <div style="padding:6px 0 24px">${list.map(u=>{
    const mine=u.id===me.id;
    const bd=isStaffR(u)?`<span class="badge am">${u.staff_role==='owner'?'владелец':u.staff_role==='admin'?'админ':'модератор'}</span>`:'';
