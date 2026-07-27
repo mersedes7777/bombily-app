@@ -392,6 +392,9 @@ window.addEventListener('unhandledrejection',e=>showErr(netMsg(e.reason)));
 window.addEventListener('offline',()=>showErr('Нет интернета. Данные не обновляются.'));
 window.addEventListener('online',()=>{hideErr();T('Связь восстановлена');});
 const T=t=>{const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(window._t);window._t=setTimeout(()=>e.classList.remove('show'),2600);};
+const plural=(n,f)=>{n=Math.abs(Number(n)||0);const n10=n%10,n100=n%100;if(n10===1&&n100!==11)return f[0];if(n10>=2&&n10<=4&&(n100<10||n100>=20))return f[1];return f[2];};
+const cancelTxt=n=>{n=Number(n)||0;return n===0?'без отмен':n+' '+plural(n,['отменённый заказ','отменённых заказа','отменённых заказов']);};
+const refuseTxt=n=>{n=Number(n)||0;return n===0?'ни разу не отказывался':n+' '+plural(n,['отказ от заказа','отказа от заказов','отказов от заказов']);};
 const esc=s=>String(s==null?'':s).replace(/[<>"']/g,'');
 const jget=f=>{try{return JSON.parse(me[f]||'[]')}catch(e){return[]}};
 const places=()=>jget('places');
@@ -462,6 +465,16 @@ async function boot(){
   if(START==='order'){targetDrv=null;pTab=active?'ride':'order';drawP();}
   if(START==='profile'){pTab='profile';drawP();}
   if(START==='driver'){ if(isDrv()){setRole('driver');} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
+  if(START==='chat'){
+   const rid=new URLSearchParams(location.search).get('ride');
+   if(rid){
+    const{data:cr}=await db.from('rides').select('passenger_id,driver_id').eq('id',rid).maybeSingle();
+    if(cr){
+     if(cr.driver_id===me.id&&isDrv())setRole('driver');
+     setTimeout(()=>openChat(rid,cr.driver_id===me.id?'driver':'passenger'),200);
+    }
+   }
+  }
  }catch(e){document.getElementById('boot').innerHTML='<div style="color:#e2585a;padding:20px">Ошибка: '+(e&&e.message||e)+'</div>';}
 }
 const OB=[
@@ -707,7 +720,7 @@ async function pickDriver(id){
 function formHTML(d){
  const ch=places().map((p,i)=>`<div class="chip" onclick="document.getElementById('to').value='${esc(p)}'">📍 ${esc(p)}<span class="x" onclick="event.stopPropagation();delPlace(${i})">✕</span></div>`).join('');
  const hdr=d?`<div class="card" style="margin:14px 14px 0"><div class="ava">${esc(d.name)[0]}</div><div style="flex:1"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':''}${d.car?'<span>· '+esc(d.car)+'</span>':''}</div></div></div>`:'';
- return `<div class="head"><h2>${d?'Заявка водителю':'Заявка всем'}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="Откуда" value="Моё местоположение"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="Куда едем"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div><button class="btn" onclick="send(${d?"'"+d.id+"'":'null'})">Отправить заявку</button><button class="btn ghost" onclick="targetDrv=null;pGo('home')">Назад</button><div class="note">${d?esc(d.name)+' получит заявку и назовёт цену — вы решите, принимать или нет.':'Заявку увидят все на линии. Каждый пришлёт свою цену.'}</div></div>`;
+ return `<div class="head"><h2>${d?'Заявка водителю':'Заявка всем'}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="Откуда — адрес или ориентир"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="Куда едем"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div><button class="btn" onclick="send(${d?"'"+d.id+"'":'null'})">Отправить заявку</button><button class="btn ghost" onclick="targetDrv=null;pGo('home')">Назад</button><div class="note">Пишите адрес или понятный ориентир — водитель поедет по нему. ${d?esc(d.name)+' назовёт цену, вы решите, принимать или нет.':'Заявку увидят все на линии, каждый пришлёт свою цену.'}</div></div>`;
 }
 async function addPlace(){
  const cur=document.getElementById('to')?.value.trim();
@@ -725,8 +738,9 @@ async function delPlace(i){
 }
 async function send(did){
  if(active)return T('У вас уже есть активная заявка');
- const f=document.getElementById('from').value.trim()||'Моё местоположение';
+ const f=document.getElementById('from').value.trim();
  const t=document.getElementById('to').value.trim();
+ if(!f)return T('Укажите, откуда вас забрать');
  if(!t)return T('Укажите, куда едем');
  const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city};
  if(did)row.target_driver_id=did;
@@ -757,7 +771,7 @@ async function openRide(){
  if(r.status==='confirmed'){
    const{data:d}=await db.from('users').select('*').eq('id',r.driver_id).single();
    const on=favs().includes(r.driver_id);
-   m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.arrived?'Водитель на месте':'Бомбила выехал'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div><div class="sub">⭐ ${d?.rating||5} · отказов: ${d?.cancel_as_driver||0}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div><button class="fav ${on?'on':''}" onclick="togFav('${r.driver_id}')">♥</button></div><div id="dcallwrap"></div><button class="btn" onclick="openChat('${r.id}','passenger')">Написать водителю</button><button class="btn ghost" onclick="doneRide('${d?.id}','${esc(d?.name)}')">Поездка завершена</button><button class="btn dang" onclick="complain('${r.id}','${d?.id}','${esc(d?.name)}')">Пожаловаться</button></div>`;
+   m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.arrived?'Водитель на месте':'Бомбила выехал'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div><div class="sub">⭐ ${d?.rating||5} · ${refuseTxt(d?.cancel_as_driver)}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div><button class="fav ${on?'on':''}" onclick="togFav('${r.driver_id}')">♥</button></div><div id="dcallwrap"></div><button class="btn" onclick="openChat('${r.id}','passenger')">Написать водителю</button><button class="btn ghost" onclick="doneRide('${d?.id}','${esc(d?.name)}')">Поездка завершена</button><button class="btn dang" onclick="complain('${r.id}','${d?.id}','${esc(d?.name)}')">Пожаловаться</button></div>`;
    loadRideContact(r.id,'водителю');
    return;
  }
@@ -957,7 +971,7 @@ async function openRideFrom(id){
 async function markRevSeen(){unreadRev=0;}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
- return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">отмен как пассажир: ${me.cancel_as_passenger||0}${isDrv()?' · как водитель: '+(me.cancel_as_driver||0):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 900 000-00-00"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div><div class="mi" onclick="T('Поддержка: напишите в бот, кнопка «Связь с админом»')"><span>Поддержка</span><span class="c">›</span></div></div>`;
+ return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 900 000-00-00"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div><div class="mi" onclick="T('Поддержка: напишите в бот, кнопка «Связь с админом»')"><span>Поддержка</span><span class="c">›</span></div></div>`;
 }
 function disputeRev(rid,about,text){
  let reason='Отзыв не соответствует действительности';
@@ -1281,7 +1295,7 @@ async function dRide(m){
  dActive=r;subRide(r.id);
  const{data:p}=await db.from('users').select('*').eq('id',r.passenger_id).single();
  m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.arrived?'Вы на месте':'Вас выбрали!'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p>
- <div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">отмен как пассажир: ${p?.cancel_as_passenger||0}</div><div class="sub">${r.status==='in_progress'?'в машине':'ждёт вас'}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div></div>
+ <div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">${cancelTxt(p?.cancel_as_passenger)}</div><div class="sub">${r.status==='in_progress'?'в машине':'ждёт вас'}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div></div>
  <div id="dcallwrap"></div>
  <button class="btn" onclick="openChat('${r.id}','driver')">Написать пассажиру</button>
  ${r.arrived?'<div class="note">✅ Пассажир уведомлён, что вы подъехали</div>':`<button class="btn arrived-btn" onclick="dArrived()">📍 Я подъехал</button>`}
@@ -1351,7 +1365,7 @@ function dProfHTML(){
  const until=me.sub_until?new Date(me.sub_until):null;
  const daysLeft=until?Math.max(0,Math.ceil((until-new Date())/86400000)):0;
  const subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Баланс: <b>${me.balance||0} ₽</b></div><div class="scs">${SETTINGS.paid_mode?(act?'Подписка активна · '+daysLeft+' дн':'Подписка неактивна'):'Сейчас бесплатно для всех'}</div></div><button class="subbtn" onclick="subSheet()">Подписка</button></div>`;
- return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · отказов от заказов: ${me.cancel_as_driver||0}</div></div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div><div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
+ return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div></div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div><div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
 async function saveD(){
  const n=document.getElementById('d1').value.trim();if(!n)return T('Введите имя');
@@ -1695,8 +1709,8 @@ async function userCard(id){
   <div class="ust"><b>${u.balance||0}₽</b><span>баланс</span></div>
  </div>
  <div class="uinfo">
-  <div>Отмен как пассажир: <b>${u.cancel_as_passenger||0}</b></div>
-  <div>Отказов как водитель: <b>${u.cancel_as_driver||0}</b></div>
+  <div>Как пассажир: <b>${cancelTxt(u.cancel_as_passenger)}</b></div>
+  <div>Как водитель: <b>${refuseTxt(u.cancel_as_driver)}</b></div>
   <div>Город: <b>${esc(u.city)||'—'}</b></div>
   <div>Подписка: <b style="color:${act?'var(--g)':'var(--dim)'}">${act?('до '+new Date(u.sub_until).toLocaleDateString('ru')):'нет'}</b></div>
  </div>
