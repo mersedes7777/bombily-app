@@ -258,6 +258,15 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
  font-size:9.5px;font-weight:700;font-style:normal;line-height:16px;text-align:center;
  border:1.5px solid var(--surf);
 }
+.mypr{margin-top:12px;font-size:13.5px;color:var(--dim);}
+.mypr b{color:var(--g);font-family:'Roboto Mono',monospace;font-size:16px;}
+.mycom{margin-top:8px;font-size:12.5px;color:var(--dim);max-width:280px;margin-left:auto;margin-right:auto;line-height:1.45;}
+.okpr{font-size:11px;color:var(--g);font-weight:600;margin-top:3px;}
+.rcom{background:var(--bg);border-left:2px solid var(--am);border-radius:0 9px 9px 0;padding:9px 11px;margin-top:9px;font-size:13px;line-height:1.45;color:var(--ink);}
+.rprice{display:flex;align-items:center;gap:10px;margin-top:10px;padding:11px 13px;background:var(--gs);border:1px solid rgba(51,209,126,.28);border-radius:12px;}
+.rpt{font-size:11px;color:var(--dim);}
+.rpv{flex:1;font-family:'Roboto Mono',monospace;font-weight:700;font-size:19px;color:var(--g);}
+.agree{background:var(--g);color:#06120b;border:none;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;flex-shrink:0;}
 .appcontact{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap;}
 .acbtn{
  flex:1;min-width:96px;display:flex;align-items:center;justify-content:center;gap:5px;
@@ -727,7 +736,10 @@ async function pickDriver(id){
 function formHTML(d){
  const ch=places().map((p,i)=>`<div class="chip" onclick="document.getElementById('to').value='${esc(p)}'">📍 ${esc(p)}<span class="x" onclick="event.stopPropagation();delPlace(${i})">✕</span></div>`).join('');
  const hdr=d?`<div class="card" style="margin:14px 14px 0"><div class="ava">${esc(d.name)[0]}</div><div style="flex:1"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':''}${d.car?'<span>· '+esc(d.car)+'</span>':''}</div></div></div>`:'';
- return `<div class="head"><h2>${d?'Заявка водителю':'Заявка всем'}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="Откуда — адрес или ориентир"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="Куда едем"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div><button class="btn" onclick="send(${d?"'"+d.id+"'":'null'})">Отправить заявку</button><button class="btn ghost" onclick="targetDrv=null;pGo('home')">Назад</button><div class="note">Пишите адрес или понятный ориентир — водитель поедет по нему. ${d?esc(d.name)+' назовёт цену, вы решите, принимать или нет.':'Заявку увидят все на линии, каждый пришлёт свою цену.'}</div></div>`;
+ return `<div class="head"><h2>${d?'Заявка водителю':'Заявка всем'}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="Откуда — адрес или ориентир"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="Куда едем"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div>
+ <div class="fr"><label>Комментарий для водителя (не обязательно)</label><input id="ocom" placeholder="трое, большая сумка, второй подъезд…" maxlength="200"></div>
+ <div class="fr"><label>Ваша цена, ₽ (не обязательно)</label><input id="oprice" inputmode="numeric" placeholder="например 300"></div>
+ <button class="btn" onclick="send(${d?"'"+d.id+"'":'null'})">Отправить заявку</button><button class="btn ghost" onclick="targetDrv=null;pGo('home')">Назад</button><div class="note">Пишите адрес или понятный ориентир — водитель поедет по нему.<br>Если укажете свою цену, водитель либо согласится, либо предложит свою — решать вам.</div></div>`;
 }
 async function addPlace(){
  const cur=document.getElementById('to')?.value.trim();
@@ -753,7 +765,10 @@ async function send(did){
  const t=document.getElementById('to').value.trim();
  if(!f)return T('Укажите, откуда вас забрать');
  if(!t)return T('Укажите, куда едем');
- const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city};
+ const com=(document.getElementById('ocom')?.value||'').trim().slice(0,200);
+ const pp=parseInt(document.getElementById('oprice')?.value)||null;
+ if(pp!==null&&(pp<1||pp>100000))return T('Проверьте цену');
+ const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city,comment:com||null,passenger_price:pp};
  if(did)row.target_driver_id=did;
  const{data,error}=await Q(db.from('rides').insert(row).select().single(),'Не удалось создать заявку');
  if(error)return;
@@ -787,7 +802,11 @@ async function openRide(){
    return;
  }
  const{data:offs}=await db.from('offers').select('*').eq('ride_id',r.id).eq('status','pending');
- m.innerHTML=`<div class="wait"><div class="bea"><i></i><i></i><i></i><b></b></div><h3>${r.target_driver_id?'Ждём ответ водителя':'Ищем свободных'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="cd" id="rcd"></div></div><div class="list">${(offs&&offs.length)?offs.map(o=>`<div class="card"><div class="ava">${esc(o.driver_name)[0]||'?'}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div></div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}',${o.price})">Принять</button></div></div>`).join(''):'<div class="empty">Ждём предложений по цене…</div>'}</div><div style="padding:0 18px 24px"><button class="btn dang" onclick="cancelRide()">Отменить заявку</button></div>`;
+ m.innerHTML=`<div class="wait"><div class="bea"><i></i><i></i><i></i><b></b></div><h3>${r.target_driver_id?'Ждём ответ водителя':'Ищем свободных'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p>${r.passenger_price?`<div class="mypr">Ваша цена: <b>${r.passenger_price} ₽</b></div>`:''}${r.comment?`<div class="mycom">💬 ${esc(r.comment)}</div>`:''}<div class="cd" id="rcd"></div></div><div class="list">${(offs&&offs.length)?offs.map(o=>{
+  const same=r.passenger_price&&Number(o.price)===Number(r.passenger_price);
+  const less=r.passenger_price&&Number(o.price)<Number(r.passenger_price);
+  return `<div class="card"><div class="ava">${esc(o.driver_name)[0]||'?'}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div>${same?'<div class="okpr">согласен на вашу цену</div>':less?'<div class="okpr">дешевле вашей цены</div>':''}</div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}',${o.price})">Принять</button></div></div>`;
+ }).join(''):'<div class="empty">Ждём предложений по цене…</div>'}</div><div style="padding:0 18px 24px"><button class="btn dang" onclick="cancelRide()">Отменить заявку</button></div>`;
  startCd(r.created_at);
 }
 let cdTick=null;
@@ -969,6 +988,7 @@ async function tripInfo(id){
  m.innerHTML=`<div class="sheet"><h3>Поездка</h3><div class="s">${new Date(r.created_at).toLocaleString('ru')} · ${st[r.status]||esc(r.status)}</div>
  <div class="fr"><label>Маршрут</label><div style="font-size:14px;font-weight:500">${esc(r.from_address)} → ${esc(r.to_address)}</div></div>
  ${r.price?`<div class="fr"><label>Сумма</label><div class="price">${r.price} ₽</div></div>`:''}
+ ${r.comment?`<div class="fr"><label>Комментарий</label><div style="font-size:13.5px">${esc(r.comment)}</div></div>`:''}
  ${d?`<div class="fr"><label>Водитель</label><div style="font-size:14px;font-weight:600">${esc(d.name)}</div><div class="sub">${esc(d.car)||'—'}${d.plate?' · '+esc(d.plate):''}</div></div>`:'<div class="fr"><label>Водитель</label><div class="sub">не назначен</div></div>'}
  <div class="sa">${d?`<button class="c" onclick="closeSh();complain('${r.id}','${d.id}','${esc(d.name)}')">Пожаловаться</button>`:''}<button class="o" onclick="closeSh()">Закрыть</button></div></div>`;
  document.getElementById('device').appendChild(m);
@@ -1270,7 +1290,10 @@ async function load(){
 function drawReqs(){
  const l=document.getElementById('il');if(!l)return;
  if(!reqs.length){l.innerHTML='<div class="empty"><b>Пока тихо</b>Новые заявки появятся здесь сразу.</div>';return;}
- l.innerHTML=reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div><div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ваша цена</span></div><div class="ra"><button class="acc" onclick="offer('${r.id}')">Отправить цену</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div></div>`).join('');
+ l.innerHTML=reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
+ ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
+ ${r.passenger_price?`<div class="rprice"><div class="rpt">Пассажир предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
+ <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div><div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Отправить цену'}</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div></div>`).join('');
 }
 function subIn(){
  if(inCh)db.removeChannel(inCh);
@@ -1285,14 +1308,15 @@ function subMine(){
  if(myCh)db.removeChannel(myCh);
  myCh=db.channel('m'+me.id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'rides',filter:'driver_id=eq.'+me.id},p=>{if(p.new.status==='confirmed')won(p.new);}).subscribe();
 }
-async function offer(rid){
- const v=document.getElementById('p'+rid).value;
+async function offer(rid,fixed){
+ const v=fixed||document.getElementById('p'+rid).value;
  if(!v)return T('Укажите цену');
+ if(Number(v)<1||Number(v)>100000)return T('Проверьте цену');
  const{error}=await Q(db.from('offers').insert({ride_id:rid,driver_id:me.id,driver_name:me.name,car:me.car,price:Number(v),eta_minutes:5}),'Не удалось отправить цену');
  if(error)return;
  const{data:nofr}=await db.from('offers').select('*').eq('ride_id',rid).eq('driver_id',me.id).eq('status','pending').limit(1);
  if(nofr&&nofr.length)myOffs.unshift(nofr[0]);
- reqs=reqs.filter(r=>r.id!==rid);drawReqs();drawMyOffs();T('Цена отправлена: '+v+' ₽');
+ reqs=reqs.filter(r=>r.id!==rid);drawReqs();drawMyOffs();T(fixed?'Вы согласились: '+v+' ₽':'Цена отправлена: '+v+' ₽');
 }
 const skip=rid=>{reqs=reqs.filter(r=>r.id!==rid);drawReqs();};
 function won(r){
@@ -1306,6 +1330,7 @@ async function dRide(m){
  dActive=r;subRide(r.id);
  const{data:p}=await db.from('users').select('*').eq('id',r.passenger_id).single();
  m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.arrived?'Вы на месте':'Вас выбрали!'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p>
+ ${r.comment?`<div class="rcom" style="margin:0 0 12px">💬 ${esc(r.comment)}</div>`:''}
  <div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">${cancelTxt(p?.cancel_as_passenger)}</div><div class="sub">${r.status==='in_progress'?'в машине':'ждёт вас'}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div></div>
  <div id="dcallwrap"></div>
  <button class="btn" onclick="openChat('${r.id}','driver')">Написать пассажиру</button>
