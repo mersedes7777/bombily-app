@@ -194,10 +194,25 @@ async function notifyLoop() {
     // выбрали -> водителю
     const { data: conf } = await db.from('rides').select('*').eq('status', 'confirmed').eq('driver_notified', false);
     for (const r of conf || []) {
+      const route = `📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${r.price ? `\n💰 <b>Цена:</b> ${r.price} ₽` : ''}`;
+
+      // водителю — контакты пассажира
       if (r.driver_id) {
         const tid = await tgIdOf(r.driver_id);
-        if (tid) await send(tid, `✅ <b>Вас выбрали!</b>\n${r.from_address} → ${r.to_address}\nПассажир: ${r.passenger_name || '—'}`,
-          { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
+        if (tid) {
+          const card = await contactCard(r.passenger_id, 'Пассажир');
+          await send(tid, `✅ <b>Вас выбрали!</b>\n\n${route}${card}`,
+            { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
+        }
+      }
+      // пассажиру — контакты водителя
+      if (r.passenger_id) {
+        const tid = await tgIdOf(r.passenger_id);
+        if (tid) {
+          const card = await contactCard(r.driver_id, 'Водитель');
+          await send(tid, `🚕 <b>Водитель принял заказ</b>\n\n${route}${card}`,
+            { reply_markup: { inline_keyboard: [[wa('Открыть поездку', 'order')]] } });
+        }
       }
       await db.from('rides').update({ driver_notified: true }).eq('id', r.id);
     }
@@ -220,11 +235,18 @@ async function notifyLoop() {
     // поездка завершена -> обоим
     const { data: fin } = await db.from('rides').select('*').eq('status', 'completed').eq('done_notified', false);
     for (const r of fin || []) {
-      const txt = `🏁 <b>Поездка завершена</b>\n${r.from_address} → ${r.to_address}${r.price ? `\nСумма: ${r.price} ₽` : ''}`;
-      for (const uid of [r.passenger_id, r.driver_id]) {
-        if (!uid) continue;
-        const tid = await tgIdOf(uid);
-        if (tid) await send(tid, txt);
+      const base = `🏁 <b>Поездка завершена</b>\n\n📍 ${r.from_address}\n🏁 ${r.to_address}${r.price ? `\n💰 ${r.price} ₽` : ''}`;
+      // пассажиру
+      if (r.passenger_id) {
+        const tid = await tgIdOf(r.passenger_id);
+        if (tid) await send(tid, `${base}\n\nОцените поездку в приложении — это поможет другим пассажирам.`,
+          { reply_markup: { inline_keyboard: [[wa('Оценить поездку', 'order')]] } });
+      }
+      // водителю
+      if (r.driver_id) {
+        const tid = await tgIdOf(r.driver_id);
+        if (tid) await send(tid, `${base}\n\nСпасибо за работу!`,
+          { reply_markup: { inline_keyboard: [[wa('К заявкам', 'driver')]] } });
       }
       await db.from('rides').update({ done_notified: true }).eq('id', r.id);
     }
@@ -408,13 +430,33 @@ async function userFromInit(initData) {
   const tgUser = verifyInitData(initData);
   if (!tgUser) return null;
   const { data } = await db.from('users').select('*').eq('telegram_id', tgUser.id).maybeSingle();
-  return data || null;
+  if (!data) return null;
+  // подхватываем ник телеграма при любом входе — чтобы была связь без переписки с ботом
+  if (tgUser.username && data.tg_username !== tgUser.username) {
+    db.from('users').update({ tg_username: tgUser.username }).eq('id', data.id).then(() => {}, () => {});
+    data.tg_username = tgUser.username;
+  }
+  return data;
 }
 
 const phoneOf = async uid => {
   if (!uid) return null;
   const { data } = await db.from('contacts').select('phone').eq('user_id', uid).maybeSingle();
   return data ? data.phone : null;
+};
+
+// карточка контактов пользователя для сообщения в бот
+const contactCard = async (uid, label) => {
+  if (!uid) return '';
+  const { data: u } = await db.from('users').select('name,tg_username,car,plate,rating').eq('id', uid).maybeSingle();
+  if (!u) return '';
+  const phone = await phoneOf(uid);
+  let s = `\n\n<b>${label}:</b> ${u.name || '—'}`;
+  if (u.car) s += `\n🚗 ${u.car}${u.plate ? ' · ' + u.plate : ''}`;
+  if (phone) s += `\n📞 <a href="tel:${phone}">${phone}</a>`;
+  if (u.tg_username) s += `\n✈️ @${u.tg_username}`;
+  else s += `\n✈️ ник не указан — пишите в чате приложения`;
+  return s;
 };
 const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role);
 const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
@@ -434,7 +476,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v9-phones' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v10-notify' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
