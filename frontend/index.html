@@ -733,13 +733,17 @@ async function addPlace(){
  const v=cur||prompt('Название места (например: Дом, Работа):');
  if(!v)return;
  const p=places();if(p.includes(v))return T('Уже сохранено');
- p.push(v);me.places=JSON.stringify(p);
- await db.from('users').update({places:me.places}).eq('id',me.id);
+ p.push(v);
+ const r=await api('/api/save-places',{places:JSON.stringify(p)});
+ if(r.error)return T('Не удалось сохранить место');
+ me.places=r.places;
  T('Место сохранено');document.getElementById('host').innerHTML=formHTML(targetDrv);
 }
 async function delPlace(i){
- const p=places();p.splice(i,1);me.places=JSON.stringify(p);
- await db.from('users').update({places:me.places}).eq('id',me.id);
+ const p=places();p.splice(i,1);
+ const r=await api('/api/save-places',{places:JSON.stringify(p)});
+ if(r.error)return T('Не удалось удалить место');
+ me.places=r.places;
  T('Удалено');document.getElementById('host').innerHTML=formHTML(targetDrv);
 }
 async function send(did){
@@ -1463,14 +1467,14 @@ async function aOver(m){
 }
 async function aApps(m){
  const{data:apps}=await db.from('users').select('*').eq('driver_status','pending');
- m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt">${esc(a.full_name)||esc(a.name)}</div><div class="rm"><span id="aph${a.id}">${a.has_phone?'телефон загружается…':'без телефона'}</span> · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div>
+ m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt" id="afio${a.id}">${esc(a.name)}</div><div class="rm"><span id="aph${a.id}">${a.has_phone?'телефон загружается…':'без телефона'}</span> · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div>
 <div class="docs" id="docs${a.id}">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>a[d[0]]?`<div style="flex:1"><div class="docslot" data-k="${d[0]}"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">загрузка…</div></div><div class="cap">${d[1]}</div></div>`:`<div style="flex:1"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">нет</div><div class="cap">${d[1]}</div></div>`).join('')}</div><div class="appcontact">
   <a class="acbtn call" id="acall${a.id}" style="display:none">📞 Позвонить</a>
   ${a.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(a.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}
   <button class="acbtn wr" onclick="writeUser('${a.id}','${esc(a.full_name)||esc(a.name)}')">💬 В бота</button>
  </div>
  <div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>`;
- loadAppPhones((apps||[]).filter(x=>x.has_phone).map(x=>x.id));
+ loadAppPhones((apps||[]).map(x=>x.id));
  (apps||[]).forEach(x=>{if(x.doc_license||x.doc_pts||x.doc_car)loadDocs(x.id,'docs'+x.id);});
 }
 async function okDrv(id){
@@ -1662,12 +1666,16 @@ async function loadAppPhones(ids){
  if(!ids||!ids.length)return;
  const r=await api('/api/admin',{action:'apps-phones',ids});
  if(r.error||!r.map)return;
- Object.entries(r.map).forEach(([id,ph])=>{
+ Object.entries(r.map||{}).forEach(([id,ph])=>{
   if(!ph)return;
   const el=document.getElementById('aph'+id);
   if(el)el.textContent=ph;
   const cb=document.getElementById('acall'+id);
   if(cb){cb.href='tel:'+ph;cb.style.display='';}
+ });
+ Object.entries(r.names||{}).forEach(([id,nm])=>{
+  const el=document.getElementById('afio'+id);
+  if(el&&nm)el.textContent=nm;
  });
 }
 async function aPpl(m){
@@ -1722,7 +1730,7 @@ async function userCard(id){
  const canRole=(own&&u.staff_role!=='owner')||(me.staff_role==='admin'&&!['owner','admin'].includes(u.staff_role));
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:90vh;overflow-y:auto">
- <h3>${esc(u.name)}</h3><div class="s">${u.full_name?esc(u.full_name)+'<br>':''}ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
+ <h3>${esc(u.name)}</h3><div class="s"><span id="ucfio"></span>ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
  <div class="ucontact">
   <span class="ucbtn dim" id="ucphone">${u.has_phone?'телефон загружается…':'телефон не указан'}</span>
   ${u.tg_username?`<a class="ucbtn tg" href="https://t.me/${esc(u.tg_username)}" target="_blank">✈️ Открыть в Telegram</a>`:''}
@@ -1741,7 +1749,7 @@ async function userCard(id){
   <div>Подписка: <b style="color:${act?'var(--g)':'var(--dim)'}">${act?('до '+new Date(u.sub_until).toLocaleDateString('ru')):'нет'}</b></div>
  </div>
  <div class="fr"><label>Имя в приложении</label><input id="e_name" value="${esc(u.name)}"></div>
- <div class="fr"><label>ФИО по документам</label><input id="e_full_name" value="${esc(u.full_name)}" placeholder="не указано"></div>
+ <div class="fr"><label>ФИО по документам</label><input id="e_full_name" value="" placeholder="загружается…"></div>
  <div class="fr"><label>Телефон</label><input id="e_phone" value="" placeholder="${u.has_phone?'загружается…':'не указан'}"></div>
  <div class="fr"><label>Возраст</label><input id="e_age" value="${u.age||''}" inputmode="numeric"></div>
  <div class="fr"><label>Марка машины</label><input id="e_car" value="${esc(u.car)}"></div>
@@ -1774,16 +1782,21 @@ async function userCard(id){
  </div></div>`;
  document.getElementById('device').appendChild(m);
  if(u.doc_license||u.doc_pts||u.doc_car)loadDocs(id,'ucdocs');
- if(u.has_phone){
-  api('/api/admin',{action:'user-phone',target_id:id}).then(r=>{
-   if(r&&r.phone){
-    const el=document.getElementById('ucphone');
-    if(el){el.outerHTML=`<a class="ucbtn" href="tel:${esc(r.phone)}">📞 ${esc(r.phone)}</a>`;}
-    const inp=document.getElementById('e_phone');
-    if(inp)inp.value=r.phone;
-   }
-  }).catch(()=>{});
- }
+ api('/api/admin',{action:'user-phone',target_id:id}).then(r=>{
+  if(!r||r.error)return;
+  if(r.phone){
+   const el=document.getElementById('ucphone');
+   if(el){el.outerHTML=`<a class="ucbtn" href="tel:${esc(r.phone)}">\u{1F4DE} ${esc(r.phone)}</a>`;}
+   const inp=document.getElementById('e_phone');
+   if(inp)inp.value=r.phone;
+  }
+  if(r.full_name){
+   const fn=document.getElementById('e_full_name');
+   if(fn)fn.value=r.full_name;
+   const hd=document.getElementById('ucfio');
+   if(hd)hd.innerHTML=esc(r.full_name)+'<br>';
+  }
+ }).catch(()=>{});
 }
 function grantDriver(id,name,car,plate){
  const m=document.createElement('div');m.className='mask';m.id='sh2';

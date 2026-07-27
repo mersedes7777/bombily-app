@@ -498,7 +498,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v16-moderation' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v17-private' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -576,9 +576,20 @@ http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, phone });
     }
 
-    // --- свой телефон (для профиля) ---
-    if (req.url === '/api/my-phone') {
-      return json(res, 200, { ok: true, phone: await phoneOf(me.id) });
+    // --- свои личные данные (телефон, ФИО, сохранённые адреса) ---
+    if (req.url === '/api/my-phone' || req.url === '/api/my-private') {
+      const { data: c } = await db.from('contacts').select('phone,full_name,places').eq('user_id', me.id).maybeSingle();
+      return json(res, 200, { ok: true, phone: c ? c.phone : null, full_name: c ? c.full_name : null, places: c ? c.places : null });
+    }
+
+    // --- сохранить свои адреса ---
+    if (req.url === '/api/save-places') {
+      let arr;
+      try { arr = JSON.parse(body.places || '[]'); } catch (e) { arr = []; }
+      if (!Array.isArray(arr)) arr = [];
+      arr = arr.slice(0, 20).map(x => String(x).slice(0, 120));
+      await db.from('contacts').upsert({ user_id: me.id, places: JSON.stringify(arr), updated_at: new Date().toISOString() });
+      return json(res, 200, { ok: true, places: JSON.stringify(arr) });
     }
 
     // --- телефон второй стороны по активной поездке ---
@@ -604,8 +615,8 @@ http.createServer(async (req, res) => {
       // все три документа обязательны
       const { data: docs } = await db.from('users').select('doc_license,doc_pts,doc_car').eq('id', me.id).maybeSingle();
       if (!docs || !docs.doc_license || !docs.doc_pts || !docs.doc_car) return json(res, 400, { error: 'need_docs' });
-      await db.from('contacts').upsert({ user_id: me.id, phone, updated_at: new Date().toISOString() });
-      await db.from('users').update({ has_phone: true, driver_status: 'pending', full_name: fullName }).eq('id', me.id);
+      await db.from('contacts').upsert({ user_id: me.id, phone, full_name: fullName, updated_at: new Date().toISOString() });
+      await db.from('users').update({ has_phone: true, driver_status: 'pending' }).eq('id', me.id);
       await notifyStaff(`🚗 <b>Новая заявка в водители</b>\n${fullName}\n📞 ${phone}`,
         { reply_markup: { inline_keyboard: [[wa('Открыть заявки', 'admin')]] } });
       return json(res, 200, { ok: true });
@@ -733,8 +744,11 @@ http.createServer(async (req, res) => {
       if (act === 'edit-user' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['name','full_name','age','car','plate','spot','rating','role','driver_status','balance'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['name','age','car','plate','spot','rating','role','driver_status','balance'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         if (Object.keys(allowed).length) await db.from('users').update(allowed).eq('id', tid);
+        if (f.full_name !== undefined) {
+          await db.from('contacts').upsert({ user_id: tid, full_name: String(f.full_name || '').slice(0, 120), updated_at: new Date().toISOString() });
+        }
         if (f.phone !== undefined) {
           const ph = String(f.phone || '').trim().slice(0, 30);
           if (ph) {
@@ -790,16 +804,17 @@ http.createServer(async (req, res) => {
 
       // карточка пользователя с телефоном (staff)
       if (act === 'user-phone') {
-        return json(res, 200, { ok: true, phone: await phoneOf(tid) });
+        const { data: c } = await db.from('contacts').select('phone,full_name').eq('user_id', tid).maybeSingle();
+        return json(res, 200, { ok: true, phone: c ? c.phone : null, full_name: c ? c.full_name : null });
       }
       // телефоны заявок в водители (staff)
       if (act === 'apps-phones') {
         const ids = Array.isArray(body.ids) ? body.ids.slice(0, 100) : [];
         if (!ids.length) return json(res, 200, { ok: true, map: {} });
-        const { data } = await db.from('contacts').select('user_id,phone').in('user_id', ids);
-        const map = {};
-        (data || []).forEach(c => { map[c.user_id] = c.phone; });
-        return json(res, 200, { ok: true, map });
+        const { data } = await db.from('contacts').select('user_id,phone,full_name').in('user_id', ids);
+        const map = {}, names = {};
+        (data || []).forEach(c => { map[c.user_id] = c.phone; if (c.full_name) names[c.user_id] = c.full_name; });
+        return json(res, 200, { ok: true, map, names });
       }
       if (act === 'del-review') {
         await db.from('reviews').delete().eq('id', body.review_id);
