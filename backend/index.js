@@ -458,8 +458,19 @@ const contactCard = async (uid, label) => {
   else s += `\n✈️ ник не указан — пишите в чате приложения`;
   return s;
 };
+
+// путь в хранилище из сохранённого значения (старые записи содержат полный URL)
+const docPath = v => {
+  if (!v) return null;
+  const i = v.indexOf('/docs/');
+  if (i !== -1) return v.slice(i + 6);
+  return v.replace(/^\/+/, '');
+};
 const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role);
 const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
+
+const rateMap = new Map();
+setInterval(() => { const t = Date.now(); for (const [k, v] of rateMap) if (t - v.t > 300000) rateMap.delete(k); }, 300000);
 
 function readBody(req) {
   return new Promise(resolve => {
@@ -476,11 +487,21 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v10-notify' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v11-docs' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
   if (!me) return json(res, 401, { error: 'auth' });
+  if (me.is_banned) return json(res, 403, { error: 'banned' });
+
+  // простая защита от спама: не больше 40 запросов в минуту с аккаунта
+  const rlKey = String(me.id);
+  const nowMs = Date.now();
+  const bucket = rateMap.get(rlKey) || { n: 0, t: nowMs };
+  if (nowMs - bucket.t > 60000) { bucket.n = 0; bucket.t = nowMs; }
+  bucket.n++;
+  rateMap.set(rlKey, bucket);
+  if (bucket.n > 40) return json(res, 429, { error: 'too_many' });
 
   try {
     // --- покупка подписки (сам пользователь) ---
@@ -654,6 +675,20 @@ http.createServer(async (req, res) => {
         }
         return json(res, 200, { ok: true });
       }
+      // временные ссылки на документы (staff)
+      if (act === 'doc-urls') {
+        const { data: u } = await db.from('users').select('doc_license,doc_pts,doc_car').eq('id', tid).maybeSingle();
+        if (!u) return json(res, 404, { error: 'no_user' });
+        const out = {};
+        for (const key of ['doc_license', 'doc_pts', 'doc_car']) {
+          const p = docPath(u[key]);
+          if (!p) continue;
+          const { data: signed } = await db.storage.from('docs').createSignedUrl(p, 3600);
+          if (signed && signed.signedUrl) out[key] = signed.signedUrl;
+        }
+        return json(res, 200, { ok: true, urls: out });
+      }
+
       // карточка пользователя с телефоном (staff)
       if (act === 'user-phone') {
         return json(res, 200, { ok: true, phone: await phoneOf(tid) });

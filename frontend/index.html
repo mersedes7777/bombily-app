@@ -291,6 +291,8 @@ async function api(path,payload){
  try{
   const r=await fetch(API_BASE+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({initData},payload||{}))});
   const j=await r.json();
+  if(r.status===403&&j.error==='banned'){document.body.innerHTML='<div style="color:#e2585a;padding:40px;font-family:Inter,sans-serif;text-align:center;line-height:1.7"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return{error:'banned'};}
+  if(r.status===429)return{error:'too_many'};
   if(!r.ok)return{error:j.error||'error'};
   return j;
  }catch(e){return{error:'network'};}
@@ -413,7 +415,7 @@ async function boot(){
   try{const{data:st}=await db.from('settings').select('*').eq('id',1).maybeSingle();if(st)SETTINGS=st;}catch(e){}
   await loadUnreadRev();
   api('/api/my-phone').then(r=>{if(r&&r.phone){me.phone=r.phone;}}).catch(()=>{});
-  if(tgId===OWNER_ID&&me.staff_role!=='owner'){await db.from('users').update({staff_role:'owner'}).eq('id',me.id);me.staff_role='owner';}
+  if(tgId===OWNER_ID&&me.staff_role!=='owner'){me.staff_role='owner';}
   if(me.is_banned){document.getElementById('boot').innerHTML='<div style="color:#e2585a"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return;}
   document.getElementById('boot').style.display='none';
   const miss=await checkSchema();
@@ -423,7 +425,7 @@ async function boot(){
    return;
   }
   if(!me.onboarded){onboard(0);return;}
-  if(!me.has_phone){phoneGate();return;}
+  if(!me.has_phone&&!me.phone){phoneGate();return;}
   if(!me.city){cityGate();return;}
   paintCity();
   drawRoles();count();setInterval(count,12000);
@@ -454,7 +456,7 @@ function onboard(i){
 async function finishOb(){
  await db.from('users').update({onboarded:true}).eq('id',me.id);
  me.onboarded=true;
- if(!me.has_phone){phoneGate();return;}
+ if(!me.has_phone&&!me.phone){phoneGate();return;}
  if(!me.city){cityGate();return;}
  paintCity();
  drawRoles();count();await restore();await restoreD();setRole('passenger');
@@ -496,7 +498,12 @@ async function saveGate(){
  const{error}=await Q(db.from('users').update({name:n}).eq('id',me.id),'Не удалось сохранить');
  if(error)return;
  const r=await api('/api/set-phone',{phone:p});
- if(r.error)return T(r.error==='bad_phone'?'Введите корректный телефон':'Не удалось сохранить телефон');
+ if(r.error){
+  if(r.error==='bad_phone')return T('Введите корректный телефон');
+  // запасной путь: пишем в старое поле, чтобы человек не застрял
+  const{error:e2}=await db.from('users').update({phone:p}).eq('id',me.id);
+  if(e2){showErr('Телефон не сохранился. Причина: '+r.error+'. Сообщите администратору.');return;}
+ }
  me.name=n;me.phone=p;me.has_phone=true;T('Спасибо!');
  if(!me.city){cityGate();return;}
  paintCity();
@@ -554,7 +561,8 @@ async function loadRideContact(rideId,who){
  const ph=document.getElementById('dphone');
  if(!ph)return;
  const r=await api('/api/ride-contact',{ride_id:rideId});
- if(r.error||!r.phone){ph.textContent='телефон не указан';return;}
+ if(r.error){ph.textContent='телефон недоступен ('+r.error+')';return;}
+ if(!r.phone){ph.textContent='телефон не указан';return;}
  ph.innerHTML='📞 '+esc(r.phone);ph.style.color='';
  const w=document.getElementById('dcallwrap');
  if(w)w.innerHTML=`<a href="tel:${esc(r.phone)}" style="text-decoration:none"><button class="btn ghost" style="margin-top:14px">📞 Позвонить ${who}</button></a>`;
@@ -1001,7 +1009,7 @@ function pick(kind){
    const path=`${me.id}/${kind}_${Date.now()}.jpg`;
    const{error}=await db.storage.from('docs').upload(path,small,{upsert:true,contentType:'image/jpeg'});
    if(error)throw error;
-   const url=db.storage.from('docs').getPublicUrl(path).data.publicUrl;
+   const url=path;
    const col={license:'doc_license',pts:'doc_pts',car:'doc_car'}[kind];
    await db.from('users').update({[col]:url}).eq('id',me.id);
    me[col]=url;markUp(n,url);T('Фото загружено');
@@ -1372,8 +1380,9 @@ async function aOver(m){
 async function aApps(m){
  const{data:apps}=await db.from('users').select('*').eq('driver_status','pending');
  m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt">${esc(a.name)}</div><div class="rm"><span id="aph${a.id}">${a.has_phone?'телефон загружается…':'без телефона'}</span> · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div>
-<div class="docs">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>a[d[0]]?`<a href="${a[d[0]]}" target="_blank"><img src="${a[d[0]]}"><div class="cap">${d[1]}</div></a>`:`<div style="flex:1"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">нет</div><div class="cap">${d[1]}</div></div>`).join('')}</div><div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>`;
+<div class="docs" id="docs${a.id}">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>a[d[0]]?`<div style="flex:1"><div class="docslot" data-k="${d[0]}"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">загрузка…</div></div><div class="cap">${d[1]}</div></div>`:`<div style="flex:1"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">нет</div><div class="cap">${d[1]}</div></div>`).join('')}</div><div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>`;
  loadAppPhones((apps||[]).filter(x=>x.has_phone).map(x=>x.id));
+ (apps||[]).forEach(x=>{if(x.doc_license||x.doc_pts||x.doc_car)loadDocs(x.id,'docs'+x.id);});
 }
 async function okDrv(id){
  const c=document.getElementById('ac'+id).value.trim(),p=document.getElementById('ap'+id).value.trim();
@@ -1397,8 +1406,11 @@ async function killReview(cid,rid,uid){
  T('Отзыв удалён, рейтинг пересчитан');drawA();
 }
 async function resolveCmp(id,act,target){
+ if(act==='ban'&&target){
+  const r=await api('/api/admin',{action:'ban',target_id:target,value:true});
+  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ }
  await db.from('complaints').update({status:'done'}).eq('id',id);
- if(act==='ban'&&target)await db.from('users').update({is_banned:true,status:'offline'}).eq('id',target);
  T({dismiss:'Жалоба отклонена',warn:'Предупреждение вынесено',ban:'Пользователь заблокирован'}[act]);
  drawA();
 }
@@ -1533,6 +1545,17 @@ async function adjBal(){
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка: '+r.error);
  T('Готово: '+(amt>0?'+':'')+amt+' ₽');aFin(document.getElementById('main'));
 }
+async function loadDocs(userId,containerId){
+ const box=document.getElementById(containerId);
+ if(!box)return;
+ const r=await api('/api/admin',{action:'doc-urls',target_id:userId});
+ box.querySelectorAll('.docslot').forEach(sl=>{
+  const k=sl.dataset.k;
+  const url=r&&r.urls?r.urls[k]:null;
+  sl.innerHTML=url?`<a href="${url}" target="_blank"><img src="${url}"></a>`
+   :'<div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">нет доступа</div>';
+ });
+}
 async function loadAppPhones(ids){
  if(!ids||!ids.length)return;
  const r=await api('/api/admin',{action:'apps-phones',ids});
@@ -1619,7 +1642,7 @@ async function userCard(id){
  <div class="fr"><label>Баланс, ₽</label><input id="e_balance" value="${u.balance||0}" inputmode="numeric"></div>
  <div class="fr"><label>Роль в сервисе</label><input id="e_role" value="${esc(u.role)}" placeholder="passenger / driver / both"></div>
  <div class="fr"><label>Статус водителя</label><input id="e_ds" value="${esc(u.driver_status)}" placeholder="none / pending / approved"></div>
- ${(u.doc_license||u.doc_pts||u.doc_car)?`<div class="docs">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>u[d[0]]?`<a href="${u[d[0]]}" target="_blank"><img src="${u[d[0]]}"><div class="cap">${d[1]}</div></a>`:'').join('')}</div>`:''}
+ ${(u.doc_license||u.doc_pts||u.doc_car)?`<div class="docs" id="ucdocs">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>u[d[0]]?`<div style="flex:1"><div class="docslot" data-k="${d[0]}"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">загрузка…</div></div><div class="cap">${d[1]}</div></div>`:'').join('')}</div>`:''}
  <div class="sec" style="padding-left:0">Отзывы о нём</div>
  ${(rv||[]).length?rv.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="delRev('${r.id}','${id}')">удалить</button></div>`).join(''):'<div class="sub" style="padding:4px 0 8px">отзывов нет</div>'}
  <div class="sec" style="padding-left:0">Его отзывы о других</div>
@@ -1631,6 +1654,7 @@ async function userCard(id){
   <button class="o" onclick="saveUser('${u.id}')">Сохранить</button>
  </div></div>`;
  document.getElementById('device').appendChild(m);
+ if(u.doc_license||u.doc_pts||u.doc_car)loadDocs(id,'ucdocs');
  if(u.has_phone){
   api('/api/admin',{action:'user-phone',target_id:id}).then(r=>{
    if(r&&r.phone){
@@ -1672,7 +1696,8 @@ function roleSheet(id,name,cur){
 }
 async function applyRole(id){
  const v=window._srGet();
- await db.from('users').update({staff_role:v}).eq('id',id);
+ const r=await api('/api/admin',{action:'set-role',target_id:id,role:v});
+ if(r.error)return T(r.error==='forbidden'?'Только владелец может менять права':'Ошибка');
  closeSh();T(v==='none'?'Права сняты':'Назначен: '+(v==='admin'?'админ':'модератор'));drawA();
 }
 document.addEventListener('visibilitychange',async()=>{
