@@ -251,6 +251,12 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .nb{position:relative;}
 .promo-btn{color:var(--am)!important;border-color:var(--am)!important;}
 .arrived-btn{background:var(--am)!important;color:#1a1206!important;border:none!important;font-weight:700;}
+.nb .cnt{
+ position:absolute;top:2px;right:calc(50% - 22px);min-width:16px;height:16px;
+ padding:0 4px;border-radius:8px;background:var(--red);color:#fff;
+ font-size:9.5px;font-weight:700;font-style:normal;line-height:16px;text-align:center;
+ border:1.5px solid var(--surf);
+}
 .appcontact{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap;}
 .acbtn{
  flex:1;min-width:96px;display:flex;align-items:center;justify-content:center;gap:5px;
@@ -650,7 +656,7 @@ function setRole(r){
  role=r;drawRoles();
  if(r==='passenger'){pTab='home';drawP();}
  if(r==='driver'){dTab='inbox';drawD();}
- if(r==='admin'){aTab='over';drawA();}
+ if(r==='admin'){aTab='over';loadAdminCounts().then(()=>drawA());drawA();}
 }
 
 /* ================= ПАССАЖИР ================= */
@@ -1387,8 +1393,8 @@ function drawA(){
  document.getElementById('abar').innerHTML='';
  document.getElementById('nav').innerHTML=`
  <button class="nb ${aTab==='over'?'active':''}" onclick="aGo('over')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Обзор</button>
- <button class="nb ${aTab==='apps'?'active':''}" onclick="aGo('apps')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Заявки</button>
- <button class="nb ${aTab==='cmp'?'active':''}" onclick="aGo('cmp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>Жалобы</button>
+ <button class="nb ${aTab==='apps'?'active':''}" onclick="aGo('apps')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Заявки${ADMC.apps?`<i class="cnt">${ADMC.apps}</i>`:''}</button>
+ <button class="nb ${aTab==='cmp'?'active':''}" onclick="aGo('cmp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>Жалобы${ADMC.complaints?`<i class="cnt">${ADMC.complaints}</i>`:''}</button>
  <button class="nb ${aTab==='ppl'?'active':''}" onclick="aGo('ppl')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Люди</button>
  <button class="nb ${aTab==='fin'?'active':''}" onclick="aGo('fin')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Финансы</button>
 `;
@@ -1400,6 +1406,7 @@ function drawA(){
  if(aTab==='fin')aFin(m);
 }
 const aGo=t=>{aTab=t;drawA();};
+setInterval(()=>{if(role==='admin'){loadAdminCounts().then(()=>{const n=document.getElementById('nav');if(n&&role==='admin')drawA();});}},30000);
 async function supportList(){
  const _r=await api('/api/admin',{action:'support-list'});
  const data=_r.items||[];
@@ -1475,26 +1482,39 @@ async function okDrv(id){
 }
 async function noDrv(id){const r=await api('/api/admin',{action:'driver-status',target_id:id,status:'none'});if(r.error)return T('Ошибка');T('Отклонено');drawA();}
 async function aCmp(m){
- const{data}=await db.from('complaints').select('*').eq('status','pending').order('created_at',{ascending:false});
+ const{data}=await db.from('complaints').select('*').in('status',['new','pending']).order('created_at',{ascending:false});
+ const uids=[...new Set((data||[]).flatMap(c=>[c.target_id,c.from_id]).filter(Boolean))];
+ let umap={};
+ if(uids.length){const{data:us}=await db.from('users').select('id,name,tg_username,has_phone').in('id',uids);(us||[]).forEach(u=>{umap[u.id]=u;});}
  m.innerHTML=`<div class="head"><h2>Жалобы</h2><span class="m">${(data||[]).length} открыто</span></div><div style="padding:8px 0 24px">${(data||[]).length?data.map(c=>{
  const isRev=c.kind==='review'&&c.review_id;
- return `<div class="cp"><span class="badge ${isRev?'am':'red'}">${isRev?'спор по отзыву':'жалоба'}</span><div class="rs">${isRev?'Оспаривает: '+esc(c.from_name):'На: '+esc(c.target_name)}</div><div class="mt">${isRev?'':'от '+esc(c.from_name)+' · '}${new Date(c.created_at).toLocaleDateString('ru')}</div><div class="rs" style="font-weight:500;font-size:13.5px">${esc(c.reason)}</div>${c.comment?'<div class="mt">«'+esc(c.comment)+'»</div>':''}<div class="ra">${isRev?`<button class="o" onclick="resolveCmp('${c.id}','dismiss')">Оставить отзыв</button><button class="b" onclick="killReview('${c.id}','${c.review_id}','${c.from_id}')">Удалить отзыв</button>`:`<button class="o" onclick="resolveCmp('${c.id}','dismiss')">Отклонить</button><button class="w" onclick="resolveCmp('${c.id}','warn')">Предупредить</button><button class="b" onclick="resolveCmp('${c.id}','ban','${c.target_id}')">Забанить</button>`}</div></div>`;
+ return `<div class="cp"><span class="badge ${isRev?'am':'red'}">${isRev?'спор по отзыву':'жалоба'}</span><div class="rs">${isRev?'Оспаривает: '+esc(c.from_name):'На: '+esc(c.target_name)}</div><div class="mt">${isRev?'':'от '+esc(c.from_name)+' · '}${new Date(c.created_at).toLocaleDateString('ru')}</div><div class="rs" style="font-weight:500;font-size:13.5px">${esc(c.reason)}</div>${c.comment?'<div class="mt">«'+esc(c.comment)+'»</div>':''}${(()=>{const who=umap[isRev?c.from_id:c.target_id];const wid=isRev?c.from_id:c.target_id;if(!who)return '';return `<div class="appcontact"><a class="acbtn call" id="ccall${c.id}" style="display:none">📞 Позвонить</a>${who.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(who.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}<button class="acbtn wr" onclick="writeUser('${wid}','${esc(who.name)}')">💬 В бота</button></div>`;})()}
+ <div class="ra">${isRev?`<button class="o" onclick="resolveCmp('${c.id}','dismiss')">Оставить отзыв</button><button class="b" onclick="killReview('${c.id}','${c.review_id}','${c.from_id}')">Удалить отзыв</button>`:`<button class="o" onclick="resolveCmp('${c.id}','dismiss')">Отклонить</button><button class="w" onclick="resolveCmp('${c.id}','warn','${c.target_id}')">Предупредить</button><button class="b" onclick="resolveCmp('${c.id}','ban','${c.target_id}')">Забанить</button>`}</div></div>`;
 }).join(''):'<div class="empty"><b>Жалоб нет</b>Все обращения разобраны.</div>'}</div>`;
+ (data||[]).forEach(async c=>{
+  const wid=(c.kind==='review'&&c.review_id)?c.from_id:c.target_id;
+  const who=umap[wid];
+  if(!who||!who.has_phone)return;
+  const r=await api('/api/admin',{action:'user-phone',target_id:wid});
+  if(r&&r.phone){const el=document.getElementById('ccall'+c.id);if(el){el.href='tel:'+r.phone;el.style.display='';}}
+ });
 }
 async function killReview(cid,rid,uid){
  const rr=await api('/api/admin',{action:'del-review',review_id:rid,target_id:uid});
  if(rr.error){T('Ошибка: '+rr.error);return;}
- await db.from('complaints').update({status:'done'}).eq('id',cid);
+ await api('/api/admin',{action:'complaint-resolve',complaint_id:cid});
  T('Отзыв удалён, рейтинг пересчитан');drawA();
 }
 async function resolveCmp(id,act,target){
- if(act==='ban'&&target){
-  const r=await api('/api/admin',{action:'ban',target_id:target,value:true});
-  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
- }
- await db.from('complaints').update({status:'done'}).eq('id',id);
- T({dismiss:'Жалоба отклонена',warn:'Предупреждение вынесено',ban:'Пользователь заблокирован'}[act]);
+ const r=await api('/api/admin',{action:'complaint-resolve',complaint_id:id,target_id:target||null,ban:act==='ban',warn:act==='warn'});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка: '+r.error);
+ T({dismiss:'Жалоба отклонена',warn:'Предупреждение отправлено',ban:'Пользователь заблокирован'}[act]);
  drawA();
+}
+let ADMC={apps:0,complaints:0,support:0};
+async function loadAdminCounts(){
+ const r=await api('/api/admin',{action:'admin-counts'});
+ if(r&&!r.error){ADMC={apps:r.apps||0,complaints:r.complaints||0,support:r.support||0};}
 }
 let pplFilter='all';
 let finTab='sub';

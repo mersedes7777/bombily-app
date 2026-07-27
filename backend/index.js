@@ -25,10 +25,12 @@ const send = (chat_id, text, extra = {}) =>
 
 /* ---------- кнопки ---------- */
 // вшиваем telegram id и имя пользователя в ссылку — чтобы апка всегда точно знала, кто открыл
-function appUrl(s, u) {
+function appUrl(s, u, extra) {
   const uid = u ? u.id : '';
   const nm = u && u.first_name ? encodeURIComponent(u.first_name) : '';
-  return `${APP_URL}?s=${s}&uid=${uid}&nm=${nm}`;
+  let url = `${APP_URL}?s=${s}&uid=${uid}&nm=${nm}`;
+  if (extra) for (const [k, v] of Object.entries(extra)) url += `&${k}=${encodeURIComponent(v)}`;
+  return url;
 }
 const wa = (text, s, u) => ({ text, web_app: { url: appUrl(s, u) } });
 function mainKbFor(u) {
@@ -225,8 +227,8 @@ async function notifyLoop() {
         const other = msg.sender_id === ride.passenger_id ? ride.driver_id : ride.passenger_id;
         if (other) {
           const tid = await tgIdOf(other);
-          if (tid) await send(tid, `💬 <b>${msg.sender_name || 'Сообщение'}</b>\n${msg.text}`,
-            { reply_markup: { inline_keyboard: [[wa('Ответить', 'order')]] } });
+          if (tid) await send(tid, `💬 <b>${msg.sender_name || 'Новое сообщение'}</b>\n${msg.text}`,
+            { reply_markup: { inline_keyboard: [[{ text: '💬 Открыть чат', web_app: { url: `${APP_URL}?s=chat&ride=${msg.ride_id}` } }]] } });
         }
       }
       await db.from('messages').update({ notified: true }).eq('id', msg.id);
@@ -466,6 +468,15 @@ const docPath = v => {
   if (i !== -1) return v.slice(i + 6);
   return v.replace(/^\/+/, '');
 };
+
+// уведомить всю модерацию (владелец, админы, модераторы)
+const notifyStaff = async (text, kb) => {
+  const { data: staff } = await db.from('users').select('telegram_id')
+    .in('staff_role', ['owner', 'admin', 'moderator']);
+  const ids = new Set((staff || []).map(s => s.telegram_id).filter(Boolean));
+  if (OWNER) ids.add(OWNER);
+  for (const id of ids) await send(id, text, kb || {});
+};
 const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role);
 const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
 
@@ -487,7 +498,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v14-chat' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v16-moderation' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -595,7 +606,8 @@ http.createServer(async (req, res) => {
       if (!docs || !docs.doc_license || !docs.doc_pts || !docs.doc_car) return json(res, 400, { error: 'need_docs' });
       await db.from('contacts').upsert({ user_id: me.id, phone, updated_at: new Date().toISOString() });
       await db.from('users').update({ has_phone: true, driver_status: 'pending', full_name: fullName }).eq('id', me.id);
-      if (OWNER) await send(OWNER, `🚗 <b>Новая заявка в водители</b>\n${fullName}\n📞 ${phone}\nОткройте панель → Заявки.`);
+      await notifyStaff(`🚗 <b>Новая заявка в водители</b>\n${fullName}\n📞 ${phone}`,
+        { reply_markup: { inline_keyboard: [[wa('Открыть заявки', 'admin')]] } });
       return json(res, 200, { ok: true });
     }
 
@@ -648,6 +660,7 @@ http.createServer(async (req, res) => {
 
     // --- жалоба / спор по отзыву (сам пользователь) ---
     if (req.url === '/api/complaint') {
+      const isReview = body.kind === 'review';
       await db.from('complaints').insert({
         from_id: me.id, from_name: me.name,
         target_id: body.target_id || me.id, target_name: body.target_name || me.name,
@@ -656,6 +669,9 @@ http.createServer(async (req, res) => {
         review_id: body.review_id || null,
         kind: body.kind || 'user'
       });
+      await notifyStaff(
+        `${isReview ? '📝' : '⚠️'} <b>${isReview ? 'Спор по отзыву' : 'Новая жалоба'}</b>\nОт: ${me.name}${isReview ? '' : `\nНа: ${body.target_name || '—'}`}\nПричина: ${String(body.reason || '').slice(0, 200)}`,
+        { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
       return json(res, 200, { ok: true });
     }
 
@@ -731,6 +747,33 @@ http.createServer(async (req, res) => {
         }
         return json(res, 200, { ok: true });
       }
+      // закрыть жалобу (staff)
+      if (act === 'complaint-resolve') {
+        const cid = body.complaint_id;
+        if (!cid) return json(res, 400, { error: 'bad_input' });
+        if (body.ban && tid) {
+          await db.from('users').update({ is_banned: true, status: 'offline' }).eq('id', tid);
+          const btid = await tgIdOf(tid);
+          if (btid) await send(btid, `⛔ <b>Доступ закрыт</b>\nВаш аккаунт заблокирован модерацией. Если считаете это ошибкой — напишите в поддержку.`);
+        }
+        if (body.warn && tid) {
+          const wtid = await tgIdOf(tid);
+          if (wtid) await send(wtid, `⚠️ <b>Предупреждение от модерации</b>\n${String(body.text || 'На вас поступила жалоба. Пожалуйста, соблюдайте правила сервиса.').slice(0, 500)}`);
+        }
+        await db.from('complaints').update({ status: 'done' }).eq('id', cid);
+        return json(res, 200, { ok: true });
+      }
+
+      // счётчики для значков в панели
+      if (act === 'admin-counts') {
+        const [{ count: apps }, { count: cmps }, { count: sup }] = await Promise.all([
+          db.from('users').select('*', { count: 'exact', head: true }).eq('driver_status', 'pending'),
+          db.from('complaints').select('*', { count: 'exact', head: true }).in('status', ['new','pending']),
+          db.from('support_msgs').select('*', { count: 'exact', head: true }).eq('answered', false)
+        ]);
+        return json(res, 200, { ok: true, apps: apps || 0, complaints: cmps || 0, support: sup || 0 });
+      }
+
       // временные ссылки на документы (staff)
       if (act === 'doc-urls') {
         const { data: u } = await db.from('users').select('doc_license,doc_pts,doc_car').eq('id', tid).maybeSingle();
