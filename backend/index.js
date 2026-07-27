@@ -428,7 +428,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v7-locked' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v8-fix' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -605,8 +605,10 @@ http.createServer(async (req, res) => {
 
       // --- написать пользователю через бота (staff) ---
       if (act === 'send-msg') {
+        const dest = body.to_user || body.target_id || tid;
+        if (!dest) return json(res, 400, { error: 'no_user' });
         if (!body.text || !String(body.text).trim()) return json(res, 400, { error: 'empty' });
-        await db.from('admin_msgs').insert({ to_user: tid, text: String(body.text).slice(0, 2000) });
+        await db.from('admin_msgs').insert({ to_user: dest, text: String(body.text).slice(0, 2000) });
         return json(res, 200, { ok: true });
       }
 
@@ -679,13 +681,6 @@ http.createServer(async (req, res) => {
       }
       if (act === 'support-hide') {
         await db.from('support_msgs').update({ answered: true }).eq('id', body.support_id);
-        return json(res, 200, { ok: true });
-      }
-
-      // ---- сообщение пользователю от администрации ----
-      if (act === 'send-msg') {
-        if (!body.to_user || !body.text) return json(res, 400, { error: 'bad_input' });
-        await db.from('admin_msgs').insert({ to_user: body.to_user, text: body.text });
         return json(res, 200, { ok: true });
       }
 
