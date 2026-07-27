@@ -1076,14 +1076,30 @@ async function openChat(rideId,back){
  document.getElementById('nav').innerHTML=`<button class="nb active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.5 8.5 0 01-3.9-.9L3 21l2-4.9A8.4 8.4 0 0121 11.5z"/></svg>Чат</button><button class="nb" onclick="closeChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>Назад</button>`;
  const m=document.getElementById('main');
  m.innerHTML=`<div class="chat"><div class="cm" id="cm"><div class="empty">Загрузка…</div></div><div class="ci"><input id="cf" placeholder="Написать сообщение…" onkeydown="if(event.key==='Enter')sendMsg()"><button onclick="sendMsg()">➤</button></div></div>`;
- const{data}=await db.from('messages').select('*').eq('ride_id',rideId).order('created_at');
+ const r=await api('/api/chat-list',{ride_id:rideId});
+ const data=r.items||[];
  const box=document.getElementById('cm');box.innerHTML='';
- (data||[]).forEach(msg=>putMsg(msg));
- if(!data||!data.length)box.innerHTML='<div class="empty">Сообщений пока нет. Напишите первым.</div>';
- if(chatCh)db.removeChannel(chatCh);
- chatCh=db.channel('c'+rideId).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'ride_id=eq.'+rideId},p=>{
-   if(p.new.sender_id!==me.id)putMsg(p.new);
- }).subscribe();
+ if(r.error){box.innerHTML='<div class="empty">Не удалось загрузить переписку</div>';}
+ else{
+  data.forEach(msg=>putMsg(msg));
+  if(!data.length)box.innerHTML='<div class="empty">Сообщений пока нет. Напишите первым.</div>';
+  lastMsgAt=data.length?data[data.length-1].created_at:null;
+ }
+ if(chatCh){db.removeChannel(chatCh);chatCh=null;}
+ startChatPoll(rideId);
+}
+let chatPoll=null,lastMsgAt=null;
+function startChatPoll(rideId){
+ if(chatPoll)clearInterval(chatPoll);
+ chatPoll=setInterval(async()=>{
+  if(chatRide!==rideId||(pTab!=='chat'&&dTab!=='chat')){clearInterval(chatPoll);chatPoll=null;return;}
+  const r=await api('/api/chat-list',{ride_id:rideId,after:lastMsgAt});
+  if(r.error||!r.items||!r.items.length)return;
+  const box=document.getElementById('cm');
+  if(box&&box.querySelector('.empty'))box.innerHTML='';
+  r.items.forEach(msg=>{if(msg.sender_id!==me.id)putMsg(msg);});
+  lastMsgAt=r.items[r.items.length-1].created_at;
+ },4000);
 }
 function putMsg(msg){
  const box=document.getElementById('cm');if(!box)return;
@@ -1095,12 +1111,13 @@ function putMsg(msg){
 async function sendMsg(){
  const i=document.getElementById('cf');const t=i.value.trim();if(!t)return;
  i.value='';
- const msg={ride_id:chatRide,sender_id:me.id,sender_name:me.name,text:t};
- putMsg(msg);
- const{error}=await db.from('messages').insert(msg);
- if(error)T('Не отправлено: '+error.message);
+ putMsg({sender_id:me.id,sender_name:me.name,text:t});
+ const r=await api('/api/chat-send',{ride_id:chatRide,text:t});
+ if(r.error){T(r.error==='not_yours'?'Нет доступа к этой переписке':'Сообщение не отправлено');return;}
+ if(r.msg&&r.msg.created_at)lastMsgAt=r.msg.created_at;
 }
 function closeChat(){
+ if(chatPoll){clearInterval(chatPoll);chatPoll=null;}
  if(chatCh){db.removeChannel(chatCh);chatCh=null;}
  if(chatBack==='driver'){dGo('ride');}else{openRide();}
 }

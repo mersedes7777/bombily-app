@@ -487,7 +487,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v13-driver-rights' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v14-chat' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -597,6 +597,30 @@ http.createServer(async (req, res) => {
       await db.from('users').update({ has_phone: true, driver_status: 'pending', full_name: fullName }).eq('id', me.id);
       if (OWNER) await send(OWNER, `🚗 <b>Новая заявка в водители</b>\n${fullName}\n📞 ${phone}\nОткройте панель → Заявки.`);
       return json(res, 200, { ok: true });
+    }
+
+    // --- чат: список сообщений (только участники поездки) ---
+    if (req.url === '/api/chat-list') {
+      const { data: r } = await db.from('rides').select('passenger_id,driver_id').eq('id', body.ride_id).maybeSingle();
+      if (!r) return json(res, 404, { error: 'no_ride' });
+      if (r.passenger_id !== me.id && r.driver_id !== me.id) return json(res, 403, { error: 'not_yours' });
+      let q = db.from('messages').select('*').eq('ride_id', body.ride_id).order('created_at');
+      if (body.after) q = q.gt('created_at', body.after);
+      const { data } = await q;
+      return json(res, 200, { ok: true, items: data || [] });
+    }
+
+    // --- чат: отправка сообщения ---
+    if (req.url === '/api/chat-send') {
+      const text = String(body.text || '').trim().slice(0, 1000);
+      if (!text) return json(res, 400, { error: 'empty' });
+      const { data: r } = await db.from('rides').select('passenger_id,driver_id,status').eq('id', body.ride_id).maybeSingle();
+      if (!r) return json(res, 404, { error: 'no_ride' });
+      if (r.passenger_id !== me.id && r.driver_id !== me.id) return json(res, 403, { error: 'not_yours' });
+      const { data: ins } = await db.from('messages')
+        .insert({ ride_id: body.ride_id, sender_id: me.id, sender_name: me.name, text })
+        .select().single();
+      return json(res, 200, { ok: true, msg: ins });
     }
 
     // --- отправка отзыва (сам пользователь) ---
