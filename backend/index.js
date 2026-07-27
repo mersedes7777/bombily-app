@@ -172,9 +172,13 @@ async function notifyLoop() {
     const { data: rides } = await db.from('rides').select('*').eq('status', 'created').eq('notified', false);
     for (const r of rides || []) {
       let q = db.from('users').select('telegram_id').eq('status', 'online').in('role', ['driver', 'both']);
+      if (r.kind === 'delivery') q = q.eq('delivery', true);
       if (r.target_driver_id) q = db.from('users').select('telegram_id').eq('id', r.target_driver_id);
       const { data: drv } = await q;
-      const head = r.target_driver_id ? '🎯 <b>Заявка лично вам</b>' : '🚕 <b>Новая заявка</b>';
+      const isDel = r.kind === 'delivery';
+      const head = r.target_driver_id
+        ? (isDel ? '🎯 <b>Доставка лично вам</b>' : '🎯 <b>Заявка лично вам</b>')
+        : (isDel ? '📦 <b>Новая доставка</b>' : '🚕 <b>Новая заявка</b>');
       const extra = `${r.passenger_price ? `\n💰 Пассажир предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
       for (const d of drv || [])
         if (d.telegram_id) await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
@@ -499,7 +503,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v18-bargain' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v19-delivery' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
