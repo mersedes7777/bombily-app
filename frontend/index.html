@@ -1364,7 +1364,13 @@ function dProfHTML(){
  const act=subActive();
  const until=me.sub_until?new Date(me.sub_until):null;
  const daysLeft=until?Math.max(0,Math.ceil((until-new Date())/86400000)):0;
- const subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Баланс: <b>${me.balance||0} ₽</b></div><div class="scs">${SETTINGS.paid_mode?(act?'Подписка активна · '+daysLeft+' дн':'Подписка неактивна'):'Сейчас бесплатно для всех'}</div></div><button class="subbtn" onclick="subSheet()">Подписка</button></div>`;
+ // при выключенном платном режиме подписку не показываем вовсе
+ let subCard='';
+ if(SETTINGS.paid_mode){
+  subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Баланс: <b>${me.balance||0} ₽</b></div><div class="scs">${act?'Подписка активна · '+daysLeft+' дн':'Подписка неактивна'}</div></div><button class="subbtn" onclick="subSheet()">Подписка</button></div>`;
+ }else if(SETTINGS.ref_enabled){
+  subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Зовите своих</div><div class="scs">Бонус за каждого приглашённого водителя</div></div><button class="subbtn" onclick="refSheet()">Пригласить</button></div>`;
+ }
  return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div></div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div><div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
 async function saveD(){
