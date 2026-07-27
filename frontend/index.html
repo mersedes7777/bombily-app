@@ -251,6 +251,13 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .nb{position:relative;}
 .promo-btn{color:var(--am)!important;border-color:var(--am)!important;}
 .arrived-btn{background:var(--am)!important;color:#1a1206!important;border:none!important;font-weight:700;}
+.drvbox{display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--line2);border-radius:13px;padding:13px;margin-bottom:10px;}
+.drvst{flex:1;min-width:0;}
+.drvst b{display:block;font-size:13.5px;}
+.drvst span{display:block;font-size:11.5px;color:var(--dim);margin-top:3px;}
+.drvbtn{border:none;border-radius:10px;padding:10px 14px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;flex-shrink:0;}
+.drvbtn.on{background:var(--g);color:#06120b;}
+.drvbtn.off{background:transparent;border:1px solid var(--red);color:var(--red);}
 .reqbox{background:var(--bg);border:1px solid var(--line2);border-radius:13px;padding:13px 15px;margin:12px 0;}
 .reqt{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px;margin-bottom:9px;}
 .reqi{font-size:13px;line-height:1.5;padding-left:18px;position:relative;margin-bottom:6px;}
@@ -1670,6 +1677,16 @@ async function userCard(id){
  ${(rv||[]).length?rv.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="delRev('${r.id}','${id}')">удалить</button></div>`).join(''):'<div class="sub" style="padding:4px 0 8px">отзывов нет</div>'}
  <div class="sec" style="padding-left:0">Его отзывы о других</div>
  ${(rvBy||[]).length?rvBy.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.target_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.target_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span> <span class="sub">(${r.kind==='passenger'?'о пассажире':'о водителе'})</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="delRev('${r.id}','${id}')">удалить</button></div>`).join(''):'<div class="sub" style="padding:4px 0 8px">не оставлял отзывов</div>'}
+ <div class="sec" style="padding-left:0">Статус водителя</div>
+ <div class="drvbox">
+  <div class="drvst">
+   <b>${u.driver_status==='approved'?'Водитель · одобрен':u.driver_status==='pending'?'Заявка на рассмотрении':'Не водитель'}</b>
+   <span>${u.driver_status==='approved'?(esc(u.car)||'машина не указана')+(u.plate?' · '+esc(u.plate):''):'может ездить только как пассажир'}</span>
+  </div>
+  ${u.driver_status==='approved'
+    ? `<button class="drvbtn off" onclick="revokeDriver('${u.id}','${esc(u.name)}')">Снять права</button>`
+    : `<button class="drvbtn on" onclick="grantDriver('${u.id}','${esc(u.name)}','${esc(u.car)}','${esc(u.plate)}')">Сделать водителем</button>`}
+ </div>
  <div class="sa" style="flex-wrap:wrap">
   <button class="c" onclick="closeSh()">Закрыть</button>
   ${canRole?`<button class="c" onclick="closeSh();roleSheet('${u.id}','${esc(u.name)}','${u.staff_role||'none'}')">Права</button>`:''}
@@ -1688,6 +1705,33 @@ async function userCard(id){
    }
   }).catch(()=>{});
  }
+}
+function grantDriver(id,name,car,plate){
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet"><h3>Сделать водителем</h3><div class="s">${esc(name)} получит доступ к заявкам и сможет выходить на линию. Впишите машину — её увидят пассажиры.</div>
+ <div class="fr"><label>Марка машины</label><input id="gd_car" value="${esc(car)}" placeholder="Lada Vesta"></div>
+ <div class="fr"><label>Гос. номер</label><input id="gd_plate" value="${esc(plate)}" placeholder="А123ВС"></div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="doGrantDriver('${id}')">Выдать права</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function doGrantDriver(id){
+ const car=(document.getElementById('gd_car').value||'').trim();
+ const plate=(document.getElementById('gd_plate').value||'').trim();
+ if(!car||!plate)return T('Впишите марку и номер');
+ const r=await api('/api/admin',{action:'driver-status',target_id:id,status:'approved',car,plate});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ document.getElementById('sh2').remove();closeSh();T('Права водителя выданы');drawA();
+}
+function revokeDriver(id,name){
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet"><h3>Снять права водителя</h3><div class="s">${esc(name)} больше не сможет выходить на линию и брать заявки. Останется обычным пассажиром. История поездок и отзывы сохранятся.</div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" style="background:var(--red);border-color:var(--red);color:#fff" onclick="doRevokeDriver('${id}')">Снять права</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function doRevokeDriver(id){
+ const r=await api('/api/admin',{action:'driver-status',target_id:id,status:'none',revoke:true});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ document.getElementById('sh2').remove();closeSh();T('Права водителя сняты');drawA();
 }
 async function saveUser(id){
  const g=x=>document.getElementById('e_'+x).value.trim();

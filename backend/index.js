@@ -487,7 +487,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v11-docs' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v13-driver-rights' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -587,10 +587,15 @@ http.createServer(async (req, res) => {
     if (req.url === '/api/apply-driver') {
       const phone = String(body.phone || '').slice(0, 30);
       if (phone.replace(/\D/g, '').length < 7) return json(res, 400, { error: 'bad_phone' });
+      const fullName = String(body.full_name || '').trim().slice(0, 120);
+      if (fullName.split(/\s+/).filter(Boolean).length < 2) return json(res, 400, { error: 'bad_name' });
       if (me.driver_status === 'approved') return json(res, 400, { error: 'already' });
+      // все три документа обязательны
+      const { data: docs } = await db.from('users').select('doc_license,doc_pts,doc_car').eq('id', me.id).maybeSingle();
+      if (!docs || !docs.doc_license || !docs.doc_pts || !docs.doc_car) return json(res, 400, { error: 'need_docs' });
       await db.from('contacts').upsert({ user_id: me.id, phone, updated_at: new Date().toISOString() });
-      await db.from('users').update({ has_phone: true, driver_status: 'pending' }).eq('id', me.id);
-      if (OWNER) await send(OWNER, `🚗 <b>Новая заявка в водители</b>\n${me.name} · ${phone}\nОткройте панель → Заявки.`);
+      await db.from('users').update({ has_phone: true, driver_status: 'pending', full_name: fullName }).eq('id', me.id);
+      if (OWNER) await send(OWNER, `🚗 <b>Новая заявка в водители</b>\n${fullName}\n📞 ${phone}\nОткройте панель → Заявки.`);
       return json(res, 200, { ok: true });
     }
 
@@ -655,13 +660,40 @@ http.createServer(async (req, res) => {
         if (body.car !== undefined) upd.car = body.car;
         if (body.plate !== undefined) upd.plate = body.plate;
         if (body.status === 'approved') upd.role = 'both';
+
+        // снятие прав — убираем с линии и закрываем смену
+        if (body.revoke || body.status === 'none') {
+          upd.role = 'passenger';
+          upd.status = 'offline';
+          const { data: sh } = await db.from('shifts').select('*').eq('driver_id', tid).is('ended_at', null).limit(1);
+          if (sh && sh.length) {
+            const mins = Math.max(1, Math.round((Date.now() - new Date(sh[0].started_at)) / 60000));
+            await db.from('shifts').update({ ended_at: new Date().toISOString(), minutes: mins }).eq('id', sh[0].id);
+          }
+          // снимаем его открытые предложения
+          await db.from('offers').update({ status: 'cancelled' }).eq('driver_id', tid).eq('status', 'pending');
+        }
+
         await db.from('users').update(upd).eq('id', tid);
+
+        // сообщаем человеку
+        const utid = await tgIdOf(tid);
+        if (utid) {
+          if (body.status === 'approved') {
+            await send(utid, `✅ <b>Заявка одобрена</b>\nВы теперь водитель Бомбилы.${upd.car ? `\n🚗 ${upd.car}${upd.plate ? ' · ' + upd.plate : ''}` : ''}\n\nВыходите на линию и принимайте заявки.`,
+              { reply_markup: { inline_keyboard: [[wa('Выйти на линию', 'driver')]] } });
+          } else if (body.revoke) {
+            await send(utid, `ℹ️ <b>Права водителя сняты</b>\nВы больше не можете выходить на линию. Пользоваться сервисом как пассажир по-прежнему можно.\n\nЕсли считаете это ошибкой — напишите в поддержку.`);
+          } else if (body.status === 'none') {
+            await send(utid, `ℹ️ <b>Заявка отклонена</b>\nПроверьте, что фотографии чёткие и на них видно госномер, права и техпаспорт, затем подайте заявку заново.`);
+          }
+        }
         return json(res, 200, { ok: true });
       }
       if (act === 'edit-user' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['name','age','car','plate','spot','rating','role','driver_status','balance'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['name','full_name','age','car','plate','spot','rating','role','driver_status','balance'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         if (Object.keys(allowed).length) await db.from('users').update(allowed).eq('id', tid);
         if (f.phone !== undefined) {
           const ph = String(f.phone || '').trim().slice(0, 30);
