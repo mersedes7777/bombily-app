@@ -251,6 +251,11 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .nb{position:relative;}
 .promo-btn{color:var(--am)!important;border-color:var(--am)!important;}
 .arrived-btn{background:var(--am)!important;color:#1a1206!important;border:none!important;font-weight:700;}
+.reqbox{background:var(--bg);border:1px solid var(--line2);border-radius:13px;padding:13px 15px;margin:12px 0;}
+.reqt{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px;margin-bottom:9px;}
+.reqi{font-size:13px;line-height:1.5;padding-left:18px;position:relative;margin-bottom:6px;}
+.reqi:last-child{margin-bottom:0;}
+.reqi::before{content:"";position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:50%;background:var(--g);}
 .refbox{display:flex;align-items:center;gap:12px;margin-top:12px;padding:14px;background:var(--bg);border:1px dashed var(--g);border-radius:12px;}
 .refcode{flex:1;font-family:'Roboto Mono',monospace;font-size:22px;font-weight:700;letter-spacing:3px;color:var(--g);text-align:center;}
 .reflink{flex:1;font-family:'Roboto Mono',monospace;font-size:12px;color:var(--g);word-break:break-all;line-height:1.5;}
@@ -967,11 +972,20 @@ async function saveP(){
 }
 function applyDrv(){
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>Стать бомбилой</h3><div class="s">Загрузите документы — их увидит только администрация. Марку и номер впишет админ после проверки.</div>
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Стать бомбилой</h3><div class="s">Документы видит только администрация. Марку и госномер впишет админ после проверки.</div>
+ <div class="reqbox">
+  <div class="reqt">Что понадобится</div>
+  <div class="reqi">Настоящие ФИО</div>
+  <div class="reqi">Фото машины спереди — чтобы читался госномер</div>
+  <div class="reqi">Фото водительских прав</div>
+  <div class="reqi">Фото техпаспорта</div>
+ </div>
+ <div class="fr"><label>Фамилия Имя Отчество · только для проверки</label><input id="afio" value="${esc(me.full_name)}" placeholder="Иванов Иван Иванович"></div>
+ <div class="note" style="margin:0 0 12px">Пассажиры будут видеть только ваше имя — <b>${esc(me.name)}</b>. ФИО нужны администрации для проверки документов.</div>
  <div class="fr"><label>Телефон</label><input id="ap" value="${esc(me.phone)}" placeholder="+7 900 000-00-00" inputmode="tel"></div>
+ <div class="up" id="u3" onclick="pick('car')"><div class="ic" id="i3">🚗</div><div class="tx">Машина спереди<small>обязательно виден госномер</small></div><span class="st" id="s3">загрузить</span></div>
  <div class="up" id="u1" onclick="pick('license')"><div class="ic" id="i1">🪪</div><div class="tx">Водительские права<small>разворот, чтобы читалось</small></div><span class="st" id="s1">загрузить</span></div>
- <div class="up" id="u2" onclick="pick('pts')"><div class="ic" id="i2">📄</div><div class="tx">ПТС / СТС<small>документ на машину</small></div><span class="st" id="s2">загрузить</span></div>
- <div class="up" id="u3" onclick="pick('car')"><div class="ic" id="i3">🚗</div><div class="tx">Машина с правами<small>чтобы был виден госномер</small></div><span class="st" id="s3">загрузить</span></div>
+ <div class="up" id="u2" onclick="pick('pts')"><div class="ic" id="i2">📄</div><div class="tx">Техпаспорт<small>ПТС или СТС на эту машину</small></div><span class="st" id="s2">загрузить</span></div>
  <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="sendApp()">Отправить</button></div></div>`;
  document.getElementById('device').appendChild(m);
  const map={license:['doc_license',1],pts:['doc_pts',2],car:['doc_car',3]};
@@ -1019,9 +1033,17 @@ function pick(kind){
 }
 async function sendApp(){
  const p=document.getElementById('ap').value.trim();if(!p)return T('Введите телефон');
- if(!me.doc_license||!me.doc_car)return T('Загрузите права и фото машины');
- const r=await api('/api/apply-driver',{phone:p});
- if(r.error)return T(r.error==='bad_phone'?'Введите корректный телефон':r.error==='already'?'Вы уже водитель':'Не удалось отправить заявку');
+ const fio=(document.getElementById('afio').value||'').trim();
+ if(fio.split(/\s+/).filter(Boolean).length<2)return T('Впишите фамилию и имя полностью');
+ if(!me.doc_car)return T('Загрузите фото машины с номером');
+ if(!me.doc_license)return T('Загрузите фото водительских прав');
+ if(!me.doc_pts)return T('Загрузите фото техпаспорта');
+ const r=await api('/api/apply-driver',{phone:p,full_name:fio});
+ if(r.error){
+  const msg={bad_phone:'Введите корректный телефон',bad_name:'Впишите фамилию и имя полностью',need_docs:'Загрузите все три фотографии',already:'Вы уже водитель'}[r.error]||'Не удалось отправить заявку';
+  return T(msg);
+ }
+ me.full_name=fio;
  me.phone=p;me.driver_status='pending';closeSh();T('Заявка отправлена на модерацию');drawP();
 }
 const closeSh=()=>{const s=document.getElementById('sh');if(s)s.remove();};
@@ -1294,7 +1316,7 @@ function dProfHTML(){
  const until=me.sub_until?new Date(me.sub_until):null;
  const daysLeft=until?Math.max(0,Math.ceil((until-new Date())/86400000)):0;
  const subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Баланс: <b>${me.balance||0} ₽</b></div><div class="scs">${SETTINGS.paid_mode?(act?'Подписка активна · '+daysLeft+' дн':'Подписка неактивна'):'Сейчас бесплатно для всех'}</div></div><button class="subbtn" onclick="subSheet()">Подписка</button></div>`;
- return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · отказов от заказов: ${me.cancel_as_driver||0}</div></div>${subCard}<div class="fl"><div class="fr"><label>Имя</label><input id="d1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div><div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
+ return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · отказов от заказов: ${me.cancel_as_driver||0}</div></div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div><div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
 async function saveD(){
  const n=document.getElementById('d1').value.trim();if(!n)return T('Введите имя');
@@ -1379,7 +1401,7 @@ async function aOver(m){
 }
 async function aApps(m){
  const{data:apps}=await db.from('users').select('*').eq('driver_status','pending');
- m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt">${esc(a.name)}</div><div class="rm"><span id="aph${a.id}">${a.has_phone?'телефон загружается…':'без телефона'}</span> · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div>
+ m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt">${esc(a.full_name)||esc(a.name)}</div><div class="rm"><span id="aph${a.id}">${a.has_phone?'телефон загружается…':'без телефона'}</span> · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div>
 <div class="docs" id="docs${a.id}">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>a[d[0]]?`<div style="flex:1"><div class="docslot" data-k="${d[0]}"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">загрузка…</div></div><div class="cap">${d[1]}</div></div>`:`<div style="flex:1"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">нет</div><div class="cap">${d[1]}</div></div>`).join('')}</div><div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>`;
  loadAppPhones((apps||[]).filter(x=>x.has_phone).map(x=>x.id));
  (apps||[]).forEach(x=>{if(x.doc_license||x.doc_pts||x.doc_car)loadDocs(x.id,'docs'+x.id);});
@@ -1614,7 +1636,7 @@ async function userCard(id){
  const canRole=(own&&u.staff_role!=='owner')||(me.staff_role==='admin'&&!['owner','admin'].includes(u.staff_role));
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:90vh;overflow-y:auto">
- <h3>${esc(u.name)}</h3><div class="s">ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
+ <h3>${esc(u.name)}</h3><div class="s">${u.full_name?esc(u.full_name)+'<br>':''}ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
  <div class="ucontact">
   <span class="ucbtn dim" id="ucphone">${u.has_phone?'телефон загружается…':'телефон не указан'}</span>
   ${u.tg_username?`<a class="ucbtn tg" href="https://t.me/${esc(u.tg_username)}" target="_blank">✈️ Открыть в Telegram</a>`:''}
@@ -1632,7 +1654,8 @@ async function userCard(id){
   <div>Город: <b>${esc(u.city)||'—'}</b></div>
   <div>Подписка: <b style="color:${act?'var(--g)':'var(--dim)'}">${act?('до '+new Date(u.sub_until).toLocaleDateString('ru')):'нет'}</b></div>
  </div>
- <div class="fr"><label>Имя</label><input id="e_name" value="${esc(u.name)}"></div>
+ <div class="fr"><label>Имя в приложении</label><input id="e_name" value="${esc(u.name)}"></div>
+ <div class="fr"><label>ФИО по документам</label><input id="e_full_name" value="${esc(u.full_name)}" placeholder="не указано"></div>
  <div class="fr"><label>Телефон</label><input id="e_phone" value="" placeholder="${u.has_phone?'загружается…':'не указан'}"></div>
  <div class="fr"><label>Возраст</label><input id="e_age" value="${u.age||''}" inputmode="numeric"></div>
  <div class="fr"><label>Марка машины</label><input id="e_car" value="${esc(u.car)}"></div>
@@ -1668,7 +1691,7 @@ async function userCard(id){
 }
 async function saveUser(id){
  const g=x=>document.getElementById('e_'+x).value.trim();
- const fields={name:g('name'),phone:g('phone'),age:parseInt(g('age'))||null,car:g('car'),plate:g('plate'),spot:g('spot'),rating:parseFloat(g('rating'))||5,role:g('role')||'passenger',driver_status:g('ds')||'none',balance:parseFloat(g('balance'))||0};
+ const fields={name:g('name'),full_name:g('full_name'),phone:g('phone'),age:parseInt(g('age'))||null,car:g('car'),plate:g('plate'),spot:g('spot'),rating:parseFloat(g('rating'))||5,role:g('role')||'passenger',driver_status:g('ds')||'none',balance:parseFloat(g('balance'))||0};
  const r=await api('/api/admin',{action:'edit-user',target_id:id,fields});
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка: '+r.error);
  closeSh();T('Изменения сохранены');drawA();
