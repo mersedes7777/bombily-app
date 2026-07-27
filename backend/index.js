@@ -410,6 +410,12 @@ async function userFromInit(initData) {
   const { data } = await db.from('users').select('*').eq('telegram_id', tgUser.id).maybeSingle();
   return data || null;
 }
+
+const phoneOf = async uid => {
+  if (!uid) return null;
+  const { data } = await db.from('contacts').select('phone').eq('user_id', uid).maybeSingle();
+  return data ? data.phone : null;
+};
 const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role);
 const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
 
@@ -428,7 +434,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v8-fix' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v9-phones' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -487,12 +493,40 @@ http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, days: p.days, amount: p.amount, sub_until: upd.sub_until || me.sub_until, balance: upd.balance ?? me.balance });
     }
 
+    // --- сохранить свой телефон ---
+    if (req.url === '/api/set-phone') {
+      const phone = String(body.phone || '').trim().slice(0, 30);
+      if (phone.replace(/\D/g, '').length < 7) return json(res, 400, { error: 'bad_phone' });
+      await db.from('contacts').upsert({ user_id: me.id, phone, updated_at: new Date().toISOString() });
+      await db.from('users').update({ has_phone: true }).eq('id', me.id);
+      return json(res, 200, { ok: true, phone });
+    }
+
+    // --- свой телефон (для профиля) ---
+    if (req.url === '/api/my-phone') {
+      return json(res, 200, { ok: true, phone: await phoneOf(me.id) });
+    }
+
+    // --- телефон второй стороны по активной поездке ---
+    if (req.url === '/api/ride-contact') {
+      const { data: r } = await db.from('rides').select('passenger_id,driver_id,status').eq('id', body.ride_id).maybeSingle();
+      if (!r) return json(res, 404, { error: 'no_ride' });
+      const iAmPassenger = r.passenger_id === me.id;
+      const iAmDriver = r.driver_id === me.id;
+      if (!iAmPassenger && !iAmDriver) return json(res, 403, { error: 'not_yours' });
+      // контакты доступны только пока заказ в работе
+      if (!['confirmed', 'in_progress'].includes(r.status)) return json(res, 400, { error: 'not_active' });
+      const other = iAmPassenger ? r.driver_id : r.passenger_id;
+      return json(res, 200, { ok: true, phone: await phoneOf(other) });
+    }
+
     // --- подача заявки в водители (сам пользователь) ---
     if (req.url === '/api/apply-driver') {
       const phone = String(body.phone || '').slice(0, 30);
       if (phone.replace(/\D/g, '').length < 7) return json(res, 400, { error: 'bad_phone' });
       if (me.driver_status === 'approved') return json(res, 400, { error: 'already' });
-      await db.from('users').update({ phone, driver_status: 'pending' }).eq('id', me.id);
+      await db.from('contacts').upsert({ user_id: me.id, phone, updated_at: new Date().toISOString() });
+      await db.from('users').update({ has_phone: true, driver_status: 'pending' }).eq('id', me.id);
       if (OWNER) await send(OWNER, `🚗 <b>Новая заявка в водители</b>\n${me.name} · ${phone}\nОткройте панель → Заявки.`);
       return json(res, 200, { ok: true });
     }
@@ -564,9 +598,32 @@ http.createServer(async (req, res) => {
       if (act === 'edit-user' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['name','phone','age','car','plate','spot','rating','role','driver_status','balance'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
-        await db.from('users').update(allowed).eq('id', tid);
+        ['name','age','car','plate','spot','rating','role','driver_status','balance'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        if (Object.keys(allowed).length) await db.from('users').update(allowed).eq('id', tid);
+        if (f.phone !== undefined) {
+          const ph = String(f.phone || '').trim().slice(0, 30);
+          if (ph) {
+            await db.from('contacts').upsert({ user_id: tid, phone: ph, updated_at: new Date().toISOString() });
+            await db.from('users').update({ has_phone: true }).eq('id', tid);
+          } else {
+            await db.from('contacts').delete().eq('user_id', tid);
+            await db.from('users').update({ has_phone: false }).eq('id', tid);
+          }
+        }
         return json(res, 200, { ok: true });
+      }
+      // карточка пользователя с телефоном (staff)
+      if (act === 'user-phone') {
+        return json(res, 200, { ok: true, phone: await phoneOf(tid) });
+      }
+      // телефоны заявок в водители (staff)
+      if (act === 'apps-phones') {
+        const ids = Array.isArray(body.ids) ? body.ids.slice(0, 100) : [];
+        if (!ids.length) return json(res, 200, { ok: true, map: {} });
+        const { data } = await db.from('contacts').select('user_id,phone').in('user_id', ids);
+        const map = {};
+        (data || []).forEach(c => { map[c.user_id] = c.phone; });
+        return json(res, 200, { ok: true, map });
       }
       if (act === 'del-review') {
         await db.from('reviews').delete().eq('id', body.review_id);

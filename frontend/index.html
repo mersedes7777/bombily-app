@@ -412,6 +412,7 @@ async function boot(){
    me=data;
   try{const{data:st}=await db.from('settings').select('*').eq('id',1).maybeSingle();if(st)SETTINGS=st;}catch(e){}
   await loadUnreadRev();
+  api('/api/my-phone').then(r=>{if(r&&r.phone){me.phone=r.phone;}}).catch(()=>{});
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){await db.from('users').update({staff_role:'owner'}).eq('id',me.id);me.staff_role='owner';}
   if(me.is_banned){document.getElementById('boot').innerHTML='<div style="color:#e2585a"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return;}
   document.getElementById('boot').style.display='none';
@@ -422,7 +423,7 @@ async function boot(){
    return;
   }
   if(!me.onboarded){onboard(0);return;}
-  if(!me.phone){phoneGate();return;}
+  if(!me.has_phone){phoneGate();return;}
   if(!me.city){cityGate();return;}
   paintCity();
   drawRoles();count();setInterval(count,12000);
@@ -453,7 +454,7 @@ function onboard(i){
 async function finishOb(){
  await db.from('users').update({onboarded:true}).eq('id',me.id);
  me.onboarded=true;
- if(!me.phone){phoneGate();return;}
+ if(!me.has_phone){phoneGate();return;}
  if(!me.city){cityGate();return;}
  paintCity();
  drawRoles();count();await restore();await restoreD();setRole('passenger');
@@ -492,9 +493,11 @@ async function saveGate(){
  const n=document.getElementById('g1').value.trim(),p=document.getElementById('g2').value.trim();
  if(!n)return T('Введите имя');
  if(p.replace(/\D/g,'').length<7)return T('Введите корректный телефон');
- const{error}=await Q(db.from('users').update({name:n,phone:p}).eq('id',me.id),'Не удалось сохранить');
+ const{error}=await Q(db.from('users').update({name:n}).eq('id',me.id),'Не удалось сохранить');
  if(error)return;
- me.name=n;me.phone=p;T('Спасибо!');
+ const r=await api('/api/set-phone',{phone:p});
+ if(r.error)return T(r.error==='bad_phone'?'Введите корректный телефон':'Не удалось сохранить телефон');
+ me.name=n;me.phone=p;me.has_phone=true;T('Спасибо!');
  if(!me.city){cityGate();return;}
  paintCity();
  drawRoles();count();await restore();await restoreD();setRole('passenger');
@@ -546,6 +549,15 @@ async function restoreD(){
    }
   }
  }
+}
+async function loadRideContact(rideId,who){
+ const ph=document.getElementById('dphone');
+ if(!ph)return;
+ const r=await api('/api/ride-contact',{ride_id:rideId});
+ if(r.error||!r.phone){ph.textContent='телефон не указан';return;}
+ ph.innerHTML='📞 '+esc(r.phone);ph.style.color='';
+ const w=document.getElementById('dcallwrap');
+ if(w)w.innerHTML=`<a href="tel:${esc(r.phone)}" style="text-decoration:none"><button class="btn ghost" style="margin-top:14px">📞 Позвонить ${who}</button></a>`;
 }
 function subRide(id){
  if(rideCh)db.removeChannel(rideCh);
@@ -714,7 +726,8 @@ async function openRide(){
  if(r.status==='confirmed'){
    const{data:d}=await db.from('users').select('*').eq('id',r.driver_id).single();
    const on=favs().includes(r.driver_id);
-   m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.arrived?'Водитель на месте':'Бомбила выехал'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div><div class="sub">⭐ ${d?.rating||5} · отказов: ${d?.cancel_as_driver||0}</div>${d?.phone?'<div class="sub">📞 '+esc(d.phone)+'</div>':''}</div><button class="fav ${on?'on':''}" onclick="togFav('${r.driver_id}')">♥</button></div>${d&&d.phone?`<a href="tel:${esc(d.phone)}" style="text-decoration:none"><button class="btn ghost" style="margin-top:14px">📞 Позвонить водителю</button></a>`:''}<button class="btn" onclick="openChat('${r.id}','passenger')">Написать водителю</button><button class="btn ghost" onclick="doneRide('${d?.id}','${esc(d?.name)}')">Поездка завершена</button><button class="btn dang" onclick="complain('${r.id}','${d?.id}','${esc(d?.name)}')">Пожаловаться</button></div>`;
+   m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.arrived?'Водитель на месте':'Бомбила выехал'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div><div class="sub">⭐ ${d?.rating||5} · отказов: ${d?.cancel_as_driver||0}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div><button class="fav ${on?'on':''}" onclick="togFav('${r.driver_id}')">♥</button></div><div id="dcallwrap"></div><button class="btn" onclick="openChat('${r.id}','passenger')">Написать водителю</button><button class="btn ghost" onclick="doneRide('${d?.id}','${esc(d?.name)}')">Поездка завершена</button><button class="btn dang" onclick="complain('${r.id}','${d?.id}','${esc(d?.name)}')">Пожаловаться</button></div>`;
+   loadRideContact(r.id,'водителю');
    return;
  }
  const{data:offs}=await db.from('offers').select('*').eq('ride_id',r.id).eq('status','pending');
@@ -900,7 +913,7 @@ async function tripInfo(id){
  m.innerHTML=`<div class="sheet"><h3>Поездка</h3><div class="s">${new Date(r.created_at).toLocaleString('ru')} · ${st[r.status]||esc(r.status)}</div>
  <div class="fr"><label>Маршрут</label><div style="font-size:14px;font-weight:500">${esc(r.from_address)} → ${esc(r.to_address)}</div></div>
  ${r.price?`<div class="fr"><label>Сумма</label><div class="price">${r.price} ₽</div></div>`:''}
- ${d?`<div class="fr"><label>Водитель</label><div style="font-size:14px;font-weight:600">${esc(d.name)}</div><div class="sub">${esc(d.car)||'—'}${d.plate?' · '+esc(d.plate):''}</div>${d.phone?`<div class="sub">📞 ${esc(d.phone)}</div>`:''}</div>`:'<div class="fr"><label>Водитель</label><div class="sub">не назначен</div></div>'}
+ ${d?`<div class="fr"><label>Водитель</label><div style="font-size:14px;font-weight:600">${esc(d.name)}</div><div class="sub">${esc(d.car)||'—'}${d.plate?' · '+esc(d.plate):''}</div></div>`:'<div class="fr"><label>Водитель</label><div class="sub">не назначен</div></div>'}
  <div class="sa">${d?`<button class="c" onclick="closeSh();complain('${r.id}','${d.id}','${esc(d.name)}')">Пожаловаться</button>`:''}<button class="o" onclick="closeSh()">Закрыть</button></div></div>`;
  document.getElementById('device').appendChild(m);
 }
@@ -937,9 +950,11 @@ async function myReviews(){
 }
 async function saveP(){
  const n=document.getElementById('f1').value.trim();if(!n)return T('Введите имя');
- const p={name:n,phone:document.getElementById('f2').value.trim(),age:parseInt(document.getElementById('f3').value)||null};
+ const _ph=document.getElementById('f2').value.trim();
+ const p={name:n,age:parseInt(document.getElementById('f3').value)||null};
  const{error}=await Q(db.from('users').update(p).eq('id',me.id),'Не удалось сохранить профиль');
  if(error)return;
+ if(_ph&&_ph!==me.phone){const r=await api('/api/set-phone',{phone:_ph});if(r.error){T(r.error==='bad_phone'?'Телефон указан неверно':'Телефон не сохранён');}else{me.phone=_ph;me.has_phone=true;}}
  Object.assign(me,p);T('Сохранено');drawP();
 }
 function applyDrv(){
@@ -1201,12 +1216,13 @@ async function dRide(m){
  dActive=r;subRide(r.id);
  const{data:p}=await db.from('users').select('*').eq('id',r.passenger_id).single();
  m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.arrived?'Вы на месте':'Вас выбрали!'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p>
- <div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">отмен как пассажир: ${p?.cancel_as_passenger||0}</div><div class="sub">${r.status==='in_progress'?'в машине':'ждёт вас'}</div>${p&&p.phone?'<div class="sub">📞 '+esc(p.phone)+'</div>':'<div class="sub" style="color:var(--dim)">телефон не указан</div>'}</div></div>
- ${p&&p.phone?`<a href="tel:${esc(p.phone)}" style="text-decoration:none"><button class="btn ghost" style="margin-top:14px">📞 Позвонить пассажиру</button></a>`:''}
+ <div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">отмен как пассажир: ${p?.cancel_as_passenger||0}</div><div class="sub">${r.status==='in_progress'?'в машине':'ждёт вас'}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div></div>
+ <div id="dcallwrap"></div>
  <button class="btn" onclick="openChat('${r.id}','driver')">Написать пассажиру</button>
  ${r.arrived?'<div class="note">✅ Пассажир уведомлён, что вы подъехали</div>':`<button class="btn arrived-btn" onclick="dArrived()">📍 Я подъехал</button>`}
  <button class="btn ghost" onclick="dDone()">Завершить поездку</button>
  <button class="btn dang" onclick="dCancel()">Отказаться от заказа</button></div>`;
+ loadRideContact(r.id,'пассажиру');
 }
 async function dArrived(){await Q(db.from('rides').update({arrived:true}).eq('id',dActive.id),'Не удалось отметить');dActive.arrived=true;T('Пассажиру ушло уведомление');dGo('ride');}
 async function dDone(){
@@ -1274,8 +1290,11 @@ function dProfHTML(){
 }
 async function saveD(){
  const n=document.getElementById('d1').value.trim();if(!n)return T('Введите имя');
- const p={name:n,phone:document.getElementById('d2').value.trim(),spot:document.getElementById('d3').value.trim()};
- await db.from('users').update(p).eq('id',me.id);Object.assign(me,p);T('Сохранено');drawD();
+ const _ph=document.getElementById('d2').value.trim();
+ const p={name:n,spot:document.getElementById('d3').value.trim()};
+ await db.from('users').update(p).eq('id',me.id);
+ if(_ph&&_ph!==me.phone){const r=await api('/api/set-phone',{phone:_ph});if(r.error){T(r.error==='bad_phone'?'Телефон указан неверно':'Телефон не сохранён');}else{me.phone=_ph;me.has_phone=true;}}
+ Object.assign(me,p);T('Сохранено');drawD();
 }
 
 /* ================= ПАНЕЛЬ ================= */
@@ -1352,8 +1371,9 @@ async function aOver(m){
 }
 async function aApps(m){
  const{data:apps}=await db.from('users').select('*').eq('driver_status','pending');
- m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt">${esc(a.name)}</div><div class="rm">${esc(a.phone)||'без телефона'} · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div>
+ m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt">${esc(a.name)}</div><div class="rm"><span id="aph${a.id}">${a.has_phone?'телефон загружается…':'без телефона'}</span> · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div>
 <div class="docs">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>a[d[0]]?`<a href="${a[d[0]]}" target="_blank"><img src="${a[d[0]]}"><div class="cap">${d[1]}</div></a>`:`<div style="flex:1"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">нет</div><div class="cap">${d[1]}</div></div>`).join('')}</div><div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>`;
+ loadAppPhones((apps||[]).filter(x=>x.has_phone).map(x=>x.id));
 }
 async function okDrv(id){
  const c=document.getElementById('ac'+id).value.trim(),p=document.getElementById('ap'+id).value.trim();
@@ -1513,6 +1533,12 @@ async function adjBal(){
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка: '+r.error);
  T('Готово: '+(amt>0?'+':'')+amt+' ₽');aFin(document.getElementById('main'));
 }
+async function loadAppPhones(ids){
+ if(!ids||!ids.length)return;
+ const r=await api('/api/admin',{action:'apps-phones',ids});
+ if(r.error||!r.map)return;
+ Object.entries(r.map).forEach(([id,ph])=>{const el=document.getElementById('aph'+id);if(el&&ph)el.textContent=ph;});
+}
 async function aPpl(m){
  const{data:us}=await db.from('users').select('*').order('created_at',{ascending:false}).limit(300);
  const all=us||[];
@@ -1537,7 +1563,7 @@ async function aPpl(m){
    const bd=isStaffR(u)?`<span class="badge am">${u.staff_role==='owner'?'владелец':u.staff_role==='admin'?'админ':'модератор'}</span>`:'';
    const bn=u.is_banned?'<span class="badge red">бан</span>':'';
    const on=['driver','both'].includes(u.role)&&u.status==='online'?'<span class="badge" style="background:var(--gs);color:var(--g)">на линии</span>':'';
-   return `<div class="ai"><div class="ava">${esc(u.name)[0]||'?'}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''}</div><div style="font-size:11.5px;color:var(--dim)">${esc(u.phone)||'без телефона'}${u.car?' · '+esc(u.car):''}</div></div>${on}${bn}${bd}<button class="rolebtn" onclick="userCard('${u.id}')">открыть</button></div>`;
+   return `<div class="ai"><div class="ava">${esc(u.name)[0]||'?'}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''}</div><div style="font-size:11.5px;color:var(--dim)">${u.has_phone?'телефон есть':'без телефона'}${u.car?' · '+esc(u.car):''}</div></div>${on}${bn}${bd}<button class="rolebtn" onclick="userCard('${u.id}')">открыть</button></div>`;
  }).join('')}</div>`;
 }
 function writeUser(uid,name){
@@ -1567,7 +1593,7 @@ async function userCard(id){
  m.innerHTML=`<div class="sheet" style="max-height:90vh;overflow-y:auto">
  <h3>${esc(u.name)}</h3><div class="s">ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
  <div class="ucontact">
-  ${u.phone?`<a class="ucbtn" href="tel:${esc(u.phone)}">📞 ${esc(u.phone)}</a>`:'<span class="ucbtn dim">телефон не указан</span>'}
+  <span class="ucbtn dim" id="ucphone">${u.has_phone?'телефон загружается…':'телефон не указан'}</span>
   ${u.tg_username?`<a class="ucbtn tg" href="https://t.me/${esc(u.tg_username)}" target="_blank">✈️ Открыть в Telegram</a>`:''}
   <button class="ucbtn wr" onclick="writeUser('${u.id}','${esc(u.name)}')">💬 Написать через бота</button>
  </div>
@@ -1584,7 +1610,7 @@ async function userCard(id){
   <div>Подписка: <b style="color:${act?'var(--g)':'var(--dim)'}">${act?('до '+new Date(u.sub_until).toLocaleDateString('ru')):'нет'}</b></div>
  </div>
  <div class="fr"><label>Имя</label><input id="e_name" value="${esc(u.name)}"></div>
- <div class="fr"><label>Телефон</label><input id="e_phone" value="${esc(u.phone)}"></div>
+ <div class="fr"><label>Телефон</label><input id="e_phone" value="" placeholder="${u.has_phone?'загружается…':'не указан'}"></div>
  <div class="fr"><label>Возраст</label><input id="e_age" value="${u.age||''}" inputmode="numeric"></div>
  <div class="fr"><label>Марка машины</label><input id="e_car" value="${esc(u.car)}"></div>
  <div class="fr"><label>Гос. номер</label><input id="e_plate" value="${esc(u.plate)}"></div>
@@ -1605,6 +1631,16 @@ async function userCard(id){
   <button class="o" onclick="saveUser('${u.id}')">Сохранить</button>
  </div></div>`;
  document.getElementById('device').appendChild(m);
+ if(u.has_phone){
+  api('/api/admin',{action:'user-phone',target_id:id}).then(r=>{
+   if(r&&r.phone){
+    const el=document.getElementById('ucphone');
+    if(el){el.outerHTML=`<a class="ucbtn" href="tel:${esc(r.phone)}">📞 ${esc(r.phone)}</a>`;}
+    const inp=document.getElementById('e_phone');
+    if(inp)inp.value=r.phone;
+   }
+  }).catch(()=>{});
+ }
 }
 async function saveUser(id){
  const g=x=>document.getElementById('e_'+x).value.trim();
