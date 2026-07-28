@@ -268,6 +268,8 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .strow .sl{font-size:13px;color:var(--ink);}
 .strow .sv2{font-family:'Roboto Mono',monospace;font-size:14px;text-align:center;font-weight:600;}
 .sthead .sv2{font-family:Inter,sans-serif;font-size:10.5px;font-weight:500;text-align:center;}
+.obar.sub2{margin-top:-8px;margin-bottom:14px;}
+.obar.sub2 .l{font-size:14px;}
 .delivnote{margin:0 14px 12px;padding:10px 13px;background:rgba(91,157,249,.1);border:1px solid rgba(91,157,249,.25);border-radius:11px;font-size:12.5px;color:#8FBEFB;}
 .cta2{width:100%;margin-top:9px;background:transparent;border:1px solid var(--line2);color:var(--ink);border-radius:14px;padding:13px;font-size:14px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;}
 .delivbox{display:flex;align-items:center;gap:12px;margin:0 18px 14px;padding:14px;background:var(--surf);border:1px solid var(--line);border-radius:14px;}
@@ -1228,7 +1230,7 @@ async function inbox(m){
  }
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
- ${on&&me.delivery?'<div class="delivnote">📦 Вам приходят и поездки, и доставки</div>':''}
+ <div class="obar sub2 ${me.delivery?'':'off'}"><div><div class="l">📦 Доставка</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${me.delivery?'приходят и посылки, и пассажиры':'только обычные заказы'}</div></div><div class="tg ${me.delivery?'on':''}" onclick="togDelivery()"><b></b></div></div>
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</span></div><div class="clk" id="sclk">0:00</div></div>`:''}
  <div id="mo"></div>
  <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
@@ -1446,14 +1448,13 @@ function dProfHTML(){
   subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Зовите своих</div><div class="scs">Бонус за каждого приглашённого водителя</div></div><button class="subbtn" onclick="refSheet()">Пригласить</button></div>`;
  }
  return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div>
- <div class="delivbox"><div class="dvt"><b>📦 Беру доставку</b><span>Посылки, документы, продукты — заказы без пассажира</span></div><div class="tg ${me.delivery?'on':''}" onclick="togDelivery()"><b></b></div></div>
  <div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
 async function togDelivery(){
  const v=!me.delivery;
  const{error}=await Q(db.from('users').update({delivery:v}).eq('id',me.id),'Не удалось изменить');
  if(error)return;
- me.delivery=v;T(v?'Теперь вы берёте доставку':'Доставку больше не берёте');drawD();
+ me.delivery=v;T(v?'Теперь берёте и доставку':'Доставку больше не берёте');drawD();
 }
 async function saveD(){
  const n=document.getElementById('d1').value.trim();if(!n)return T('Введите имя');
