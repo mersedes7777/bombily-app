@@ -380,15 +380,15 @@ async function expireLoop() {
 /* ---------- неактивные водители: предупреждение и снятие с линии ---------- */
 async function idleLoop() {
   try {
-    const warnCut = new Date(Date.now() - 120 * 60 * 1000).toISOString();  // 2 часа
-    const offCut  = new Date(Date.now() - 135 * 60 * 1000).toISOString();  // ещё 15 минут
+    const warnCut = new Date(Date.now() - 180 * 60 * 1000).toISOString();  // 3 часа
+    const offCut  = new Date(Date.now() - 200 * 60 * 1000).toISOString();  // ещё 20 минут
 
     // предупреждение
     const { data: warn } = await db.from('users').select('*')
       .eq('status', 'online').eq('idle_warned', false).lt('last_active', warnCut);
     for (const u of warn || []) {
       if (u.telegram_id) await send(u.telegram_id,
-        `⚠️ <b>Вы всё ещё на линии?</b>\nПриложение не открывалось больше 2 часов. Если не отметитесь в течение 15 минут, мы автоматически снимем вас с линии и закроем смену — чтобы пассажиры не звали вас впустую.`,
+        `⚠️ <b>Вы всё ещё на линии?</b>\nПриложение не открывалось больше 3 часов. Если не отметитесь в течение 15 минут, мы автоматически снимем вас с линии и закроем смену — чтобы пассажиры не звали вас впустую.`,
         { reply_markup: { inline_keyboard: [[wa('Я на линии', 'driver')]] } });
       await db.from('users').update({ idle_warned: true }).eq('id', u.id);
     }
@@ -437,6 +437,35 @@ async function winbackLoop() {
     }
   } catch (e) { console.error('winback', e.message); }
   setTimeout(winbackLoop, 6 * 3600 * 1000); // раз в 6 часов
+}
+
+
+/* ---------- смена по расписанию: закрываем по времени ---------- */
+async function shiftLoop() {
+  try {
+    const now = new Date().toISOString();
+    const { data: due } = await db.from('shifts').select('*')
+      .is('ended_at', null).not('planned_end', 'is', null).lt('planned_end', now);
+    for (const s of due || []) {
+      const mins = Math.max(1, Math.round((Date.now() - new Date(s.started_at)) / 60000));
+      await db.from('shifts').update({ ended_at: new Date().toISOString(), minutes: mins, auto_closed: true }).eq('id', s.id);
+      await db.from('users').update({ status: 'offline' }).eq('id', s.driver_id);
+      await db.from('offers').update({ status: 'cancelled' }).eq('driver_id', s.driver_id).eq('status', 'pending');
+      const tid = await tgIdOf(s.driver_id);
+      if (tid) {
+        const { data: rr } = await db.from('rides').select('price')
+          .eq('driver_id', s.driver_id).eq('status', 'completed')
+          .gte('created_at', s.started_at).lte('created_at', new Date().toISOString());
+        const done = (rr || []).length;
+        const earned = (rr || []).reduce((a, x) => a + (Number(x.price) || 0), 0);
+        const h = Math.floor(mins / 60), mm = mins % 60;
+        await send(tid,
+          `🌙 <b>Смена окончена по расписанию</b>\nВы отработали: <b>${h} ч ${mm} мин</b>\nПоездок: <b>${done}</b>\nЗаработано: <b>${earned} ₽</b>\n\nОтдыхайте. Захотите продолжить — выходите на линию снова.`,
+          { reply_markup: { inline_keyboard: [[wa('Выйти на линию', 'driver')]] } });
+      }
+    }
+  } catch (e) { console.error('shiftLoop', e.message); }
+  setTimeout(shiftLoop, 60 * 1000);
 }
 
 /* ---------- проверка подписи Telegram initData ---------- */
@@ -533,7 +562,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v20-stats' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v21-shift' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -1082,3 +1111,4 @@ notifyLoop();
 expireLoop();
 idleLoop();
 winbackLoop();
+shiftLoop();

@@ -615,10 +615,17 @@ async function restoreD(){
  myOffs=o||[];
  const{data:sh}=await db.from('shifts').select('*').eq('driver_id',me.id).is('ended_at',null).order('started_at',{ascending:false}).limit(1);
  curShift=(sh&&sh.length)?sh[0]:null;
- // если смена шла дольше 2 часов — закроем и покажем итог при заходе
- if(curShift){
+ // смена закончилась по расписанию — закроем и покажем итог при заходе
+ if(curShift&&curShift.planned_end&&new Date(curShift.planned_end)<new Date()){
+  const end=new Date();const mins=Math.max(1,Math.round((end-new Date(curShift.started_at))/60000));
+  await db.from('shifts').update({ended_at:end.toISOString(),minutes:mins,auto_closed:true}).eq('id',curShift.id);
+  await db.from('users').update({status:'offline'}).eq('id',me.id);
+  me.status='offline';const st0=curShift.started_at;curShift=null;
+  pendingShift={mins,from:st0,to:end};
+ }
+ if(curShift&&!curShift.planned_end){
   const dur=Date.now()-new Date(curShift.started_at).getTime();
-  if(dur>2*60*60*1000){
+  if(dur>10*60*60*1000){
    const end=new Date();const mins=Math.round(dur/60000);
    await db.from('shifts').update({ended_at:end.toISOString(),minutes:mins}).eq('id',curShift.id);
    await db.from('users').update({status:'offline'}).eq('id',me.id);
@@ -1239,7 +1246,7 @@ async function inbox(m){
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
  <div class="obar sub2 ${me.delivery?'':'off'}"><div><div class="l">📦 Доставка</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${me.delivery?'приходят и посылки, и пассажиры':'только обычные заказы'}</div></div><div class="tg ${me.delivery?'on':''}" onclick="togDelivery()"><b></b></div></div>
- ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</span></div><div class="clk" id="sclk">0:00</div></div>`:''}
+ ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 14px 12px"><button class="btn ghost" style="padding:10px;font-size:13px" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
  <div id="mo"></div>
  <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
  drawMyOffs();syncOffs();
@@ -1281,12 +1288,11 @@ async function pullOff(id){
 async function tglOn(){
  const s=me.status==='online'?'offline':'online';
  if(s==='online'&&SETTINGS.paid_mode&&!subActive()){subSheet();return;}
+ if(s==='online'){shiftSheet();return;}
  const{error:stE}=await Q(db.from('users').update({status:s,last_active:new Date().toISOString()}).eq('id',me.id),'Не удалось сменить статус');
  if(stE)return;
  me.status=s;
- if(s==='online'){
-   const{data,error}=await Q(db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString()}).select().single(),'Не удалось открыть смену');
-   if(!error){curShift=data;T('Смена начата');}
+ if(false){
  }else{
    if(inCh){db.removeChannel(inCh);inCh=null;}
    if(curShift){
@@ -1295,6 +1301,39 @@ async function tglOn(){
      const st=curShift.started_at;curShift=null;shiftDone(mins,st,end);
    }else{T('Вы вышли с линии');}
  }
+ drawD();count();
+}
+async function shiftSheet(){
+ let hrs=8;
+ const opts=[4,6,8,10];
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Выйти на линию</h3><div class="s">На сколько выходите? По истечении времени смена закроется сама и придёт итог. Максимум 10 часов подряд.</div><div id="shl"></div>
+ <div class="fr"><label>Или до конкретного времени</label><input id="shtime" type="time" placeholder="22:00"></div>
+ <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="startShift()">Начать смену</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ const draw=()=>{document.getElementById('shl').innerHTML=opts.map(h=>`<div class="plan ${h===hrs?'on':''}" onclick="window._sh(${h})"><div class="pd"><div class="pdt">${h} ${h===1?'час':h<5?'часа':'часов'}</div><div class="pds">до ${new Date(Date.now()+h*3600000).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div></div>`).join('');};
+ window._sh=v=>{hrs=v;const t=document.getElementById('shtime');if(t)t.value='';draw();};
+ window._shGet=()=>hrs;draw();
+}
+async function startShift(){
+ let end;
+ const tv=(document.getElementById('shtime')?.value||'').trim();
+ if(tv){
+  const[hh,mm]=tv.split(':').map(Number);
+  end=new Date();end.setHours(hh,mm,0,0);
+  if(end<=new Date())end.setDate(end.getDate()+1);
+  const diff=(end-Date.now())/3600000;
+  if(diff>10){T('Смена не может быть длиннее 10 часов');return;}
+  if(diff<0.5){T('Слишком короткая смена');return;}
+ }else{
+  end=new Date(Date.now()+window._shGet()*3600000);
+ }
+ const{error:stE}=await Q(db.from('users').update({status:'online',last_active:new Date().toISOString()}).eq('id',me.id),'Не удалось выйти на линию');
+ if(stE)return;
+ me.status='online';
+ const{data,error}=await Q(db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString(),planned_end:end.toISOString()}).select().single(),'Не удалось открыть смену');
+ if(!error)curShift=data;
+ closeSh();T('Смена до '+end.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}));
  drawD();count();
 }
 async function shiftDone(mins,from,to){
@@ -1315,6 +1354,24 @@ function tickShift(){
  const e=document.getElementById('sclk');
  if(!e||!curShift){if(shiftTick){clearInterval(shiftTick);shiftTick=null;}return;}
  e.textContent=fmtDur(Date.now()-new Date(curShift.started_at));
+ const l=document.getElementById('sleft');
+ if(l&&curShift.planned_end){
+  const ms=new Date(curShift.planned_end)-Date.now();
+  l.textContent=ms>0?'осталось '+fmtDur(ms):'смена завершается…';
+ }
+}
+async function extendShift(){
+ if(!curShift)return;
+ const cur=curShift.planned_end?new Date(curShift.planned_end):new Date();
+ const total=(cur-new Date(curShift.started_at))/3600000;
+ if(total>=10){T('Смена уже максимальной длины — 10 часов');return;}
+ const add=Math.min(2,10-total);
+ const ne=new Date(cur.getTime()+add*3600000);
+ const{error}=await Q(db.from('shifts').update({planned_end:ne.toISOString()}).eq('id',curShift.id),'Не удалось продлить');
+ if(error)return;
+ curShift.planned_end=ne.toISOString();
+ T('Смена продлена до '+ne.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}));
+ drawD();
 }
 function setSpot(){
  const m=document.createElement('div');m.className='mask';m.id='sh';
