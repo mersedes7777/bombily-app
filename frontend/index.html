@@ -268,6 +268,10 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .strow .sl{font-size:13px;color:var(--ink);}
 .strow .sv2{font-family:'Roboto Mono',monospace;font-size:14px;text-align:center;font-weight:600;}
 .sthead .sv2{font-family:Inter,sans-serif;font-size:10.5px;font-weight:500;text-align:center;}
+.tsel{display:flex;align-items:center;gap:8px;margin-top:6px;}
+.tsel select{flex:1;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:11px 10px;color:var(--ink);font-size:16px;font-family:'Roboto Mono',monospace;outline:none;text-align:center;-webkit-appearance:none;appearance:none;}
+.tcol{color:var(--dim);font-weight:700;}
+.tclr{background:none;border:none;color:var(--dim);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;padding:8px 4px;flex-shrink:0;}
 .obar.sub2{margin-top:-8px;margin-bottom:14px;}
 .obar.sub2 .l{font-size:14px;}
 .delivnote{margin:0 14px 12px;padding:10px 13px;background:rgba(91,157,249,.1);border:1px solid rgba(91,157,249,.25);border-radius:11px;font-size:12.5px;color:#8FBEFB;}
@@ -1308,16 +1312,36 @@ async function shiftSheet(){
  const opts=[4,6,8,10];
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet"><h3>Выйти на линию</h3><div class="s">На сколько выходите? По истечении времени смена закроется сама и придёт итог. Максимум 10 часов подряд.</div><div id="shl"></div>
- <div class="fr"><label>Или до конкретного времени</label><input id="shtime" type="time" placeholder="22:00"></div>
+ <div class="fr"><label>Или до конкретного времени</label>
+  <div class="tsel">
+   <select id="sh_h"><option value="">час</option></select>
+   <span class="tcol">:</span>
+   <select id="sh_m"><option value="00">00</option><option value="15">15</option><option value="30">30</option><option value="45">45</option></select>
+   <button class="tclr" onclick="clearShTime()">сбросить</button>
+  </div>
+ </div>
  <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="startShift()">Начать смену</button></div></div>`;
  document.getElementById('device').appendChild(m);
  const draw=()=>{document.getElementById('shl').innerHTML=opts.map(h=>`<div class="plan ${h===hrs?'on':''}" onclick="window._sh(${h})"><div class="pd"><div class="pdt">${h} ${h===1?'час':h<5?'часа':'часов'}</div><div class="pds">до ${new Date(Date.now()+h*3600000).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div></div>`).join('');};
- window._sh=v=>{hrs=v;const t=document.getElementById('shtime');if(t)t.value='';draw();};
+ window._sh=v=>{hrs=v;clearShTime();draw();};
  window._shGet=()=>hrs;draw();
+ const hs=document.getElementById('sh_h');
+ if(hs){
+  const now=new Date();
+  for(let i=1;i<=10;i++){
+   const t=new Date(now.getTime()+i*3600000);
+   const hh=String(t.getHours()).padStart(2,'0');
+   hs.innerHTML+=`<option value="${hh}">${hh}</option>`;
+  }
+  hs.onchange=()=>{document.querySelectorAll('#shl .plan').forEach(p=>p.classList.remove('on'));};
+ }
 }
+function clearShTime(){const h=document.getElementById('sh_h');if(h)h.value='';}
 async function startShift(){
  let end;
- const tv=(document.getElementById('shtime')?.value||'').trim();
+ const hSel=(document.getElementById('sh_h')?.value||'').trim();
+ const mSel=(document.getElementById('sh_m')?.value||'00').trim();
+ const tv=hSel?hSel+':'+mSel:'';
  if(tv){
   const[hh,mm]=tv.split(':').map(Number);
   end=new Date();end.setHours(hh,mm,0,0);

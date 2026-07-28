@@ -295,7 +295,10 @@ async function notifyLoop() {
     }
 
     // новые отзывы -> уведомить того, о ком отзыв (только когда отзыв стал видимым)
-    const { data: nrev } = await db.from('reviews').select('*').eq('visible', true).eq('notified', false);
+    // уведомляем не сразу, а через 5 минут после того, как отзыв оставили
+    const revCut = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: nrev } = await db.from('reviews').select('*')
+      .eq('visible', true).eq('notified', false).lt('created_at', revCut);
     for (const rv of nrev || []) {
       const tid = await tgIdOf(rv.target_id);
       if (tid) {
@@ -562,7 +565,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v21-shift' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v22-review-delay' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
