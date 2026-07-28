@@ -275,7 +275,9 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .tsel select{flex:1;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:11px 10px;color:var(--ink);font-size:16px;font-family:'Roboto Mono',monospace;outline:none;text-align:center;-webkit-appearance:none;appearance:none;}
 .tcol{color:var(--dim);font-weight:700;}
 .tclr{background:none;border:none;color:var(--dim);font-size:12px;cursor:pointer;font-family:Inter,sans-serif;padding:8px 4px;flex-shrink:0;}
-.obar.sub2{margin-top:-8px;margin-bottom:14px;}
+.obar.sub2{margin-top:-8px;margin-bottom:14px;align-items:flex-start;}
+.obar.sub2 .tg{margin-top:2px;flex-shrink:0;}
+.obhint{font-size:11.5px;color:var(--dim);margin-top:4px;line-height:1.5;}
 .obar.sub2 .l{font-size:14px;}
 .delivnote{margin:0 14px 12px;padding:10px 13px;background:rgba(91,157,249,.1);border:1px solid rgba(91,157,249,.25);border-radius:11px;font-size:12.5px;color:#8FBEFB;}
 .cta2{width:100%;margin-top:9px;background:transparent;border:1px solid var(--line2);color:var(--ink);border-radius:14px;padding:13px;font-size:14px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;}
@@ -1297,8 +1299,12 @@ async function inbox(m){
  }
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
- <div class="obar sub2 ${me.delivery?'':'off'}"><div><div class="l">📦 Доставка</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${me.delivery?'приходят и посылки, и пассажиры':'только обычные заказы'}</div></div><div class="tg ${me.delivery?'on':''}" onclick="togDelivery()"><b></b></div></div>
- <div class="obar sub2 ${me.intercity?'':'off'}"><div><div class="l">🛣 Межгород</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${me.intercity?'видите заявки в другие города':'только поездки по городу'}</div></div><div class="tg ${me.intercity?'on':''}" onclick="togIntercity()"><b></b></div></div>
+ <div class="obar sub2"><div style="flex:1;padding-right:10px"><div class="l">📦 Доставка</div><div class="obhint">${me.delivery
+   ? 'Включено. Вам приходят и обычные заказы, и посылки — документы, продукты, передачи без пассажира.'
+   : 'Выключено. Включите, если готовы отвезти посылку или пакет без пассажира — обычные заказы при этом никуда не денутся.'}</div></div><div class="tg ${me.delivery?'on':''}" onclick="togDelivery()"><b></b></div></div>
+ <div class="obar sub2"><div style="flex:1;padding-right:10px"><div class="l">🛣 Межгород</div><div class="obhint">${me.intercity
+   ? 'Включено. Видите заказы в другие города — Макеевка, Горловка и дальше. Цену обсуждаете с пассажиром.'
+   : 'Выключено. Включите, если готовы выехать в другой город. Такие поездки длиннее, но и платят за них заметно больше.'}</div></div><div class="tg ${me.intercity?'on':''}" onclick="togIntercity()"><b></b></div></div>
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 14px 12px"><button class="btn ghost" style="padding:10px;font-size:13px" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
  <div id="mo"></div>
  <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
