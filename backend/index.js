@@ -173,13 +173,15 @@ async function notifyLoop() {
     for (const r of rides || []) {
       let q = db.from('users').select('telegram_id').eq('status', 'online').in('role', ['driver', 'both']);
       if (r.kind === 'delivery') q = q.eq('delivery', true);
+      if (r.to_city) q = q.eq('intercity', true);
       if (r.target_driver_id) q = db.from('users').select('telegram_id').eq('id', r.target_driver_id);
       const { data: drv } = await q;
       const isDel = r.kind === 'delivery';
+      const isInter = !!r.to_city;
       const head = r.target_driver_id
-        ? (isDel ? '🎯 <b>Доставка лично вам</b>' : '🎯 <b>Заявка лично вам</b>')
-        : (isDel ? '📦 <b>Новая доставка</b>' : '🚕 <b>Новая заявка</b>');
-      const extra = `${r.passenger_price ? `\n💰 Пассажир предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
+        ? (isDel ? '🎯 <b>Доставка лично вам</b>' : isInter ? '🎯 <b>Межгород лично вам</b>' : '🎯 <b>Заявка лично вам</b>')
+        : (isDel ? '📦 <b>Новая доставка</b>' : isInter ? `🛣 <b>Межгород в ${r.to_city}</b>` : '🚕 <b>Новая заявка</b>');
+      const extra = `${r.to_city ? `\n🛣 Город назначения: <b>${r.to_city}</b>` : ''}${r.passenger_price ? `\n💰 Пассажир предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
       for (const d of drv || [])
         if (d.telegram_id) await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
           { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'driver')]] } });
@@ -565,7 +567,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v22-review-delay' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v23-intercity' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -637,7 +639,8 @@ http.createServer(async (req, res) => {
     // --- сохранить свой телефон ---
     if (req.url === '/api/set-phone') {
       const phone = String(body.phone || '').trim().slice(0, 30);
-      if (phone.replace(/\D/g, '').length < 7) return json(res, 400, { error: 'bad_phone' });
+      const pd = phone.replace(/\D/g, '');
+      if (!(pd.length === 11 && (pd[0] === '7' || pd[0] === '8'))) return json(res, 400, { error: 'bad_phone' });
       await db.from('contacts').upsert({ user_id: me.id, phone, updated_at: new Date().toISOString() });
       await db.from('users').update({ has_phone: true }).eq('id', me.id);
       return json(res, 200, { ok: true, phone });
@@ -675,7 +678,8 @@ http.createServer(async (req, res) => {
     // --- подача заявки в водители (сам пользователь) ---
     if (req.url === '/api/apply-driver') {
       const phone = String(body.phone || '').slice(0, 30);
-      if (phone.replace(/\D/g, '').length < 7) return json(res, 400, { error: 'bad_phone' });
+      const pd2 = phone.replace(/\D/g, '');
+      if (!(pd2.length === 11 && (pd2[0] === '7' || pd2[0] === '8'))) return json(res, 400, { error: 'bad_phone' });
       const fullName = String(body.full_name || '').trim().slice(0, 120);
       if (fullName.split(/\s+/).filter(Boolean).length < 2) return json(res, 400, { error: 'bad_name' });
       if (me.driver_status === 'approved') return json(res, 400, { error: 'already' });

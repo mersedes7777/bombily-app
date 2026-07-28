@@ -268,6 +268,9 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .strow .sl{font-size:13px;color:var(--ink);}
 .strow .sv2{font-family:'Roboto Mono',monospace;font-size:14px;text-align:center;font-weight:600;}
 .sthead .sv2{font-family:Inter,sans-serif;font-size:10.5px;font-weight:500;text-align:center;}
+.tabsw{display:flex;gap:6px;margin-top:8px;}
+.tabsw div{flex:1;text-align:center;padding:10px;border-radius:10px;border:1px solid var(--line2);font-size:13px;font-weight:600;color:var(--dim);cursor:pointer;}
+.tabsw div.on{background:var(--g);border-color:var(--g);color:#06120b;}
 .tsel{display:flex;align-items:center;gap:8px;margin-top:6px;}
 .tsel select{flex:1;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:11px 10px;color:var(--ink);font-size:16px;font-family:'Roboto Mono',monospace;outline:none;text-align:center;-webkit-appearance:none;appearance:none;}
 .tcol{color:var(--dim);font-weight:700;}
@@ -404,6 +407,7 @@ let unreadRev=0;
 async function loadUnreadRev(){try{const{count}=await db.from('reviews').select('*',{count:'exact',head:true}).eq('target_id',me.id).eq('visible',true).eq('seen_by_target',false);unreadRev=Number(count)||0;}catch(e){unreadRev=0;}}
 let me=null,role='passenger',pTab='home',dTab='inbox',aTab='over';
 let orderKind='ride';
+let interCity=false;
 let curShift=null,shiftTick=null,pendingShift=null;
 let pendingDone=null;
 let active=null,dActive=null,offCh=null,inCh=null,myCh=null,rideCh=null,reqs=[],myOffs=[],targetDrv=null;
@@ -432,6 +436,32 @@ const T=t=>{const e=document.getElementById('toast');e.textContent=t;e.classList
 const plural=(n,f)=>{n=Math.abs(Number(n)||0);const n10=n%10,n100=n%100;if(n10===1&&n100!==11)return f[0];if(n10>=2&&n10<=4&&(n100<10||n100>=20))return f[1];return f[2];};
 const cancelTxt=n=>{n=Number(n)||0;return n===0?'без отмен':n+' '+plural(n,['отменённый заказ','отменённых заказа','отменённых заказов']);};
 const refuseTxt=n=>{n=Number(n)||0;return n===0?'ни разу не отказывался':n+' '+plural(n,['отказ от заказа','отказа от заказов','отказов от заказов']);};
+// телефон: ровно 11 цифр, начинается с 7 (или 8 — приведём к 7)
+function phoneDigits(v){return String(v||'').replace(/\D/g,'');}
+function phoneNorm(v){
+ let d=phoneDigits(v);
+ if(d.length===10)d='7'+d;
+ if(d.length===11&&d[0]==='8')d='7'+d.slice(1);
+ return d;
+}
+function phoneValid(v){const d=phoneNorm(v);return d.length===11&&d[0]==='7';}
+function phoneFmt(v){
+ const d=phoneNorm(v);
+ if(!d)return '';
+ const p=d.slice(1);
+ let s='+7';
+ if(p.length)s+=' ('+p.slice(0,3);
+ if(p.length>=3)s+=')';
+ if(p.length>3)s+=' '+p.slice(3,6);
+ if(p.length>6)s+='-'+p.slice(6,8);
+ if(p.length>8)s+='-'+p.slice(8,10);
+ return s;
+}
+function maskPhone(el){
+ const pos=el.selectionStart===el.value.length;
+ el.value=phoneFmt(el.value);
+ if(pos)el.setSelectionRange(el.value.length,el.value.length);
+}
 const esc=s=>String(s==null?'':s).replace(/[<>"']/g,'');
 const jget=f=>{try{return JSON.parse(me[f]||'[]')}catch(e){return[]}};
 const places=()=>jget('places');
@@ -574,12 +604,12 @@ function cityPick(){
 function phoneGate(){
  document.getElementById('rsw').style.display='none';
  document.getElementById('nav').innerHTML='';
- document.getElementById('main').innerHTML=`<div class="gate"><h2>Укажите телефон</h2><p>Без номера сервис не работает: водитель и пассажир должны видеть контакты друг друга, когда заказ подтверждён.</p><div class="fr"><label>Ваше имя</label><input id="g1" value="${/^Гость/i.test(me.name||'')?'':esc(me.name)}" placeholder="Как к вам обращаться"></div><div class="fr"><label>Телефон</label><input id="g2" value="" inputmode="tel" placeholder="+7 900 000-00-00"></div><button class="btn" onclick="saveGate()">Продолжить</button></div>`;
+ document.getElementById('main').innerHTML=`<div class="gate"><h2>Укажите телефон</h2><p>Без номера сервис не работает: водитель и пассажир должны видеть контакты друг друга, когда заказ подтверждён.</p><div class="fr"><label>Ваше имя</label><input id="g1" value="${/^Гость/i.test(me.name||'')?'':esc(me.name)}" placeholder="Как к вам обращаться"></div><div class="fr"><label>Телефон</label><input id="g2" value="" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><button class="btn" onclick="saveGate()">Продолжить</button></div>`;
 }
 async function saveGate(){
  const n=document.getElementById('g1').value.trim(),p=document.getElementById('g2').value.trim();
  if(!n)return T('Введите имя');
- if(p.replace(/\D/g,'').length<7)return T('Введите корректный телефон');
+ if(!phoneValid(p))return T('Номер должен содержать 11 цифр: +7 900 000-00-00');
  const{error}=await Q(db.from('users').update({name:n}).eq('id',me.id),'Не удалось сохранить');
  if(error)return;
  const r=await api('/api/set-phone',{phone:p});
@@ -729,7 +759,7 @@ function drawP(){
 const pGo=t=>{pTab=t;drawP();};
 
 async function home(m){
- m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;orderKind='ride';pTab='order';drawP()">Заявка всем водителям</button><button class="cta2" id="delbtn" onclick="targetDrv=null;orderKind='delivery';pTab='order';drawP()">📦 Заказать доставку <span id="delcnt" style="color:var(--dim);font-weight:500"></span></button></div><div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
+ m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;orderKind='ride';interCity=false;pTab='order';drawP()">Заявка всем водителям</button><button class="cta2" id="delbtn" onclick="targetDrv=null;orderKind='delivery';interCity=false;pTab='order';drawP()">📦 Заказать доставку <span id="delcnt" style="color:var(--dim);font-weight:500"></span></button></div><div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
  const{data:ds,error:dsE}=await Q(db.from('users').select('*').eq('status','online').eq('city',me.city).in('role',['driver','both']),'Не удалось загрузить водителей');
  const{count:rc}=await db.from('rides').select('*',{count:'exact',head:true}).eq('status','created').eq('city',me.city);
  db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city).eq('delivery',true).then(({count:dc})=>{
@@ -751,7 +781,8 @@ function drvCard(d){
   <div class="nmx">${esc(d.name)}</div>
   <div class="row"><span class="k">🚗</span><span class="car">${esc(d.car)||'машина не указана'}</span></div>
   <div class="row"><span class="k">📍 стоит:</span><span class="loc">${esc(d.spot)||'место не указано'}</span></div>
-  ${d.delivery?'<div class="row"><span class="k">📦</span><span style="color:var(--blue,#5B9DF9);font-weight:500">берёт доставку</span></div>':''}
+  ${d.delivery?'<div class="row"><span class="k">📦</span><span style="color:#5B9DF9;font-weight:500">берёт доставку</span></div>':''}
+  ${d.intercity?'<div class="row"><span class="k">🛣</span><span style="color:#A98BF5;font-weight:500">возит в другие города</span></div>':''}
   ${d.status!=='online'?'<div class="row"><span class="k">сейчас оффлайн</span></div>':''}
  </div>
  <button class="fav ${on?'on':''}" onclick="event.stopPropagation();togFav('${d.id}')">♥</button></div>`;
@@ -786,6 +817,8 @@ function formHTML(d){
  const hdr=d?`<div class="card" style="margin:14px 14px 0"><div class="ava">${esc(d.name)[0]}</div><div style="flex:1"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':''}${d.car?'<span>· '+esc(d.car)+'</span>':''}</div></div></div>`:'';
  const isDel=orderKind==='delivery';
  return `<div class="head"><h2>${isDel?(d?'Доставка водителю':'Заказать доставку'):(d?'Заявка водителю':'Заявка всем')}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="${isDel?'Откуда забрать':'Откуда — адрес или ориентир'}"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="${isDel?'Куда доставить':'Куда едем'}"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div>
+ ${!isDel?`<div class="fr"><label>Куда едем</label><div class="tabsw"><div class="${!interCity?'on':''}" onclick="interCity=false;document.getElementById('host').innerHTML=formHTML(targetDrv)">По городу</div><div class="${interCity?'on':''}" onclick="interCity=true;document.getElementById('host').innerHTML=formHTML(targetDrv)">🛣 Межгород</div></div></div>`:''}
+ ${(!isDel&&interCity)?`<div class="fr"><label>Город назначения</label><select id="ocity" onchange="document.getElementById('ocityx').style.display=this.value==='__other'?'block':'none'" style="width:100%;background:transparent;border:none;color:var(--ink);font-size:15px;outline:none;padding:2px 0">${CITIES.filter(c=>c!==me.city).map(c=>`<option value="${c}">${c}</option>`).join('')}<option value="__other">Другой город…</option></select><input id="ocityx" placeholder="впишите город" style="display:none;margin-top:8px;width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:9px;padding:10px;color:var(--ink);font-size:14px;outline:none" oninput=""></div>`:''}
  <div class="fr"><label>${isDel?'Что везём — обязательно':'Комментарий для водителя (не обязательно)'}</label><input id="ocom" placeholder="${isDel?'документы, пакет из аптеки, торт…':'трое, большая сумка, второй подъезд…'}" maxlength="200"></div>
  <div class="fr"><label>Ваша цена, ₽ (не обязательно)</label><input id="oprice" inputmode="numeric" placeholder="например 300"></div>
  <button class="btn" onclick="send(${d?"'"+d.id+"'":'null'})">Отправить заявку</button><button class="btn ghost" onclick="targetDrv=null;pGo('home')">Назад</button><div class="note">${isDel?'Опишите, что нужно забрать и куда отвезти. Заявку увидят только водители, которые берут доставку.':'Пишите адрес или понятный ориентир — водитель поедет по нему.'}<br>Если укажете свою цену, водитель либо согласится, либо предложит свою — решать вам.</div></div>`;
@@ -822,7 +855,18 @@ async function send(did){
   const{count:dc}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city).eq('delivery',true);
   if(!dc){T('Сейчас нет водителей, которые берут доставку');return;}
  }
- const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city,comment:com||null,passenger_price:pp,kind:orderKind};
+ let toCity=null;
+ if(interCity&&orderKind!=='delivery'){
+  const sel=document.getElementById('ocity');
+  toCity=sel?sel.value:null;
+  if(toCity==='__other'){
+   const x=(document.getElementById('ocityx')?.value||'').trim();
+   if(!x)return T('Впишите город назначения');
+   toCity=x.slice(0,40);
+  }
+  if(!toCity)return T('Выберите город назначения');
+ }
+ const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city,comment:com||null,passenger_price:pp,kind:orderKind,to_city:toCity};
  if(did)row.target_driver_id=did;
  const{data,error}=await Q(db.from('rides').insert(row).select().single(),'Не удалось создать заявку');
  if(error)return;
@@ -1030,7 +1074,7 @@ async function trips(m){
  const cl={completed:'var(--g)',expired:'var(--dim)',cancelled_by_passenger_free:'var(--red)'};
  l.innerHTML=data.map(r=>{
   const act=['created','confirmed','in_progress'].includes(r.status);
-  return `<div class="card tap" onclick="${act?`openRideFrom('${r.id}')`:`tripInfo('${r.id}')`}"><div style="flex:1;min-width:0"><div class="nm">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="sub"><span style="color:${cl[r.status]||'var(--am)'}">${st[r.status]||esc(r.status)}</span><span>· ${new Date(r.created_at).toLocaleDateString('ru')}</span>${r.price?'<span>· '+r.price+' ₽</span>':''}</div></div><span class="go">${act?'открыть':'детали'} →</span></div>`;
+  return `<div class="card tap" onclick="${act?`openRideFrom('${r.id}')`:`tripInfo('${r.id}')`}"><div style="flex:1;min-width:0"><div class="nm">${r.kind==='delivery'?'📦 ':''}${r.to_city?'🛣 ':''}${esc(r.from_address)} → ${esc(r.to_address)}${r.to_city?' ('+esc(r.to_city)+')':''}</div><div class="sub"><span style="color:${cl[r.status]||'var(--am)'}">${st[r.status]||esc(r.status)}</span><span>· ${new Date(r.created_at).toLocaleDateString('ru')}</span>${r.price?'<span>· '+r.price+' ₽</span>':''}</div></div><span class="go">${act?'открыть':'детали'} →</span></div>`;
  }).join('');
 }
 async function tripInfo(id){
@@ -1056,7 +1100,7 @@ async function openRideFrom(id){
 async function markRevSeen(){unreadRev=0;}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
- return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 900 000-00-00"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div><div class="mi" onclick="T('Поддержка: напишите в бот, кнопка «Связь с админом»')"><span>Поддержка</span><span class="c">›</span></div></div>`;
+ return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div><div class="mi" onclick="T('Поддержка: напишите в бот, кнопка «Связь с админом»')"><span>Поддержка</span><span class="c">›</span></div></div>`;
 }
 function disputeRev(rid,about,text){
  let reason='Отзыв не соответствует действительности';
@@ -1084,7 +1128,11 @@ async function saveP(){
  const p={name:n,age:parseInt(document.getElementById('f3').value)||null};
  const{error}=await Q(db.from('users').update(p).eq('id',me.id),'Не удалось сохранить профиль');
  if(error)return;
- if(_ph&&_ph!==me.phone){const r=await api('/api/set-phone',{phone:_ph});if(r.error){T(r.error==='bad_phone'?'Телефон указан неверно':'Телефон не сохранён');}else{me.phone=_ph;me.has_phone=true;}}
+ if(_ph&&_ph!==me.phone){
+  if(!phoneValid(_ph)){T('Номер должен содержать 11 цифр');return;}
+  const r=await api('/api/set-phone',{phone:phoneFmt(_ph)});
+  if(r.error){T(r.error==='bad_phone'?'Проверьте номер':'Телефон не сохранён');}else{me.phone=phoneFmt(_ph);me.has_phone=true;}
+ }
  Object.assign(me,p);T('Сохранено');drawP();
 }
 function applyDrv(){
@@ -1099,7 +1147,7 @@ function applyDrv(){
  </div>
  <div class="fr"><label>Фамилия Имя Отчество · только для проверки</label><input id="afio" value="${esc(me.full_name)}" placeholder="Иванов Иван Иванович"></div>
  <div class="note" style="margin:0 0 12px">Пассажиры будут видеть только ваше имя — <b>${esc(me.name)}</b>. ФИО нужны администрации для проверки документов.</div>
- <div class="fr"><label>Телефон</label><input id="ap" value="${esc(me.phone)}" placeholder="+7 900 000-00-00" inputmode="tel"></div>
+ <div class="fr"><label>Телефон</label><input id="ap" value="${esc(me.phone)}" placeholder="+7 (900) 000-00-00" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
  <div class="up" id="u3" onclick="pick('car')"><div class="ic" id="i3">🚗</div><div class="tx">Машина спереди<small>обязательно виден госномер</small></div><span class="st" id="s3">загрузить</span></div>
  <div class="up" id="u1" onclick="pick('license')"><div class="ic" id="i1">🪪</div><div class="tx">Водительские права<small>разворот, чтобы читалось</small></div><span class="st" id="s1">загрузить</span></div>
  <div class="up" id="u2" onclick="pick('pts')"><div class="ic" id="i2">📄</div><div class="tx">Техпаспорт<small>ПТС или СТС на эту машину</small></div><span class="st" id="s2">загрузить</span></div>
@@ -1155,7 +1203,7 @@ async function sendApp(){
  if(!me.doc_car)return T('Загрузите фото машины с номером');
  if(!me.doc_license)return T('Загрузите фото водительских прав');
  if(!me.doc_pts)return T('Загрузите фото техпаспорта');
- const r=await api('/api/apply-driver',{phone:p,full_name:fio});
+ const r=await api('/api/apply-driver',{phone:phoneFmt(p),full_name:fio});
  if(r.error){
   const msg={bad_phone:'Введите корректный телефон',bad_name:'Впишите фамилию и имя полностью',need_docs:'Загрузите все три фотографии',already:'Вы уже водитель'}[r.error]||'Не удалось отправить заявку';
   return T(msg);
@@ -1250,6 +1298,7 @@ async function inbox(m){
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
  <div class="obar sub2 ${me.delivery?'':'off'}"><div><div class="l">📦 Доставка</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${me.delivery?'приходят и посылки, и пассажиры':'только обычные заказы'}</div></div><div class="tg ${me.delivery?'on':''}" onclick="togDelivery()"><b></b></div></div>
+ <div class="obar sub2 ${me.intercity?'':'off'}"><div><div class="l">🛣 Межгород</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${me.intercity?'видите заявки в другие города':'только поездки по городу'}</div></div><div class="tg ${me.intercity?'on':''}" onclick="togIntercity()"><b></b></div></div>
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 14px 12px"><button class="btn ghost" style="padding:10px;font-size:13px" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
  <div id="mo"></div>
  <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
@@ -1410,6 +1459,7 @@ async function load(){
  const cut=new Date(Date.now()-10*60000).toISOString();
  let q=db.from('rides').select('*').eq('status','created').eq('city',me.city).gt('created_at',cut);
  if(!me.delivery)q=q.or('kind.is.null,kind.eq.ride');
+ if(!me.intercity)q=q.is('to_city',null);
  const{data}=await q.order('created_at',{ascending:false});
  reqs=(data||[]).filter(r=>!r.target_driver_id||r.target_driver_id===me.id);
  drawReqs();
@@ -1417,7 +1467,7 @@ async function load(){
 function drawReqs(){
  const l=document.getElementById('il');if(!l)return;
  if(!reqs.length){l.innerHTML='<div class="empty"><b>Пока тихо</b>Новые заявки появятся здесь сразу.</div>';return;}
- l.innerHTML=reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(91,157,249,.15);color:#5B9DF9">📦 доставка</span> ':''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
+ l.innerHTML=reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(91,157,249,.15);color:#5B9DF9">📦 доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(169,139,245,.15);color:#A98BF5">🛣 в ${esc(r.to_city)}</span> `:''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
  ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
  ${r.passenger_price?`<div class="rprice"><div class="rpt">Пассажир предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
  <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div><div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Отправить цену'}</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div></div>`).join('');
@@ -1428,6 +1478,7 @@ function subIn(){
    const r=p.new;if(r.status!=='created')return;
    if(r.city&&me.city&&r.city!==me.city)return;
    if(r.kind==='delivery'&&!me.delivery)return;
+   if(r.to_city&&!me.intercity)return;
    if(r.target_driver_id&&r.target_driver_id!==me.id)return;
    reqs.unshift(r);drawReqs();T(r.target_driver_id?'Заявка лично вам!':'Новая заявка!');
  }).subscribe();
@@ -1536,8 +1587,14 @@ function dProfHTML(){
  }else if(SETTINGS.ref_enabled){
   subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Зовите своих</div><div class="scs">Бонус за каждого приглашённого водителя</div></div><button class="subbtn" onclick="refSheet()">Пригласить</button></div>`;
  }
- return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div>
+ return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':''}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div>
  <div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
+}
+async function togIntercity(){
+ const v=!me.intercity;
+ const{error}=await Q(db.from('users').update({intercity:v}).eq('id',me.id),'Не удалось изменить');
+ if(error)return;
+ me.intercity=v;T(v?'Теперь берёте межгород':'Межгород больше не берёте');drawD();
 }
 async function togDelivery(){
  const v=!me.delivery;
@@ -1550,7 +1607,11 @@ async function saveD(){
  const _ph=document.getElementById('d2').value.trim();
  const p={name:n,spot:document.getElementById('d3').value.trim()};
  await db.from('users').update(p).eq('id',me.id);
- if(_ph&&_ph!==me.phone){const r=await api('/api/set-phone',{phone:_ph});if(r.error){T(r.error==='bad_phone'?'Телефон указан неверно':'Телефон не сохранён');}else{me.phone=_ph;me.has_phone=true;}}
+ if(_ph&&_ph!==me.phone){
+  if(!phoneValid(_ph)){T('Номер должен содержать 11 цифр');return;}
+  const r=await api('/api/set-phone',{phone:phoneFmt(_ph)});
+  if(r.error){T(r.error==='bad_phone'?'Проверьте номер':'Телефон не сохранён');}else{me.phone=phoneFmt(_ph);me.has_phone=true;}
+ }
  Object.assign(me,p);T('Сохранено');drawD();
 }
 
@@ -2004,7 +2065,7 @@ async function userCard(id){
  </div>
  <div class="fr"><label>Имя в приложении</label><input id="e_name" value="${esc(u.name)}"></div>
  <div class="fr"><label>ФИО по документам</label><input id="e_full_name" value="" placeholder="загружается…"></div>
- <div class="fr"><label>Телефон</label><input id="e_phone" value="" placeholder="${u.has_phone?'загружается…':'не указан'}"></div>
+ <div class="fr"><label>Телефон</label><input id="e_phone" value="" placeholder="${u.has_phone?'загружается…':'не указан'}" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
  <div class="fr"><label>Возраст</label><input id="e_age" value="${u.age||''}" inputmode="numeric"></div>
  <div class="fr"><label>Марка машины</label><input id="e_car" value="${esc(u.car)}"></div>
  <div class="fr"><label>Гос. номер</label><input id="e_plate" value="${esc(u.plate)}"></div>
