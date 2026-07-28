@@ -268,6 +268,17 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .strow .sl{font-size:13px;color:var(--ink);}
 .strow .sv2{font-family:'Roboto Mono',monospace;font-size:14px;text-align:center;font-weight:600;}
 .sthead .sv2{font-family:Inter,sans-serif;font-size:10.5px;font-weight:500;text-align:center;}
+.modes{display:flex;gap:8px;padding:0 14px;margin:-4px 0 14px;}
+.mode{
+ flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+ background:var(--surf);border:1px solid var(--line);border-radius:13px;
+ padding:11px 8px;font-size:13px;font-weight:600;color:var(--dim);
+ cursor:pointer;font-family:Inter,sans-serif;position:relative;
+}
+.mode .mi2{font-size:14px;filter:grayscale(1);opacity:.6;}
+.mode i{font-style:normal;font-size:10px;font-weight:600;opacity:.7;margin-left:2px;}
+.mode.on{background:var(--gs);border-color:var(--g);color:var(--g);}
+.mode.on .mi2{filter:none;opacity:1;}
 .carrow{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--line2);border-radius:12px;margin-bottom:8px;}
 .carrow.act{border-color:var(--g);background:var(--gs);}
 .tabsw{display:flex;gap:6px;margin-top:8px;}
@@ -1305,12 +1316,10 @@ async function inbox(m){
  }
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
- <div class="obar sub2"><div style="flex:1;padding-right:10px"><div class="l">📦 Доставка</div><div class="obhint">${me.delivery
-   ? 'Включено. Вам приходят и обычные заказы, и посылки — документы, продукты, передачи без пассажира.'
-   : 'Выключено. Включите, если готовы отвезти посылку или пакет без пассажира — обычные заказы при этом никуда не денутся.'}</div></div><div class="tg ${me.delivery?'on':''}" onclick="togDelivery()"><b></b></div></div>
- <div class="obar sub2"><div style="flex:1;padding-right:10px"><div class="l">🛣 Межгород</div><div class="obhint">${me.intercity
-   ? 'Включено. Видите заказы в другие города — Макеевка, Горловка и дальше. Цену обсуждаете с пассажиром.'
-   : 'Выключено. Включите, если готовы выехать в другой город. Такие поездки длиннее, но и платят за них заметно больше.'}</div></div><div class="tg ${me.intercity?'on':''}" onclick="togIntercity()"><b></b></div></div>
+ <div class="modes">
+  <button class="mode ${me.delivery?'on':''}" onclick="togDelivery()"><span class="mi2">📦</span>Доставка<i>${me.delivery?'вкл':'выкл'}</i></button>
+  <button class="mode ${me.intercity?'on':''}" onclick="togIntercity()"><span class="mi2">🛣</span>Межгород<i>${me.intercity?'вкл':'выкл'}</i></button>
+ </div>
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 14px 12px"><button class="btn ghost" style="padding:10px;font-size:13px" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
  <div id="mo"></div>
  <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
@@ -1672,13 +1681,13 @@ async function togIntercity(){
  const v=!me.intercity;
  const{error}=await Q(db.from('users').update({intercity:v}).eq('id',me.id),'Не удалось изменить');
  if(error)return;
- me.intercity=v;T(v?'Теперь берёте межгород':'Межгород больше не берёте');drawD();
+ me.intercity=v;T(v?'Межгород включён — увидите заказы в другие города':'Межгород выключен — только поездки по городу');drawD();
 }
 async function togDelivery(){
  const v=!me.delivery;
  const{error}=await Q(db.from('users').update({delivery:v}).eq('id',me.id),'Не удалось изменить');
  if(error)return;
- me.delivery=v;T(v?'Теперь берёте и доставку':'Доставку больше не берёте');drawD();
+ me.delivery=v;T(v?'Доставка включена — придут и посылки, и пассажиры':'Доставка выключена — только обычные заказы');drawD();
 }
 async function saveD(){
  const n=document.getElementById('d1').value.trim();if(!n)return T('Введите имя');
