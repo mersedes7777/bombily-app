@@ -268,6 +268,8 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .strow .sl{font-size:13px;color:var(--ink);}
 .strow .sv2{font-family:'Roboto Mono',monospace;font-size:14px;text-align:center;font-weight:600;}
 .sthead .sv2{font-family:Inter,sans-serif;font-size:10.5px;font-weight:500;text-align:center;}
+.carrow{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--line2);border-radius:12px;margin-bottom:8px;}
+.carrow.act{border-color:var(--g);background:var(--gs);}
 .tabsw{display:flex;gap:6px;margin-top:8px;}
 .tabsw div{flex:1;text-align:center;padding:10px;border-radius:10px;border:1px solid var(--line2);font-size:13px;font-weight:600;color:var(--dim);cursor:pointer;}
 .tabsw div.on{background:var(--g);border-color:var(--g);color:#06120b;}
@@ -1597,8 +1599,74 @@ function dProfHTML(){
  }else if(SETTINGS.ref_enabled){
   subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Зовите своих</div><div class="scs">Бонус за каждого приглашённого водителя</div></div><button class="subbtn" onclick="refSheet()">Пригласить</button></div>`;
  }
- return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':''}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div>
+ return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':''}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Моя машина</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Мои машины ›</span></div></div></div>
  <div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
+}
+async function myCars(){
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Мои машины</h3><div class="s">Выберите, на какой работаете сегодня. Её видят пассажиры. Новую машину проверяет администрация.</div><div id="carlist"><div class="empty">Загрузка…</div></div>
+ <div class="sa"><button class="c" onclick="closeSh()">Закрыть</button><button class="o" onclick="addCarSheet()">Добавить машину</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ loadCars();
+}
+async function loadCars(){
+ const box=document.getElementById('carlist');if(!box)return;
+ const r=await api('/api/cars-list');
+ const items=r.items||[];
+ if(!items.length){box.innerHTML='<div class="empty"><b>Машин пока нет</b>Добавьте — администрация проверит.</div>';return;}
+ box.innerHTML=items.map(c=>`<div class="carrow ${c.is_active?'act':''}">
+  <div style="flex:1;min-width:0">
+   <div style="font-size:14.5px;font-weight:600">${esc(c.brand)}</div>
+   <div style="font-size:12px;color:var(--dim);margin-top:3px"><span class="plate">${esc(c.plate)}</span> ${c.approved?(c.is_active?'<span style="color:var(--g)">· работаете на ней</span>':''):'<span style="color:var(--am)">· на проверке</span>'}</div>
+  </div>
+  ${c.approved&&!c.is_active?`<button class="rolebtn" onclick="activateCar('${c.id}')">выбрать</button>`:''}
+  ${!c.is_active?`<button class="rolebtn" style="color:var(--red)" onclick="delCar('${c.id}')">✕</button>`:''}
+ </div>`).join('');
+}
+async function activateCar(id){
+ const r=await api('/api/car-activate',{car_id:id});
+ if(r.error)return T(r.error==='not_approved'?'Машина ещё не проверена':'Ошибка');
+ me.car=r.brand;me.plate=r.plate;T('Работаете на '+r.brand);loadCars();drawD();
+}
+async function delCar(id){
+ const r=await api('/api/car-delete',{car_id:id});
+ if(r.error)return T('Ошибка');
+ T('Машина удалена');loadCars();
+}
+function addCarSheet(){
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet"><h3>Добавить машину</h3><div class="s">Пока администрация не проверит, работать на ней нельзя. Фото помогает проверить быстрее.</div>
+ <div class="fr"><label>Марка и модель</label><input id="nc_brand" placeholder="Lada Vesta"></div>
+ <div class="fr"><label>Гос. номер</label><input id="nc_plate" placeholder="А123ВС" style="text-transform:uppercase"></div>
+ <div class="up" id="ncu" onclick="pickCarPhoto()"><div class="ic" id="nci">🚗</div><div class="tx">Фото машины<small>спереди, чтобы был виден номер</small></div><span class="st" id="ncs">загрузить</span></div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="saveCar()">Отправить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ window._carPhoto=null;
+}
+function pickCarPhoto(){
+ const i=document.createElement('input');i.type='file';i.accept='image/*';
+ i.onchange=async()=>{
+  const f=i.files[0];if(!f)return;
+  const st=document.getElementById('ncs');if(st)st.textContent='загрузка…';
+  try{
+   const small=await shrink(f,1200);
+   const path=`${me.id}/car_${Date.now()}.jpg`;
+   const{error}=await db.storage.from('docs').upload(path,small,{upsert:true,contentType:'image/jpeg'});
+   if(error){if(st)st.textContent='ошибка';T('Не загрузилось: '+error.message);return;}
+   window._carPhoto=path;
+   if(st){st.textContent='готово ✓';st.style.color='var(--g)';}
+  }catch(e){if(st)st.textContent='ошибка';T('Не загрузилось');}
+ };
+ i.click();
+}
+async function saveCar(){
+ const brand=(document.getElementById('nc_brand').value||'').trim();
+ const plate=(document.getElementById('nc_plate').value||'').trim().toUpperCase();
+ if(!brand)return T('Впишите марку');
+ if(!plate)return T('Впишите госномер');
+ const r=await api('/api/car-add',{brand,plate,photo:window._carPhoto||null});
+ if(r.error)return T(r.error==='too_many'?'Больше 5 машин нельзя':'Не удалось отправить');
+ document.getElementById('sh2').remove();T('Отправлено на проверку');loadCars();
 }
 async function togIntercity(){
  const v=!me.intercity;
@@ -2077,8 +2145,7 @@ async function userCard(id){
  <div class="fr"><label>ФИО по документам</label><input id="e_full_name" value="" placeholder="загружается…"></div>
  <div class="fr"><label>Телефон</label><input id="e_phone" value="" placeholder="${u.has_phone?'загружается…':'не указан'}" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
  <div class="fr"><label>Возраст</label><input id="e_age" value="${u.age||''}" inputmode="numeric"></div>
- <div class="fr"><label>Марка машины</label><input id="e_car" value="${esc(u.car)}"></div>
- <div class="fr"><label>Гос. номер</label><input id="e_plate" value="${esc(u.plate)}"></div>
+ 
  <div class="fr"><label>Где стоит</label><input id="e_spot" value="${esc(u.spot)}"></div>
  <div class="fr"><label>Рейтинг</label><input id="e_rating" value="${u.rating||5}" inputmode="decimal"></div>
  <div class="fr"><label>Баланс, ₽</label><input id="e_balance" value="${u.balance||0}" inputmode="numeric"></div>
@@ -2089,6 +2156,8 @@ async function userCard(id){
  ${(rv||[]).length?rv.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="delRev('${r.id}','${id}')">удалить</button></div>`).join(''):'<div class="sub" style="padding:4px 0 8px">отзывов нет</div>'}
  <div class="sec" style="padding-left:0">Его отзывы о других</div>
  ${(rvBy||[]).length?rvBy.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.target_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.target_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span> <span class="sub">(${r.kind==='passenger'?'о пассажире':'о водителе'})</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="delRev('${r.id}','${id}')">удалить</button></div>`).join(''):'<div class="sub" style="padding:4px 0 8px">не оставлял отзывов</div>'}
+ <div class="sec" style="padding-left:0">Машины <button class="rolebtn" style="float:right" onclick="adminAddCar('${u.id}')">+ добавить</button></div>
+ <div id="uccars"><div class="sub" style="padding:4px 0">загрузка…</div></div>
  <div class="sec" style="padding-left:0">Статус водителя</div>
  <div class="drvbox">
   <div class="drvst">
@@ -2107,6 +2176,7 @@ async function userCard(id){
  </div></div>`;
  document.getElementById('device').appendChild(m);
  if(u.doc_license||u.doc_pts||u.doc_car)loadDocs(id,'ucdocs');
+ loadUserCars(id);
  api('/api/admin',{action:'user-phone',target_id:id}).then(r=>{
   if(!r||r.error)return;
   if(r.phone){
@@ -2150,9 +2220,50 @@ async function doRevokeDriver(id){
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
  document.getElementById('sh2').remove();closeSh();T('Права водителя сняты');drawA();
 }
+async function loadUserCars(uid){
+ const box=document.getElementById('uccars');if(!box)return;
+ const r=await api('/api/admin',{action:'cars-of-user',target_id:uid});
+ const items=r.items||[];
+ if(!items.length){box.innerHTML='<div class="sub" style="padding:4px 0 8px">машин нет</div>';return;}
+ box.innerHTML=items.map(c=>`<div class="carrow ${c.is_active?'act':''}">
+  ${c.photo_url?`<a href="${c.photo_url}" target="_blank"><img src="${c.photo_url}" style="width:52px;height:40px;object-fit:cover;border-radius:8px"></a>`:''}
+  <div style="flex:1;min-width:0">
+   <div style="font-size:14px;font-weight:600">${esc(c.brand)}</div>
+   <div style="font-size:11.5px;color:var(--dim);margin-top:3px"><span class="plate">${esc(c.plate)}</span>${c.is_active?' <span style="color:var(--g)">· рабочая</span>':''}${!c.approved?' <span style="color:var(--am)">· ждёт проверки</span>':''}</div>
+  </div>
+  ${!c.approved?`<button class="rolebtn" style="color:var(--g)" onclick="approveCar('${c.id}','${uid}')">одобрить</button>`:''}
+  <button class="rolebtn" style="color:var(--red)" onclick="removeCar('${c.id}','${uid}')">✕</button>
+ </div>`).join('');
+}
+async function approveCar(cid,uid){
+ const r=await api('/api/admin',{action:'car-approve',car_id:cid});
+ if(r.error)return T('Ошибка');
+ T('Машина одобрена');loadUserCars(uid);
+}
+async function removeCar(cid,uid){
+ const r=await api('/api/admin',{action:'car-remove',car_id:cid});
+ if(r.error)return T('Ошибка');
+ T('Машина удалена');loadUserCars(uid);
+}
+function adminAddCar(uid){
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet"><h3>Добавить машину</h3><div class="s">Добавленная вами машина сразу считается проверенной.</div>
+ <div class="fr"><label>Марка и модель</label><input id="ac_brand" placeholder="Lada Vesta"></div>
+ <div class="fr"><label>Гос. номер</label><input id="ac_plate" placeholder="А123ВС" style="text-transform:uppercase"></div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="doAdminAddCar('${uid}')">Добавить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function doAdminAddCar(uid){
+ const brand=(document.getElementById('ac_brand').value||'').trim();
+ const plate=(document.getElementById('ac_plate').value||'').trim().toUpperCase();
+ if(!brand||!plate)return T('Впишите марку и номер');
+ const r=await api('/api/admin',{action:'car-add-admin',target_id:uid,brand,plate});
+ if(r.error)return T('Ошибка');
+ document.getElementById('sh2').remove();T('Машина добавлена');loadUserCars(uid);
+}
 async function saveUser(id){
  const g=x=>document.getElementById('e_'+x).value.trim();
- const fields={name:g('name'),full_name:g('full_name'),phone:g('phone'),age:parseInt(g('age'))||null,car:g('car'),plate:g('plate'),spot:g('spot'),rating:parseFloat(g('rating'))||5,role:g('role')||'passenger',driver_status:g('ds')||'none',balance:parseFloat(g('balance'))||0};
+ const fields={name:g('name'),full_name:g('full_name'),phone:g('phone'),age:parseInt(g('age'))||null,spot:g('spot'),rating:parseFloat(g('rating'))||5,role:g('role')||'passenger',driver_status:g('ds')||'none',balance:parseFloat(g('balance'))||0};
  const r=await api('/api/admin',{action:'edit-user',target_id:id,fields});
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка: '+r.error);
  closeSh();T('Изменения сохранены');drawA();

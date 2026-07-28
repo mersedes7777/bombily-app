@@ -567,7 +567,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v23-intercity' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v24-cars' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -673,6 +673,50 @@ http.createServer(async (req, res) => {
       if (!['confirmed', 'in_progress'].includes(r.status)) return json(res, 400, { error: 'not_active' });
       const other = iAmPassenger ? r.driver_id : r.passenger_id;
       return json(res, 200, { ok: true, phone: await phoneOf(other) });
+    }
+
+    // --- свои машины ---
+    if (req.url === '/api/cars-list') {
+      const { data } = await db.from('cars').select('*').eq('user_id', me.id).order('created_at');
+      return json(res, 200, { ok: true, items: data || [] });
+    }
+
+    if (req.url === '/api/car-add') {
+      const brand = String(body.brand || '').trim().slice(0, 60);
+      const plate = String(body.plate || '').trim().toUpperCase().slice(0, 15);
+      if (!brand || !plate) return json(res, 400, { error: 'bad_input' });
+      const { count } = await db.from('cars').select('*', { count: 'exact', head: true }).eq('user_id', me.id);
+      if ((count || 0) >= 5) return json(res, 400, { error: 'too_many' });
+      await db.from('cars').insert({ user_id: me.id, brand, plate, photo: body.photo || null, approved: false });
+      await notifyStaff(`🚙 <b>Новая машина на проверку</b>\n${me.name}\n${brand} · ${plate}`,
+        { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
+      return json(res, 200, { ok: true });
+    }
+
+    if (req.url === '/api/car-activate') {
+      const { data: c } = await db.from('cars').select('*').eq('id', body.car_id).maybeSingle();
+      if (!c || c.user_id !== me.id) return json(res, 403, { error: 'not_yours' });
+      if (!c.approved) return json(res, 400, { error: 'not_approved' });
+      await db.from('cars').update({ is_active: false }).eq('user_id', me.id);
+      await db.from('cars').update({ is_active: true }).eq('id', c.id);
+      await db.from('users').update({ car: c.brand, plate: c.plate }).eq('id', me.id);
+      return json(res, 200, { ok: true, brand: c.brand, plate: c.plate });
+    }
+
+    if (req.url === '/api/car-delete') {
+      const { data: c } = await db.from('cars').select('*').eq('id', body.car_id).maybeSingle();
+      if (!c || c.user_id !== me.id) return json(res, 403, { error: 'not_yours' });
+      await db.from('cars').delete().eq('id', c.id);
+      if (c.is_active) {
+        const { data: rest } = await db.from('cars').select('*').eq('user_id', me.id).eq('approved', true).limit(1);
+        if (rest && rest.length) {
+          await db.from('cars').update({ is_active: true }).eq('id', rest[0].id);
+          await db.from('users').update({ car: rest[0].brand, plate: rest[0].plate }).eq('id', me.id);
+        } else {
+          await db.from('users').update({ car: null, plate: null, status: 'offline' }).eq('id', me.id);
+        }
+      }
+      return json(res, 200, { ok: true });
     }
 
     // --- подача заявки в водители (сам пользователь) ---
@@ -781,7 +825,15 @@ http.createServer(async (req, res) => {
         const upd = { driver_status: body.status };
         if (body.car !== undefined) upd.car = body.car;
         if (body.plate !== undefined) upd.plate = body.plate;
-        if (body.status === 'approved') upd.role = 'both';
+        if (body.status === 'approved') {
+          upd.role = 'both';
+          if (body.car && body.plate) {
+            const { data: ex } = await db.from('cars').select('id').eq('user_id', tid).limit(1);
+            if (!ex || !ex.length) {
+              await db.from('cars').insert({ user_id: tid, brand: body.car, plate: String(body.plate).toUpperCase(), approved: true, is_active: true });
+            }
+          }
+        }
 
         // снятие прав — убираем с линии и закрываем смену
         if (body.revoke || body.status === 'none') {
@@ -857,6 +909,74 @@ http.createServer(async (req, res) => {
           db.from('support_msgs').select('*', { count: 'exact', head: true }).eq('answered', false)
         ]);
         return json(res, 200, { ok: true, apps: apps || 0, complaints: cmps || 0, support: sup || 0 });
+      }
+
+      // машины пользователя (staff)
+      if (act === 'cars-of-user') {
+        const { data } = await db.from('cars').select('*').eq('user_id', tid).order('created_at');
+        const out = [];
+        for (const c of data || []) {
+          let url = null;
+          if (c.photo) {
+            const p = docPath(c.photo);
+            if (p) {
+              const { data: s } = await db.storage.from('docs').createSignedUrl(p, 3600);
+              if (s && s.signedUrl) url = s.signedUrl;
+            }
+          }
+          out.push({ ...c, photo_url: url });
+        }
+        return json(res, 200, { ok: true, items: out });
+      }
+
+      if (act === 'car-approve') {
+        const { data: c } = await db.from('cars').select('*').eq('id', body.car_id).maybeSingle();
+        if (!c) return json(res, 404, { error: 'no_car' });
+        await db.from('cars').update({ approved: true }).eq('id', c.id);
+        // если у водителя нет активной — сделаем эту активной
+        const { data: act2 } = await db.from('cars').select('id').eq('user_id', c.user_id).eq('is_active', true).limit(1);
+        if (!act2 || !act2.length) {
+          await db.from('cars').update({ is_active: true }).eq('id', c.id);
+          await db.from('users').update({ car: c.brand, plate: c.plate }).eq('id', c.user_id);
+        }
+        const tid2 = await tgIdOf(c.user_id);
+        if (tid2) await send(tid2, `✅ <b>Машина одобрена</b>\n${c.brand} · ${c.plate}\n\nМожете выбрать её как рабочую в профиле.`);
+        return json(res, 200, { ok: true });
+      }
+
+      if (act === 'car-remove') {
+        const { data: c } = await db.from('cars').select('*').eq('id', body.car_id).maybeSingle();
+        if (!c) return json(res, 404, { error: 'no_car' });
+        await db.from('cars').delete().eq('id', c.id);
+        if (c.is_active) {
+          const { data: rest } = await db.from('cars').select('*').eq('user_id', c.user_id).eq('approved', true).limit(1);
+          if (rest && rest.length) {
+            await db.from('cars').update({ is_active: true }).eq('id', rest[0].id);
+            await db.from('users').update({ car: rest[0].brand, plate: rest[0].plate }).eq('id', c.user_id);
+          } else {
+            await db.from('users').update({ car: null, plate: null, status: 'offline' }).eq('id', c.user_id);
+          }
+        }
+        const tid3 = await tgIdOf(c.user_id);
+        if (tid3) await send(tid3, `ℹ️ <b>Машина удалена модерацией</b>\n${c.brand} · ${c.plate}`);
+        return json(res, 200, { ok: true });
+      }
+
+      if (act === 'car-add-admin') {
+        const brand = String(body.brand || '').trim().slice(0, 60);
+        const plate = String(body.plate || '').trim().toUpperCase().slice(0, 15);
+        if (!brand || !plate || !tid) return json(res, 400, { error: 'bad_input' });
+        const { data: existing } = await db.from('cars').select('id').eq('user_id', tid).eq('is_active', true).limit(1);
+        const makeActive = !existing || !existing.length;
+        await db.from('cars').insert({ user_id: tid, brand, plate, approved: true, is_active: makeActive });
+        if (makeActive) await db.from('users').update({ car: brand, plate }).eq('id', tid);
+        return json(res, 200, { ok: true });
+      }
+
+      // сколько машин ждёт проверки
+      if (act === 'cars-pending') {
+        const { count } = await db.from('cars').select('*', { count: 'exact', head: true }).eq('approved', false);
+        return json(res, 200, { ok: true, count: count || 0 });
       }
 
       // временные ссылки на документы (staff)
