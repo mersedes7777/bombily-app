@@ -53,10 +53,10 @@ body{background:#070a09;font-family:Inter,sans-serif;color:var(--ink);display:fl
 .pin.to{border-radius:3px;background:var(--am);box-shadow:0 0 0 4px rgba(242,167,59,.18);}
 .ar input{border:none;background:transparent;outline:none;color:var(--ink);font-size:15px;width:100%;font-weight:500;font-family:Inter,sans-serif;}
 .ar input::placeholder{color:var(--dim);font-weight:400;}
-.chips{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
-.chip{background:var(--surf);border:1px solid var(--line);border-radius:100px;padding:8px 13px;font-size:12.5px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:7px;}
-.chip.add{border-style:dashed;color:var(--g);border-color:rgba(51,209,126,.45);}
-.chip .x{color:var(--dim);font-size:11px;}
+.chips{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:stretch;}
+.chip{background:var(--surf);border:1px solid var(--line);border-radius:100px;padding:9px 13px;font-size:12.5px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:7px;line-height:1.2;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box;}
+.chip.add{border-style:dashed;color:var(--g);border-color:rgba(51,209,126,.45);flex-shrink:0;}
+.chip .x{color:var(--dim);font-size:13px;line-height:1;padding:0 0 0 2px;flex-shrink:0;}
 .btn{width:100%;margin-top:14px;background:var(--g);color:#06120b;border:none;border-radius:15px;padding:17px;font-family:Oswald,sans-serif;font-weight:600;font-size:16px;letter-spacing:.7px;text-transform:uppercase;cursor:pointer;}
 .btn:active{transform:scale(.98);}
 .btn.ghost{background:transparent;color:var(--dim);border:1px solid var(--line2);font-family:Inter,sans-serif;font-size:14px;text-transform:none;letter-spacing:0;padding:14px;margin-top:10px;}
@@ -262,6 +262,13 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .mypr b{color:var(--g);font-family:'Roboto Mono',monospace;font-size:16px;}
 .mycom{margin-top:8px;font-size:12.5px;color:var(--dim);max-width:280px;margin-left:auto;margin-right:auto;line-height:1.45;}
 .okpr{font-size:11px;color:var(--g);font-weight:600;margin-top:3px;}
+.sthead,.strow{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:4px;padding:9px 16px;align-items:center;}
+.sthead{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;padding-bottom:4px;}
+.strow{border-top:1px solid var(--line);}
+.strow .sl{font-size:13px;color:var(--ink);}
+.strow .sv2{font-family:'Roboto Mono',monospace;font-size:14px;text-align:center;font-weight:600;}
+.sthead .sv2{font-family:Inter,sans-serif;font-size:10.5px;font-weight:500;text-align:center;}
+.delivnote{margin:0 14px 12px;padding:10px 13px;background:rgba(91,157,249,.1);border:1px solid rgba(91,157,249,.25);border-radius:11px;font-size:12.5px;color:#8FBEFB;}
 .cta2{width:100%;margin-top:9px;background:transparent;border:1px solid var(--line2);color:var(--ink);border-radius:14px;padding:13px;font-size:14px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif;}
 .delivbox{display:flex;align-items:center;gap:12px;margin:0 18px 14px;padding:14px;background:var(--surf);border:1px solid var(--line);border-radius:14px;}
 .dvt{flex:1;}
@@ -701,9 +708,15 @@ function drawP(){
 const pGo=t=>{pTab=t;drawP();};
 
 async function home(m){
- m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;orderKind='ride';pTab='order';drawP()">Заявка всем водителям</button><button class="cta2" onclick="targetDrv=null;orderKind='delivery';pTab='order';drawP()">📦 Заказать доставку</button></div><div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
+ m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;orderKind='ride';pTab='order';drawP()">Заявка всем водителям</button><button class="cta2" id="delbtn" onclick="targetDrv=null;orderKind='delivery';pTab='order';drawP()">📦 Заказать доставку <span id="delcnt" style="color:var(--dim);font-weight:500"></span></button></div><div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
  const{data:ds,error:dsE}=await Q(db.from('users').select('*').eq('status','online').eq('city',me.city).in('role',['driver','both']),'Не удалось загрузить водителей');
  const{count:rc}=await db.from('rides').select('*',{count:'exact',head:true}).eq('status','created').eq('city',me.city);
+ db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city).eq('delivery',true).then(({count:dc})=>{
+  const el=document.getElementById('delcnt');const btn=document.getElementById('delbtn');
+  if(!el||!btn)return;
+  if(dc){el.textContent='· '+dc+' на линии';btn.style.opacity='';btn.style.borderColor='';}
+  else{el.textContent='· пока никого';btn.style.opacity='.55';}
+ }).catch(()=>{});
  const a=document.getElementById('c1');if(a)a.textContent=(ds||[]).length;
  const b=document.getElementById('c2');if(b)b.textContent=rc||0;
   const l=document.getElementById('dl');if(!l)return;
@@ -784,6 +797,10 @@ async function send(did){
  const pp=parseInt(document.getElementById('oprice')?.value)||null;
  if(pp!==null&&(pp<1||pp>100000))return T('Проверьте цену');
  if(orderKind==='delivery'&&!com)return T('Напишите, что нужно доставить');
+ if(orderKind==='delivery'&&!did){
+  const{count:dc}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city).eq('delivery',true);
+  if(!dc){T('Сейчас нет водителей, которые берут доставку');return;}
+ }
  const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city,comment:com||null,passenger_price:pp,kind:orderKind};
  if(did)row.target_driver_id=did;
  const{data,error}=await Q(db.from('rides').insert(row).select().single(),'Не удалось создать заявку');
@@ -1211,6 +1228,7 @@ async function inbox(m){
  }
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
+ ${on&&me.delivery?'<div class="delivnote">📦 Вам приходят и поездки, и доставки</div>':''}
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</span></div><div class="clk" id="sclk">0:00</div></div>`:''}
  <div id="mo"></div>
  <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
@@ -1372,6 +1390,7 @@ async function dCancelYes(){
  await db.from('rides').update({status:'created',driver_id:null}).eq('id',dActive.id);
  await db.from('offers').update({status:'declined'}).eq('ride_id',dActive.id).eq('driver_id',me.id);
  await db.from('users').update({cancel_as_driver:(me.cancel_as_driver||0)+1}).eq('id',me.id);me.cancel_as_driver=(me.cancel_as_driver||0)+1;
+ await db.from('rides').update({cancelled_by:'driver',cancel_notified:false}).eq('id',dActive.id);
  dActive=null;closeSh();T('Вы отказались от заказа');dGo('inbox');
 }
 async function myRev(m){
@@ -1426,7 +1445,9 @@ function dProfHTML(){
  }else if(SETTINGS.ref_enabled){
   subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Зовите своих</div><div class="scs">Бонус за каждого приглашённого водителя</div></div><button class="subbtn" onclick="refSheet()">Пригласить</button></div>`;
  }
- return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div></div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div><div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
+ return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" style="opacity:.65"><label>Машина · назначает админ 🔒</label><input value="${esc(me.car)||'—'}" disabled></div><div class="fr" style="opacity:.65"><label>Гос. номер · назначает админ 🔒</label><input value="${esc(me.plate)||'—'}" disabled></div></div>
+ <div class="delivbox"><div class="dvt"><b>📦 Беру доставку</b><span>Посылки, документы, продукты — заказы без пассажира</span></div><div class="tg ${me.delivery?'on':''}" onclick="togDelivery()"><b></b></div></div>
+ <div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
 async function togDelivery(){
  const v=!me.delivery;
@@ -1451,6 +1472,7 @@ function drawA(){
  <button class="nb ${aTab==='apps'?'active':''}" onclick="aGo('apps')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Заявки${ADMC.apps?`<i class="cnt">${ADMC.apps}</i>`:''}</button>
  <button class="nb ${aTab==='cmp'?'active':''}" onclick="aGo('cmp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>Жалобы${ADMC.complaints?`<i class="cnt">${ADMC.complaints}</i>`:''}</button>
  <button class="nb ${aTab==='ppl'?'active':''}" onclick="aGo('ppl')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Люди</button>
+ <button class="nb ${aTab==='stat'?'active':''}" onclick="aGo('stat')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Отчёт</button>
  <button class="nb ${aTab==='fin'?'active':''}" onclick="aGo('fin')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Финансы</button>
 `;
  const m=document.getElementById('main');m.innerHTML='<div class="empty">Загрузка…</div>';
@@ -1459,6 +1481,7 @@ function drawA(){
  if(aTab==='cmp')aCmp(m);
  if(aTab==='ppl')aPpl(m);
  if(aTab==='fin')aFin(m);
+ if(aTab==='stat')aStat(m);
 }
 const aGo=t=>{aTab=t;drawA();};
 setInterval(()=>{if(role==='admin'){loadAdminCounts().then(()=>{const n=document.getElementById('nav');if(n&&role==='admin')drawA();});}},30000);
@@ -1573,6 +1596,57 @@ async function loadAdminCounts(){
 }
 let pplFilter='all';
 let finTab='sub';
+async function aStat(m){
+ m.innerHTML='<div class="head"><h2>Отчёт</h2></div><div class="empty">Считаем…</div>';
+ const s=await api('/api/admin',{action:'stats'});
+ if(s.error){m.innerHTML='<div class="head"><h2>Отчёт</h2></div><div class="empty">Не удалось загрузить</div>';return;}
+ const row=(lbl,a,b,c,d)=>`<div class="strow"><div class="sl">${lbl}</div><div class="sv2">${a}</div><div class="sv2">${b}</div><div class="sv2">${c}</div><div class="sv2">${d}</div></div>`;
+ const cityList=Object.entries(s.cities||{}).sort((x,y)=>y[1]-x[1]);
+ m.innerHTML=`<div class="head"><h2>Отчёт</h2><span class="m">за всё время ${s.rides.all} заявок</span></div>
+
+ <div class="sec">Главное сегодня</div>
+ <div class="agrid" style="padding:0 14px">
+  <div class="ac"><div class="n g">${s.rides.today}</div><div class="l">заявок сегодня</div></div>
+  <div class="ac"><div class="n">${s.done.today}</div><div class="l">завершено</div></div>
+  <div class="ac"><div class="n a">${s.money.today}</div><div class="l">оборот, ₽</div></div>
+  <div class="ac"><div class="n">${s.users.today}</div><div class="l">новых людей</div></div>
+ </div>
+
+ <div class="sec">Заявки</div>
+ <div class="sthead"><div class="sl"></div><div class="sv2">сегодня</div><div class="sv2">вчера</div><div class="sv2">7 дн</div><div class="sv2">30 дн</div></div>
+ ${row('Создано',s.rides.today,s.rides.yest,s.rides.week,s.rides.month)}
+ ${row('Завершено',s.done.today,s.done.yest,s.done.week,s.done.month)}
+ ${row('Новых людей',s.users.today,s.users.yest,s.users.week,s.users.month)}
+
+ <div class="sec">Деньги (по завершённым)</div>
+ <div class="agrid" style="padding:0 14px">
+  <div class="ac"><div class="n a">${s.money.today}</div><div class="l">сегодня, ₽</div></div>
+  <div class="ac"><div class="n a">${s.money.week}</div><div class="l">за 7 дней, ₽</div></div>
+  <div class="ac"><div class="n a">${s.money.month}</div><div class="l">за 30 дней, ₽</div></div>
+  <div class="ac"><div class="n">${s.done.all?Math.round(s.money.month/Math.max(1,s.done.month)):0}</div><div class="l">средний чек, ₽</div></div>
+ </div>
+
+ <div class="sec">Люди и водители</div>
+ <div class="agrid" style="padding:0 14px">
+  <div class="ac"><div class="n">${s.users.all}</div><div class="l">всего в сервисе</div></div>
+  <div class="ac"><div class="n g">${s.drivers.all}</div><div class="l">водителей</div></div>
+  <div class="ac"><div class="n g">${s.drivers.online}</div><div class="l">на линии сейчас</div></div>
+  <div class="ac"><div class="n" style="color:#5B9DF9">${s.drivers.delivery}</div><div class="l">берут доставку</div></div>
+ </div>
+ ${s.drivers.pending?`<div class="note" style="margin:12px 18px;color:var(--am)">На модерации заявок: ${s.drivers.pending}</div>`:''}
+
+ <div class="sec">Отмены</div>
+ <div class="agrid" style="padding:0 14px">
+  <div class="ac"><div class="n" style="color:var(--red)">${s.cancelled.today}</div><div class="l">сегодня</div></div>
+  <div class="ac"><div class="n" style="color:var(--red)">${s.cancelled.week}</div><div class="l">за 7 дней</div></div>
+  <div class="ac"><div class="n">${s.rides.week?Math.round(s.done.week/s.rides.week*100):0}%</div><div class="l">доходят до конца</div></div>
+  <div class="ac"><div class="n">${s.rides.week}</div><div class="l">заявок за 7 дней</div></div>
+ </div>
+
+ <div class="sec">По городам · 7 дней</div>
+ ${cityList.length?cityList.map(([c,n])=>`<div class="card"><div style="flex:1"><div class="nm" style="font-size:14px">${esc(c)}</div></div><div class="price">${n}</div></div>`).join(''):'<div class="empty">Пока нет заявок</div>'}
+ <div style="height:20px"></div>`;
+}
 async function aFin(m){
  const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат']];
  m.innerHTML=`<div class="head"><h2>Финансы</h2><span class="m">${SETTINGS.paid_mode?'платно':'бесплатно'}</span></div>
@@ -1629,15 +1703,28 @@ async function loadPromos(){
  const _r=await api('/api/admin',{action:'promo-list'});
  const data=_r.items||[];
  if(_r.error||!data.length){el.innerHTML='<div class="empty">Промокодов пока нет</div>';return;}
+ const nm=_r.names||{};
  el.innerHTML=data.map(p=>{
   const exp=p.expires_at&&new Date(p.expires_at)<new Date();
   const st=p.used?'использован':exp?'истёк':'активен';
   const cl=p.used?'var(--dim)':exp?'var(--red)':'var(--g)';
   const gives=p.days>0?p.days+' дн':(p.amount>0?p.amount+' ₽':'—');
-  return `<div class="card"><div style="flex:1;min-width:0"><div class="nm" style="font-family:'Roboto Mono',monospace;font-size:14px">${esc(p.code)}</div><div class="sub">даёт ${gives}${p.for_user?' · персональный':' · для всех'} · <span style="color:${cl}">${st}</span></div></div>${!p.used?`<button class="rolebtn" onclick="delPromo('${p.id}')">удалить</button>`:''}</div>`;
+  const who=p.for_user?(nm[p.for_user]||'персональный'):'для всех';
+  const author=p.created_by_name?esc(p.created_by_name):'система';
+  const when=p.created_at?new Date(p.created_at).toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+  const usedBy=p.used&&p.used_by?(nm[p.used_by]||'кем-то'):'';
+  return `<div class="card" style="flex-direction:column;align-items:stretch;gap:6px">
+   <div style="display:flex;align-items:center;gap:10px">
+    <div style="flex:1;min-width:0"><div class="nm" style="font-family:'Roboto Mono',monospace;font-size:15px">${esc(p.code)}</div>
+    <div class="sub">даёт ${gives} · ${p.for_user?'🔒 '+esc(who):esc(who)} · <span style="color:${cl}">${st}</span></div></div>
+    ${!p.used?`<button class="rolebtn" onclick="delPromo('${p.id}')">удалить</button>`:''}
+   </div>
+   <div class="sub" style="font-size:10.5px;opacity:.75">создал ${author}${when?' · '+when:''}${usedBy?' · использовал '+esc(usedBy):''}</div>
+  </div>`;
  }).join('');
 }
 function newPromo(){
+ promoForUser=null;
  let kind='days';
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet"><h3>Новый промокод</h3><div class="s">Создайте код вручную — для акций или конкретного человека.</div>
@@ -1645,10 +1732,35 @@ function newPromo(){
  <div class="seg" style="padding:4px 0"><div id="np_kd" class="on" onclick="window._npk('days')">Дни подписки</div><div id="np_km" onclick="window._npk('money')">Рубли на баланс</div></div>
  <div class="fr"><label id="np_lbl">Сколько дней</label><input id="np_val" inputmode="numeric" placeholder="2"></div>
  <div class="fr"><label>Срок действия кода, дней (0 = бессрочно)</label><input id="np_exp" inputmode="numeric" value="7"></div>
+ <div class="fr"><label>Кому предназначен</label><div id="np_who" style="font-size:14px;font-weight:500">Всем — кто первый ввёл</div><button class="rolebtn" style="margin-top:8px" onclick="pickPromoUser()">Выбрать человека</button></div>
  <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="saveNewPromo()">Создать</button></div></div>`;
  document.getElementById('device').appendChild(m);
  window._npk=k=>{kind=k;window._npkGet=()=>k;document.getElementById('np_kd').className=k==='days'?'on':'';document.getElementById('np_km').className=k==='money'?'on':'';document.getElementById('np_lbl').textContent=k==='days'?'Сколько дней':'Сколько рублей';};
  window._npkGet=()=>kind;
+}
+let promoForUser=null;
+function pickPromoUser(){
+ const m=document.createElement('div');m.className='mask';m.id='sh3';
+ m.innerHTML=`<div class="sheet" style="max-height:80vh;overflow-y:auto"><h3>Кому промокод</h3><div class="s">Код сработает только у выбранного человека — передарить не выйдет.</div>
+ <div class="fr"><label>Поиск по имени</label><input id="pu_q" placeholder="начните вводить" oninput="searchPromoUser()"></div>
+ <div id="pu_list"><div class="empty">Загрузка…</div></div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh3').remove()">Отмена</button><button class="o" onclick="promoForUser=null;document.getElementById('np_who').textContent='Всем — кто первый ввёл';document.getElementById('sh3').remove()">Сделать общим</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ searchPromoUser();
+}
+async function searchPromoUser(){
+ const term=(document.getElementById('pu_q')?.value||'').trim();
+ const box=document.getElementById('pu_list');if(!box)return;
+ const r=await api('/api/admin',{action:'user-search',term});
+ const items=r.items||[];
+ if(!items.length){box.innerHTML='<div class="empty">Никого не найдено</div>';return;}
+ box.innerHTML=items.map(u=>`<div class="ai" onclick="setPromoUser('${u.id}','${esc(u.name)}')" style="cursor:pointer"><div class="ava">${esc(u.name)[0]||'?'}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}</div><div style="font-size:11.5px;color:var(--dim)">${u.driver_status==='approved'?'водитель':'пассажир'}${u.car?' · '+esc(u.car):''}</div></div><span class="go">выбрать</span></div>`).join('');
+}
+function setPromoUser(id,name){
+ promoForUser=id;
+ const el=document.getElementById('np_who');
+ if(el)el.textContent='🔒 '+name;
+ const sh=document.getElementById('sh3');if(sh)sh.remove();
 }
 async function saveNewPromo(){
  let code=(document.getElementById('np_code').value||'').trim().toUpperCase();
@@ -1657,9 +1769,9 @@ async function saveNewPromo(){
  if(!val)return T('Укажите значение');
  const expd=parseInt(document.getElementById('np_exp').value);
  const kind=window._npkGet();
- const r=await api('/api/admin',{action:'promo-create',code,days:kind==='days'?val:0,amount:kind==='money'?val:0,expires_days:expd||0});
+ const r=await api('/api/admin',{action:'promo-create',code,days:kind==='days'?val:0,amount:kind==='money'?val:0,expires_days:expd||0,for_user:promoForUser});
  if(r.error)return T(r.error==='duplicate'?'Такой код уже есть':r.error==='forbidden'?'Нет прав':'Ошибка');
- closeSh();T('Промокод создан: '+code);loadPromos();
+ closeSh();promoForUser=null;T('Промокод создан: '+code);loadPromos();
 }
 async function delPromo(id){
  const r=await api('/api/admin',{action:'promo-delete',promo_id:id});

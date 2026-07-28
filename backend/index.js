@@ -327,6 +327,36 @@ async function notifyLoop() {
       }
       await db.from('winback_queue').update({ status: 'done' }).eq('id', w.id);
     }
+
+    // отмена заказа -> уведомляем вторую сторону
+    const { data: canc } = await db.from('rides').select('*')
+      .like('status', 'cancelled%').eq('cancel_notified', false);
+    for (const r of canc || []) {
+      const byPassenger = String(r.status).includes('passenger');
+      const route = `${r.from_address} → ${r.to_address}`;
+      if (byPassenger && r.driver_id) {
+        const tid = await tgIdOf(r.driver_id);
+        if (tid) await send(tid, `❌ <b>Пассажир отменил заказ</b>\n${route}\n\nМожете принимать другие заявки.`,
+          { reply_markup: { inline_keyboard: [[wa('К заявкам', 'driver')]] } });
+      } else if (!byPassenger && r.passenger_id) {
+        const tid = await tgIdOf(r.passenger_id);
+        if (tid) await send(tid, `❌ <b>Заказ отменён</b>\n${route}\n\nПопробуйте отправить заявку снова — на линии есть другие водители.`,
+          { reply_markup: { inline_keyboard: [[wa('Заказать снова', 'order')]] } });
+      }
+      await db.from('rides').update({ cancel_notified: true }).eq('id', r.id);
+    }
+
+    // водитель отказался: заявка вернулась в общий пул -> сообщаем пассажиру
+    const { data: back } = await db.from('rides').select('*')
+      .eq('status', 'created').eq('cancelled_by', 'driver').eq('cancel_notified', false);
+    for (const r of back || []) {
+      if (r.passenger_id) {
+        const tid = await tgIdOf(r.passenger_id);
+        if (tid) await send(tid, `↩️ <b>Водитель отказался от заказа</b>\n${r.from_address} → ${r.to_address}\n\nЗаявка снова активна — ждём других водителей.`,
+          { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
+      }
+      await db.from('rides').update({ cancel_notified: true }).eq('id', r.id);
+    }
   } catch (e) { console.error('notify', e.message); }
   setTimeout(notifyLoop, 4000);
 }
@@ -503,7 +533,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v19-delivery' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v20-stats' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
@@ -888,10 +918,99 @@ http.createServer(async (req, res) => {
       // ---- промокоды ----
       if (act === 'promo-list') {
         const { data } = await db.from('promos').select('*').order('created_at', { ascending: false }).limit(60);
+        const ids = [...new Set((data || []).flatMap(p => [p.for_user, p.used_by]).filter(Boolean))];
+        let names = {};
+        if (ids.length) {
+          const { data: us } = await db.from('users').select('id,name').in('id', ids);
+          (us || []).forEach(u => { names[u.id] = u.name; });
+        }
+        return json(res, 200, { ok: true, items: data || [], names });
+      }
+
+      // список водителей/пользователей для выбора при создании промокода
+      if (act === 'user-search') {
+        const term = String(body.term || '').trim();
+        let q = db.from('users').select('id,name,car,role,driver_status').order('name').limit(30);
+        if (term) q = q.ilike('name', `%${term}%`);
+        const { data } = await q;
         return json(res, 200, { ok: true, items: data || [] });
       }
+
+      // подробная статистика
+      if (act === 'stats') {
+        const now = new Date();
+        const startOf = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.toISOString(); };
+        const today = startOf(now);
+        const yest = startOf(new Date(now.getTime() - 864e5));
+        const week = startOf(new Date(now.getTime() - 6 * 864e5));
+        const month = startOf(new Date(now.getTime() - 29 * 864e5));
+
+        const cnt = async (table, build) => {
+          let q = db.from(table).select('*', { count: 'exact', head: true });
+          q = build(q);
+          const { count } = await q;
+          return count || 0;
+        };
+
+        const [ridesToday, ridesYest, ridesWeek, ridesMonth, ridesAll,
+               doneToday, doneYest, doneWeek, doneMonth, doneAll,
+               cancToday, cancWeek,
+               usersToday, usersYest, usersWeek, usersMonth, usersAll,
+               driversAll, driversOnline, pendingApps, deliveryDrivers] = await Promise.all([
+          cnt('rides', q => q.gte('created_at', today)),
+          cnt('rides', q => q.gte('created_at', yest).lt('created_at', today)),
+          cnt('rides', q => q.gte('created_at', week)),
+          cnt('rides', q => q.gte('created_at', month)),
+          cnt('rides', q => q),
+          cnt('rides', q => q.eq('status', 'completed').gte('created_at', today)),
+          cnt('rides', q => q.eq('status', 'completed').gte('created_at', yest).lt('created_at', today)),
+          cnt('rides', q => q.eq('status', 'completed').gte('created_at', week)),
+          cnt('rides', q => q.eq('status', 'completed').gte('created_at', month)),
+          cnt('rides', q => q.eq('status', 'completed')),
+          cnt('rides', q => q.like('status', 'cancelled%').gte('created_at', today)),
+          cnt('rides', q => q.like('status', 'cancelled%').gte('created_at', week)),
+          cnt('users', q => q.gte('created_at', today)),
+          cnt('users', q => q.gte('created_at', yest).lt('created_at', today)),
+          cnt('users', q => q.gte('created_at', week)),
+          cnt('users', q => q.gte('created_at', month)),
+          cnt('users', q => q),
+          cnt('users', q => q.eq('driver_status', 'approved')),
+          cnt('users', q => q.eq('status', 'online')),
+          cnt('users', q => q.eq('driver_status', 'pending')),
+          cnt('users', q => q.eq('delivery', true))
+        ]);
+
+        // деньги по завершённым
+        const { data: money } = await db.from('rides').select('price,created_at').eq('status', 'completed').gte('created_at', month);
+        const sum = arr => arr.reduce((s, r) => s + (Number(r.price) || 0), 0);
+        const mToday = (money || []).filter(r => r.created_at >= today);
+        const mWeek = (money || []).filter(r => r.created_at >= week);
+
+        // по городам
+        const { data: cityRows } = await db.from('rides').select('city').gte('created_at', week);
+        const cities = {};
+        (cityRows || []).forEach(r => { const c = r.city || '—'; cities[c] = (cities[c] || 0) + 1; });
+
+        return json(res, 200, {
+          ok: true,
+          rides: { today: ridesToday, yest: ridesYest, week: ridesWeek, month: ridesMonth, all: ridesAll },
+          done: { today: doneToday, yest: doneYest, week: doneWeek, month: doneMonth, all: doneAll },
+          cancelled: { today: cancToday, week: cancWeek },
+          users: { today: usersToday, yest: usersYest, week: usersWeek, month: usersMonth, all: usersAll },
+          drivers: { all: driversAll, online: driversOnline, pending: pendingApps, delivery: deliveryDrivers },
+          money: { today: sum(mToday), week: sum(mWeek), month: sum(money || []) },
+          cities
+        });
+      }
       if (act === 'promo-create' && isAdminUp(me)) {
-        const row = { code: String(body.code || '').toUpperCase(), days: Number(body.days) || 0, amount: Number(body.amount) || 0 };
+        const row = {
+          code: String(body.code || '').toUpperCase(),
+          days: Number(body.days) || 0,
+          amount: Number(body.amount) || 0,
+          created_by: me.id,
+          created_by_name: me.name
+        };
+        if (body.for_user) row.for_user = body.for_user;
         if (body.expires_days > 0) row.expires_at = new Date(Date.now() + Number(body.expires_days) * 86400000).toISOString();
         const { error } = await db.from('promos').insert(row);
         if (error) return json(res, 400, { error: error.message.includes('duplicate') ? 'duplicate' : 'db' });
