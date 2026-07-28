@@ -477,7 +477,15 @@ async function boot(){
   }
   try{const{data:st}=await db.from('settings').select('*').eq('id',1).maybeSingle();if(st)SETTINGS=st;}catch(e){}
   await loadUnreadRev();
-  api('/api/my-phone').then(r=>{if(r&&r.phone){me.phone=r.phone;}}).catch(()=>{});
+  // личные данные (телефон, ФИО, сохранённые адреса) лежат в закрытом хранилище
+  try{
+   const pr=await withTimeout(api('/api/my-private'),6000,'личные данные');
+   if(pr&&!pr.error){
+    if(pr.phone)me.phone=pr.phone;
+    if(pr.full_name)me.full_name=pr.full_name;
+    me.places=pr.places||'[]';
+   }
+  }catch(e){}
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){me.staff_role='owner';}
   if(me.is_banned){document.getElementById('boot').innerHTML='<div style="color:#e2585a"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return;}
   document.getElementById('boot').style.display='none';
@@ -778,14 +786,14 @@ async function addPlace(){
  const p=places();if(p.includes(v))return T('Уже сохранено');
  p.push(v);
  const r=await api('/api/save-places',{places:JSON.stringify(p)});
- if(r.error)return T('Не удалось сохранить место');
+ if(r.error)return T(r.error==='auth'?'Нет связи с сервером':'Не удалось сохранить: '+r.error);
  me.places=r.places;
  T('Место сохранено');document.getElementById('host').innerHTML=formHTML(targetDrv);
 }
 async function delPlace(i){
  const p=places();p.splice(i,1);
  const r=await api('/api/save-places',{places:JSON.stringify(p)});
- if(r.error)return T('Не удалось удалить место');
+ if(r.error)return T('Не удалось удалить: '+r.error);
  me.places=r.places;
  T('Удалено');document.getElementById('host').innerHTML=formHTML(targetDrv);
 }
