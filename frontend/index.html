@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <title>Бомбилы</title>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
-<script src="https://telegram.org/js/telegram-web-app.js" crossorigin="anonymous"></script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"
         onerror="window.__sbFail=1"></script>
 <script>
@@ -284,6 +284,16 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .strow .sl{font-size:13px;color:var(--ink);}
 .strow .sv2{font-family:'Roboto Mono',monospace;font-size:14px;text-align:center;font-weight:600;}
 .sthead .sv2{font-family:Inter,sans-serif;font-size:10.5px;font-weight:500;text-align:center;}
+.ava img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block;}
+.ucava{
+ width:76px;height:76px;border-radius:24px;margin:0 auto 12px;
+ display:flex;align-items:center;justify-content:center;overflow:hidden;
+ background:linear-gradient(145deg,#5BE89B,#2FBE6E);color:#06120b;
+ font-family:Oswald,sans-serif;font-weight:700;font-size:32px;
+}
+.ucava img{width:100%;height:100%;object-fit:cover;display:block;}
+.idtag{font-family:'Roboto Mono',monospace;font-size:10.5px;color:var(--dim);background:var(--bg);border:1px solid var(--line2);border-radius:6px;padding:1px 5px;font-weight:500;vertical-align:middle;}
+.unote{font-size:11px;color:var(--am);margin-top:3px;line-height:1.4;}
 .mbadge{display:inline-block;min-width:19px;height:19px;line-height:19px;padding:0 5px;border-radius:10px;background:var(--red);color:#fff;font-size:11px;font-weight:700;font-style:normal;vertical-align:middle;margin-left:4px;}
 .modes{display:flex;gap:8px;padding:0 14px;margin:-4px 0 14px;}
 .mode{
@@ -374,11 +384,13 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 </div>
 <div id="boot">Загрузка…</div>
 <script>
-window.onerror=function(msg,src){
+window.onerror=function(msg,srcFile,line,col,err){
+ // приложение уже запущено — не рушим экран из-за посторонней ошибки
+ if(window.__booted){console.error('runtime',msg,srcFile,line);return;}
  var b=document.getElementById('boot');if(!b)return;
- var human=msg;
- if(String(msg).indexOf('Script error')!==-1||!msg){
-  human='Не загрузилась часть приложения.<br><br>Обычно помогает: выключить VPN, проверить интернет и открыть заново.';
+ var human=String(msg||'');
+ if(human.indexOf('Script error')!==-1||!human){
+  human='Не загрузилась часть приложения.<br><br>Обычно помогает: проверить интернет и открыть заново.';
  }
  b.style.display='flex';
  b.innerHTML='<div style="color:#e2585a;padding:24px;line-height:1.7;text-align:center">'+human+
@@ -475,7 +487,12 @@ async function Q(promise,what){
   hideErr();return r;
  }catch(e){showErr((what?what+': ':'')+netMsg(e));return{data:null,error:e};}
 }
-window.addEventListener('unhandledrejection',e=>showErr(netMsg(e.reason)));
+window.addEventListener('unhandledrejection',e=>{
+ const m=String((e.reason&&e.reason.message)||e.reason||'');
+ // посторонние и невнятные ошибки просто пишем в консоль
+ if(window.__booted&&(!m||/Script error/i.test(m))){console.error('rejection',e.reason);return;}
+ showErr(netMsg(e.reason));
+});
 window.addEventListener('offline',()=>showErr('Нет интернета. Данные не обновляются.'));
 window.addEventListener('online',()=>{hideErr();T('Связь восстановлена');});
 const T=t=>{const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(window._t);window._t=setTimeout(()=>e.classList.remove('show'),2600);};
@@ -573,6 +590,9 @@ async function boot(){
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){me.staff_role='owner';}
   if(me.is_banned){document.getElementById('boot').innerHTML='<div style="color:#e2585a"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return;}
   document.getElementById('boot').style.display='none';
+  // интерфейс показан: посторонние ошибки (например от скрипта Telegram
+  // при открытии клавиатуры) больше не должны закрывать экран
+  window.__booted=true;
   const miss=await checkSchema();
   if(miss.length){
    document.getElementById('boot').style.display='flex';
@@ -594,6 +614,7 @@ async function boot(){
   if(START==='order'){targetDrv=null;pTab=active?'ride':'order';drawP();}
   if(START==='profile'){pTab='profile';drawP();}
   if(START==='driver'){ if(isDrv()){setRole('driver');} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
+  window.__booted=true;
   if(START==='chat'){
    const rid=new URLSearchParams(location.search).get('ride');
    if(rid){
@@ -624,7 +645,7 @@ async function finishOb(){
  if(!me.has_phone&&!me.phone){phoneGate();return;}
  if(!me.city){cityGate();return;}
  paintCity();
- drawRoles();count();await restore();await restoreD();setRole('passenger');
+ drawRoles();count();await restore();await restoreD();setRole('passenger');window.__booted=true;
 }
 const CITIES=['Донецк','Макеевка','Харцызск','Горловка','Енакиево'];
 function cityGate(){
@@ -672,7 +693,7 @@ async function saveGate(){
  me.name=n;me.phone=p;me.has_phone=true;T('Спасибо!');
  if(!me.city){cityGate();return;}
  paintCity();
- drawRoles();count();await restore();await restoreD();setRole('passenger');
+ drawRoles();count();await restore();await restoreD();setRole('passenger');window.__booted=true;
 }
 setInterval(async()=>{
  if(me&&me.status==='online'){
@@ -1392,6 +1413,31 @@ function drawMyOffs(){
    const left=o._left||'';
    return `<div class="card"><div class="ava">⏳</div><div style="flex:1;min-width:0"><div class="nm">${o.price} ₽</div><div class="sub">${o._route?esc(o._route):'пассажир ещё выбирает'}</div><div class="tmr" id="tm${o.id}">${left}</div></div><button class="rolebtn" onclick="pullOff('${o.id}')">отозвать</button></div>`;
  }).join('')}</div>`;
+ loadPplPhones(list.map(u=>u.id).slice(0,60));
+ loadAvatars(list.map(u=>u.id).slice(0,60));
+}
+async function loadAvatars(ids){
+ const need=ids.filter(id=>!(id in pplAvatars));
+ if(!need.length)return;
+ need.forEach(id=>{pplAvatars[id]=null;});
+ const r=await api('/api/admin',{action:'avatars',ids:need});
+ if(r.error||!r.map)return;
+ let changed=false;
+ Object.entries(r.map).forEach(([id,url])=>{
+  if(!url)return;
+  pplAvatars[id]=url;changed=true;
+  const el=document.getElementById('av'+id);
+  if(el)el.innerHTML=`<img src="${url}" alt="">`;
+ });
+ if(changed&&role==='admin'&&aTab==='ppl'){/* картинки уже подставлены точечно */}
+}
+async function loadPplPhones(ids){
+ const need=ids.filter(id=>!(id in pplPhones));
+ if(!need.length)return;
+ const r=await api('/api/admin',{action:'apps-phones',ids:need});
+ if(r.error||!r.map)return;
+ need.forEach(id=>{pplPhones[id]=r.map[id]||null;});
+ if(role==='admin'&&aTab==='ppl')aPpl(document.getElementById('main'));
 }
 async function syncOffs(){
  if(!myOffs.length)return;
@@ -1891,6 +1937,15 @@ async function loadAdminCounts(){
  if(r&&!r.error){ADMC={apps:r.apps||0,complaints:r.complaints||0,support:r.support||0};}
 }
 let pplFilter='all';
+let pplQuery='';
+let pplPhones={};
+let pplAvatars={};
+let pplTimer=null;
+function pplSearch(v){
+ pplQuery=v;
+ if(pplTimer)clearTimeout(pplTimer);
+ pplTimer=setTimeout(()=>aPpl(document.getElementById('main')),250);
+}
 let finTab='sub';
 async function aStat(m){
  m.innerHTML='<div class="head"><h2>Отчёт</h2></div><div class="empty">Считаем…</div>';
@@ -2153,8 +2208,18 @@ async function aPpl(m){
  else if(pplFilter==='driver')list=groups.driver;
  else if(pplFilter==='pass')list=groups.pass;
  else list=all;
+ if(pplQuery){
+  const qd=pplQuery.replace(/\D/g,'');
+  const ql=pplQuery.toLowerCase();
+  const match=u=>String(u.name||'').toLowerCase().includes(ql)
+    ||(qd.length>=3&&String(u.telegram_id||'').includes(qd))
+    ||(pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd))
+    ||String(u.admin_note||'').toLowerCase().includes(ql);
+  Object.keys(groups).forEach(k=>{groups[k]=groups[k].filter(match);});
+ }
  const seg=[['all','Все',all.length],['admin','Админы',groups.admin.length],['mod','Модеры',groups.mod.length],['driver','Водители',groups.driver.length],['pass','Пассажиры',groups.pass.length]];
  m.innerHTML=`<div class="head"><h2>Пользователи</h2><span class="m">${list.length}</span></div>
+ <div class="search" style="margin:0 14px 10px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="pplq" placeholder="Имя, телефон или ID" value="${esc(pplQuery)}" oninput="pplSearch(this.value)"></div>
  <div class="seg">${seg.map(s=>`<div class="${pplFilter===s[0]?'on':''}" onclick="pplFilter='${s[0]}';aPpl(document.getElementById('main'))">${s[1]}<span style="opacity:.55;font-weight:500"> ${s[2]}</span></div>`).join('')}</div>
  <div style="padding:6px 0 24px">${list.map(u=>{
    const mine=u.id===me.id;
@@ -2162,7 +2227,10 @@ async function aPpl(m){
    const bn=u.is_banned?'<span class="badge red">бан</span>':'';
    const on=['driver','both'].includes(u.role)&&u.status==='online'?'<span class="badge" style="background:var(--gs);color:var(--g)">на линии</span>':'';
    const reg=u.created_at?new Date(u.created_at).toLocaleDateString('ru',{day:'2-digit',month:'2-digit',year:'2-digit'}):'';
-   return `<div class="ai"><div class="ava">${esc(u.name)[0]||'?'}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''}</div><div style="font-size:11.5px;color:var(--dim)">${u.has_phone?'📞 есть':'без телефона'}${u.car?' · '+esc(u.car):''}${reg?' · с '+reg:''}</div></div>${on}${bn}${bd}${u.tg_username?`<a class="tgmini" href="https://t.me/${esc(u.tg_username)}" target="_blank" onclick="event.stopPropagation()" title="Написать в Telegram">✈️</a>`:'<span class="tgmini off" title="Нет ника">✈️</span>'}<button class="rolebtn" onclick="userCard('${u.id}')">открыть</button></div>`;
+   const tag=String(u.telegram_id||'').slice(-4);
+   const ph=pplPhones[u.id];
+   const av=pplAvatars[u.id];
+   return `<div class="ai"><div class="ava" id="av${u.id}">${av?`<img src="${av}" alt="">`:(esc(u.name)[0]||'?')}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''} <span class="idtag">#${tag}</span></div><div style="font-size:11.5px;color:var(--dim)">${ph?esc(ph):(u.has_phone?'телефон загружается…':'без телефона')}${u.car?' · '+esc(u.car):''}${reg?' · с '+reg:''}</div>${u.admin_note?`<div class="unote">✎ ${esc(u.admin_note)}</div>`:''}</div>${on}${bn}${bd}${u.tg_username?`<a class="tgmini" href="https://t.me/${esc(u.tg_username)}" target="_blank" onclick="event.stopPropagation()" title="Написать в Telegram">✈️</a>`:'<span class="tgmini off" title="Нет ника">✈️</span>'}<button class="rolebtn" onclick="userCard('${u.id}')">открыть</button></div>`;
  }).join('')}</div>`;
 }
 function writeUser(uid,name){
@@ -2190,7 +2258,8 @@ async function userCard(id){
  const canRole=(own&&u.staff_role!=='owner')||(me.staff_role==='admin'&&!['owner','admin'].includes(u.staff_role));
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:90vh;overflow-y:auto">
- <h3>${esc(u.name)}</h3><div class="s"><span id="ucfio"></span>ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
+ <div class="ucava" id="ucava">${pplAvatars[u.id]?`<img src="${pplAvatars[u.id]}" alt="">`:(esc(u.name)[0]||'?')}</div>
+ <h3 style="text-align:center">${esc(u.name)} <span class="idtag">#${String(u.telegram_id||'').slice(-4)}</span></h3><div class="s"><span id="ucfio"></span>ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
  <div class="ucontact">
   <span class="ucbtn dim" id="ucphone">${u.has_phone?'телефон загружается…':'телефон не указан'}</span>
   ${u.tg_username?`<a class="ucbtn tg" href="https://t.me/${esc(u.tg_username)}" target="_blank">✈️ Открыть в Telegram</a>`:''}
@@ -2209,6 +2278,7 @@ async function userCard(id){
   <div>Подписка: <b style="color:${act?'var(--g)':'var(--dim)'}">${act?('до '+new Date(u.sub_until).toLocaleDateString('ru')):'нет'}</b></div>
  </div>
  <div class="fr"><label>Имя в приложении</label><input id="e_name" value="${esc(u.name)}"></div>
+ <div class="fr"><label>Пометка для себя · видите только вы</label><input id="e_admin_note" value="${esc(u.admin_note)}" placeholder="напр. Витя с рынка, синяя Нива"></div>
  <div class="fr"><label>ФИО по документам</label><input id="e_full_name" value="" placeholder="загружается…"></div>
  <div class="fr"><label>Телефон</label><input id="e_phone" value="" placeholder="${u.has_phone?'загружается…':'не указан'}" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
  <div class="fr"><label>Возраст</label><input id="e_age" value="${u.age||''}" inputmode="numeric"></div>
@@ -2244,6 +2314,20 @@ async function userCard(id){
  document.getElementById('device').appendChild(m);
  if(u.doc_license||u.doc_pts||u.doc_car)loadDocs(id,'ucdocs').catch(()=>{});
  loadUserCars(id).catch(()=>{});
+ (async()=>{
+  try{
+   if(!pplAvatars[id]){
+    const r=await api('/api/admin',{action:'avatars',ids:[id]});
+    if(r&&r.map&&r.map[id])pplAvatars[id]=r.map[id];
+   }
+   if(!pplAvatars[id]){
+    const f=await api('/api/admin',{action:'avatar-fetch',target_id:id});
+    if(f&&f.url)pplAvatars[id]=f.url;
+   }
+   const el=document.getElementById('ucava');
+   if(el&&pplAvatars[id])el.innerHTML=`<img src="${pplAvatars[id]}" alt="">`;
+  }catch(e){}
+ })();
  api('/api/admin',{action:'user-phone',target_id:id}).then(r=>{
   if(!r||r.error)return;
   if(r.phone){
@@ -2330,7 +2414,7 @@ async function doAdminAddCar(uid){
 }
 async function saveUser(id){
  const g=x=>document.getElementById('e_'+x).value.trim();
- const fields={name:g('name'),full_name:g('full_name'),phone:g('phone'),age:parseInt(g('age'))||null,spot:g('spot'),rating:parseFloat(g('rating'))||5,role:g('role')||'passenger',driver_status:g('ds')||'none',balance:parseFloat(g('balance'))||0};
+ const fields={name:g('name'),full_name:g('full_name'),admin_note:g('admin_note'),phone:g('phone'),age:parseInt(g('age'))||null,spot:g('spot'),rating:parseFloat(g('rating'))||5,role:g('role')||'passenger',driver_status:g('ds')||'none',balance:parseFloat(g('balance'))||0};
  const r=await api('/api/admin',{action:'edit-user',target_id:id,fields});
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка: '+r.error);
  closeSh();T('Изменения сохранены');drawA();

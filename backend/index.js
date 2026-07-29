@@ -577,6 +577,11 @@ async function userFromInit(initData) {
     db.from('users').update({ tg_username: tgUser.username }).eq('id', data.id).then(() => {}, () => {});
     data.tg_username = tgUser.username;
   }
+  // аватар из Telegram — сохраняем в закрытое хранилище
+  if (tgUser.photo_url) {
+    db.from('contacts').upsert({ user_id: data.id, photo_url: tgUser.photo_url, updated_at: new Date().toISOString() })
+      .then(() => {}, () => {});
+  }
   return data;
 }
 
@@ -616,6 +621,29 @@ const notifyStaff = async (text, kb) => {
   if (OWNER) ids.add(OWNER);
   for (const id of ids) await send(id, text, kb || {});
 };
+
+// аватар через Bot API, если из приложения он не пришёл
+async function fetchAvatar(userId) {
+  try {
+    const { data: u } = await db.from('users').select('telegram_id').eq('id', userId).maybeSingle();
+    if (!u || !u.telegram_id) return null;
+    const ph = await tg('getUserProfilePhotos', { user_id: u.telegram_id, limit: 1 });
+    const sizes = ph && ph.result && ph.result.photos && ph.result.photos[0];
+    if (!sizes || !sizes.length) return null;
+    const fileId = sizes[sizes.length - 1].file_id;
+    const f = await tg('getFile', { file_id: fileId });
+    if (!f || !f.result || !f.result.file_path) return null;
+    const url = `https://api.telegram.org/file/bot${TOKEN}/${f.result.file_path}`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    const path = `${userId}/avatar_${Date.now()}.jpg`;
+    const up = await db.storage.from('docs').upload(path, buf, { contentType: 'image/jpeg', upsert: true });
+    if (up.error) return null;
+    await db.from('contacts').upsert({ user_id: userId, photo_path: path, updated_at: new Date().toISOString() });
+    return path;
+  } catch (e) { return null; }
+}
 const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role);
 const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
 
@@ -639,7 +667,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v27-identify',
+    ok: true, service: 'bombily-backend', version: 'v28-avatars',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -1051,6 +1079,33 @@ http.createServer(async (req, res) => {
       if (act === 'cars-pending') {
         const { count } = await db.from('cars').select('*', { count: 'exact', head: true }).eq('approved', false);
         return json(res, 200, { ok: true, count: count || 0 });
+      }
+
+      // аватары пользователей (staff)
+      if (act === 'avatars') {
+        const ids = Array.isArray(body.ids) ? body.ids.slice(0, 60) : [];
+        if (!ids.length) return json(res, 200, { ok: true, map: {} });
+        const { data: rows } = await db.from('contacts').select('user_id,photo_url,photo_path').in('user_id', ids);
+        const byId = {};
+        (rows || []).forEach(r => { byId[r.user_id] = r; });
+        const map = {};
+        for (const id of ids) {
+          const r = byId[id];
+          if (r && r.photo_path) {
+            const { data: s } = await db.storage.from('docs').createSignedUrl(r.photo_path, 3600);
+            if (s && s.signedUrl) { map[id] = s.signedUrl; continue; }
+          }
+          if (r && r.photo_url) { map[id] = r.photo_url; continue; }
+        }
+        return json(res, 200, { ok: true, map });
+      }
+
+      // подтянуть аватар через бота, если его нет (staff)
+      if (act === 'avatar-fetch') {
+        const p = await fetchAvatar(tid);
+        if (!p) return json(res, 200, { ok: true, url: null });
+        const { data: s } = await db.storage.from('docs').createSignedUrl(p, 3600);
+        return json(res, 200, { ok: true, url: s ? s.signedUrl : null });
       }
 
       // временные ссылки на документы (staff)
