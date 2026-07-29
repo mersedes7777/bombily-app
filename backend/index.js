@@ -639,7 +639,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v26-notify-fix',
+    ok: true, service: 'bombily-backend', version: 'v27-identify',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -941,7 +941,7 @@ http.createServer(async (req, res) => {
       if (act === 'edit-user' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['name','age','car','plate','spot','rating','role','driver_status','balance'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['name','age','spot','rating','role','driver_status','balance','admin_note'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         if (Object.keys(allowed).length) await db.from('users').update(allowed).eq('id', tid);
         if (f.full_name !== undefined) {
           await db.from('contacts').upsert({ user_id: tid, full_name: String(f.full_name || '').slice(0, 120), updated_at: new Date().toISOString() });
@@ -1160,10 +1160,30 @@ http.createServer(async (req, res) => {
       // список водителей/пользователей для выбора при создании промокода
       if (act === 'user-search') {
         const term = String(body.term || '').trim();
-        let q = db.from('users').select('id,name,car,role,driver_status').order('name').limit(30);
-        if (term) q = q.ilike('name', `%${term}%`);
-        const { data } = await q;
-        return json(res, 200, { ok: true, items: data || [] });
+        if (!term) {
+          const { data } = await db.from('users').select('id,name,car,role,driver_status,telegram_id').order('name').limit(30);
+          return json(res, 200, { ok: true, items: data || [] });
+        }
+        const digits = term.replace(/\D/g, '');
+        const found = new Map();
+        // по имени
+        const { data: byName } = await db.from('users').select('id,name,car,role,driver_status,telegram_id').ilike('name', `%${term}%`).limit(30);
+        (byName || []).forEach(u => found.set(u.id, u));
+        // по Telegram ID
+        if (digits.length >= 3) {
+          const { data: byId } = await db.from('users').select('id,name,car,role,driver_status,telegram_id').limit(300);
+          (byId || []).forEach(u => { if (String(u.telegram_id || '').includes(digits)) found.set(u.id, u); });
+        }
+        // по телефону
+        if (digits.length >= 3) {
+          const { data: byPhone } = await db.from('contacts').select('user_id,phone').ilike('phone', `%${digits}%`).limit(30);
+          const ids = (byPhone || []).map(c => c.user_id);
+          if (ids.length) {
+            const { data: us } = await db.from('users').select('id,name,car,role,driver_status,telegram_id').in('id', ids);
+            (us || []).forEach(u => found.set(u.id, u));
+          }
+        }
+        return json(res, 200, { ok: true, items: [...found.values()].slice(0, 40) });
       }
 
       // подробная статистика
