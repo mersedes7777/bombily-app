@@ -5,8 +5,24 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <title>Бомбилы</title>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://telegram.org/js/telegram-web-app.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"
+        onerror="window.__sbFail=1"></script>
+<script>
+// если основная библиотека не загрузилась — пробуем запасной источник
+(function(){
+  function boot2(){
+    if (window.supabase && window.supabase.createClient) return;
+    var s=document.createElement('script');
+    s.src='https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js';
+    s.crossOrigin='anonymous';
+    s.onerror=function(){window.__sbFail=2;};
+    document.head.appendChild(s);
+  }
+  if (window.__sbFail) boot2();
+  else window.addEventListener('DOMContentLoaded', boot2);
+})();
+</script>
 <style>
 :root{--bg:#0c1210;--elev:#111a16;--surf:#16211c;--line:#26352e;--line2:#35473d;--ink:#e8ede9;--dim:#7f8d86;--g:#33d17e;--g2:#28b46a;--gs:#12291f;--am:#f2a73b;--red:#e2585a;--sh:0 2px 12px rgba(0,0,0,.32);}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
@@ -358,7 +374,21 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 </div>
 <div id="boot">Загрузка…</div>
 <script>
-window.onerror=function(msg){var b=document.getElementById('boot');if(b){b.style.display='flex';b.innerHTML='<div style="color:#e2585a;padding:20px;line-height:1.6">Ошибка запуска:<br><br>'+msg+'</div>';}};
+window.onerror=function(msg,src){
+ var b=document.getElementById('boot');if(!b)return;
+ var human=msg;
+ if(String(msg).indexOf('Script error')!==-1||!msg){
+  human='Не загрузилась часть приложения.<br><br>Обычно помогает: выключить VPN, проверить интернет и открыть заново.';
+ }
+ b.style.display='flex';
+ b.innerHTML='<div style="color:#e2585a;padding:24px;line-height:1.7;text-align:center">'+human+
+  '<br><br><button onclick="location.reload()" style="background:#33d17e;color:#06120b;border:none;border-radius:12px;padding:12px 22px;font-size:15px;font-weight:700;cursor:pointer">Попробовать снова</button></div>';
+};
+if(!(window.supabase&&window.supabase.createClient)){
+ var _b=document.getElementById('boot');
+ if(_b){_b.style.display='flex';_b.innerHTML='<div style="color:#e2585a;padding:24px;line-height:1.7;text-align:center">Не удалось загрузить библиотеку.<br><br>Выключите VPN, проверьте интернет и откройте заново.<br><br><button onclick="location.reload()" style="background:#33d17e;color:#06120b;border:none;border-radius:12px;padding:12px 22px;font-size:15px;font-weight:700">Попробовать снова</button></div>';}
+ throw new Error('supabase-lib-missing');
+}
 const SUPABASE_URL="https://wygmuydnodwpbtsdfjuq.supabase.co";
 const SUPABASE_ANON_KEY="sb_publishable_BYSmJx0oJGxvoomZrOPTJQ_mxVHZMT1";
 const OWNER_ID=8672930773;
@@ -1279,7 +1309,8 @@ function watchUnread(rideId){
    if(role==='driver'&&dTab==='ride')drawD();
   }
  };
- tick();unreadPoll=setInterval(tick,10000);
+ const safeTick=()=>{try{const p=tick();if(p&&p.catch)p.catch(()=>{});}catch(e){}};
+ safeTick();unreadPoll=setInterval(safeTick,10000);
 }
 function startChatPoll(rideId){
  if(chatPoll)clearInterval(chatPoll);
@@ -2211,8 +2242,8 @@ async function userCard(id){
   <button class="o" onclick="saveUser('${u.id}')">Сохранить</button>
  </div></div>`;
  document.getElementById('device').appendChild(m);
- if(u.doc_license||u.doc_pts||u.doc_car)loadDocs(id,'ucdocs');
- loadUserCars(id);
+ if(u.doc_license||u.doc_pts||u.doc_car)loadDocs(id,'ucdocs').catch(()=>{});
+ loadUserCars(id).catch(()=>{});
  api('/api/admin',{action:'user-phone',target_id:id}).then(r=>{
   if(!r||r.error)return;
   if(r.phone){
