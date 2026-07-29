@@ -56,7 +56,7 @@ body{background:#070a09;font-family:Inter,sans-serif;color:var(--ink);display:fl
 .card{background:var(--surf);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:11px;box-shadow:var(--sh);display:flex;gap:12px;align-items:center;animation:in .3s;}
 .card.tap{cursor:pointer;}.card.tap:active{transform:scale(.98);}
 @keyframes in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
-.ava{width:46px;height:46px;border-radius:14px;flex-shrink:0;background:linear-gradient(135deg,var(--g),var(--g2));display:flex;align-items:center;justify-content:center;font-family:Oswald,sans-serif;font-weight:700;font-size:18px;color:#06120b;}
+.ava{width:46px;height:46px;border-radius:14px;flex-shrink:0;overflow:hidden;background:linear-gradient(135deg,var(--g),var(--g2));display:flex;align-items:center;justify-content:center;font-family:Oswald,sans-serif;font-weight:700;font-size:18px;color:#06120b;}
 .nm{font-size:15px;font-weight:600;}
 .sub{font-size:12.5px;color:var(--dim);margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .spot{color:var(--g);font-weight:500;}
@@ -292,6 +292,10 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
  font-family:Oswald,sans-serif;font-weight:700;font-size:32px;
 }
 .ucava img{width:100%;height:100%;object-fit:cover;display:block;}
+.search{display:flex;align-items:center;gap:10px;background:var(--surf);border:1px solid var(--line);border-radius:13px;padding:11px 14px;box-sizing:border-box;}
+.search svg{width:17px;height:17px;flex:0 0 17px;stroke:var(--dim);fill:none;stroke-width:2;}
+.search input{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--ink);font-family:Inter,sans-serif;font-size:14.5px;}
+.search input::placeholder{color:var(--dim);}
 .idtag{font-family:'Roboto Mono',monospace;font-size:10.5px;color:var(--dim);background:var(--bg);border:1px solid var(--line2);border-radius:6px;padding:1px 5px;font-weight:500;vertical-align:middle;}
 .unote{font-size:11px;color:var(--am);margin-top:3px;line-height:1.4;}
 .mbadge{display:inline-block;min-width:19px;height:19px;line-height:19px;padding:0 5px;border-radius:10px;background:var(--red);color:#fff;font-size:11px;font-weight:700;font-style:normal;vertical-align:middle;margin-left:4px;}
@@ -1414,22 +1418,45 @@ function drawMyOffs(){
    return `<div class="card"><div class="ava">⏳</div><div style="flex:1;min-width:0"><div class="nm">${o.price} ₽</div><div class="sub">${o._route?esc(o._route):'пассажир ещё выбирает'}</div><div class="tmr" id="tm${o.id}">${left}</div></div><button class="rolebtn" onclick="pullOff('${o.id}')">отозвать</button></div>`;
  }).join('')}</div>`;
  loadPplPhones(list.map(u=>u.id).slice(0,60));
- loadAvatars(list.map(u=>u.id).slice(0,60));
+ loadAvatars(list.map(u=>u.id).slice(0,20));
 }
+let avatarQueue=[],avatarBusy=false;
 async function loadAvatars(ids){
  const need=ids.filter(id=>!(id in pplAvatars));
  if(!need.length)return;
  need.forEach(id=>{pplAvatars[id]=null;});
  const r=await api('/api/admin',{action:'avatars',ids:need});
- if(r.error||!r.map)return;
- let changed=false;
- Object.entries(r.map).forEach(([id,url])=>{
-  if(!url)return;
-  pplAvatars[id]=url;changed=true;
-  const el=document.getElementById('av'+id);
-  if(el)el.innerHTML=`<img src="${url}" alt="">`;
- });
- if(changed&&role==='admin'&&aTab==='ppl'){/* картинки уже подставлены точечно */}
+ const got={};
+ if(!r.error&&r.map){
+  Object.entries(r.map).forEach(([id,url])=>{
+   if(!url)return;
+   got[id]=1;pplAvatars[id]=url;
+   const el=document.getElementById('av'+id);
+   if(el)el.innerHTML=`<img src="${url}" alt="">`;
+  });
+ }
+ // у кого нет сохранённого фото — попросим бота достать, по одному
+ const missing=need.filter(id=>!got[id]);
+ avatarQueue.push(...missing);
+ pumpAvatars();
+}
+async function pumpAvatars(){
+ if(avatarBusy)return;
+ avatarBusy=true;
+ try{
+  while(avatarQueue.length){
+   if(role!=='admin'){avatarQueue=[];break;}
+   const id=avatarQueue.shift();
+   const f=await api('/api/admin',{action:'avatar-fetch',target_id:id});
+   if(f&&f.url){
+    pplAvatars[id]=f.url;
+    const el=document.getElementById('av'+id);
+    if(el)el.innerHTML=`<img src="${f.url}" alt="">`;
+   }
+   await new Promise(r=>setTimeout(r,250));
+  }
+ }catch(e){}
+ avatarBusy=false;
 }
 async function loadPplPhones(ids){
  const need=ids.filter(id=>!(id in pplPhones));
