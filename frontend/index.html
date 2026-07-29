@@ -268,6 +268,7 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .strow .sl{font-size:13px;color:var(--ink);}
 .strow .sv2{font-family:'Roboto Mono',monospace;font-size:14px;text-align:center;font-weight:600;}
 .sthead .sv2{font-family:Inter,sans-serif;font-size:10.5px;font-weight:500;text-align:center;}
+.mbadge{display:inline-block;min-width:19px;height:19px;line-height:19px;padding:0 5px;border-radius:10px;background:var(--red);color:#fff;font-size:11px;font-weight:700;font-style:normal;vertical-align:middle;margin-left:4px;}
 .modes{display:flex;gap:8px;padding:0 14px;margin:-4px 0 14px;}
 .mode{
  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
@@ -652,7 +653,7 @@ async function count(){const{count:c}=await db.from('users').select('*',{count:'
 
 async function restore(){
  const{data}=await db.from('rides').select('*').eq('passenger_id',me.id).in('status',['created','confirmed','in_progress']).order('created_at',{ascending:false}).limit(1);
- if(data&&data.length){active=data[0];if(active.status==='created')subOffers(active.id);if(active.status==='confirmed'||active.status==='in_progress'){subRide(active.id);watchCompletion();}}
+ if(data&&data.length){active=data[0];if(active.status==='created')subOffers(active.id);if(active.status==='confirmed'||active.status==='in_progress'){subRide(active.id);watchCompletion();watchUnread(active.id);}}
  // недавно завершённая поездка, которую пассажир ещё не оценил
  const dayAgo=new Date(Date.now()-24*3600*1000).toISOString();
  const{data:fin}=await db.from('rides').select('*').eq('passenger_id',me.id).eq('status','completed').gte('created_at',dayAgo).order('created_at',{ascending:false}).limit(1);
@@ -729,12 +730,12 @@ function drawBar(){
  if(role==='passenger'){
   if(!active||pTab==='ride'){b.innerHTML='';return;}
   const conf=active.status==='confirmed';
-  b.innerHTML=`<div class="abar" onclick="openRide()"><div class="ava">${conf?'🚗':'⏳'}</div><div class="t"><b>${conf?'Бомбила в пути':'Ждём предложений'}</b><span>${esc(active.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
+  b.innerHTML=`<div class="abar" onclick="openRide()"><div class="ava">${conf?'🚗':'⏳'}</div><div class="t"><b>${conf?'Бомбила в пути':'Ждём предложений'}${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</b><span>${chatUnread?'новое сообщение в чате':esc(active.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
   return;
  }
  if(role==='driver'){
   if(!dActive||dTab==='ride'){b.innerHTML='';return;}
-  b.innerHTML=`<div class="abar" onclick="dGo('ride')"><div class="ava">🚗</div><div class="t"><b>Активный заказ</b><span>${esc(dActive.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
+  b.innerHTML=`<div class="abar" onclick="dGo('ride')"><div class="ava">🚗</div><div class="t"><b>Активный заказ${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</b><span>${chatUnread?'новое сообщение в чате':esc(dActive.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
   return;
  }
  b.innerHTML='';
@@ -914,7 +915,7 @@ async function openRide(){
  if(r.status==='confirmed'){
    const{data:d}=await db.from('users').select('*').eq('id',r.driver_id).single();
    const on=favs().includes(r.driver_id);
-   m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.kind==='delivery'?(r.arrived?'Курьер на месте':'Курьер выехал'):(r.arrived?'Водитель на месте':'Бомбила выехал')}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div><div class="sub">⭐ ${d?.rating||5} · ${refuseTxt(d?.cancel_as_driver)}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div><button class="fav ${on?'on':''}" onclick="togFav('${r.driver_id}')">♥</button></div><div id="dcallwrap"></div><button class="btn" onclick="openChat('${r.id}','passenger')">Написать водителю</button><button class="btn ghost" onclick="doneRide('${d?.id}','${esc(d?.name)}')">Поездка завершена</button><button class="btn dang" onclick="complain('${r.id}','${d?.id}','${esc(d?.name)}')">Пожаловаться</button></div>`;
+   m.innerHTML=`<div class="conf"><div class="ok"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#06120b" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></div><h3>${r.kind==='delivery'?(r.arrived?'Курьер на месте':'Курьер выехал'):(r.arrived?'Водитель на месте':'Бомбила выехал')}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p><div class="dbox"><div class="ava">${esc(d?.name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div><div class="sub">⭐ ${d?.rating||5} · ${refuseTxt(d?.cancel_as_driver)}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div><button class="fav ${on?'on':''}" onclick="togFav('${r.driver_id}')">♥</button></div><div id="dcallwrap"></div><button class="btn" onclick="openChat('${r.id}','passenger')">Написать водителю${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</button><button class="btn ghost" onclick="doneRide('${d?.id}','${esc(d?.name)}')">Поездка завершена</button><button class="btn dang" onclick="complain('${r.id}','${d?.id}','${esc(d?.name)}')">Пожаловаться</button></div>`;
    loadRideContact(r.id,'водителю');
    return;
  }
@@ -941,7 +942,7 @@ function startCd(created){
 }
 async function accept(oid,did,price){
  await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null}).eq('id',active.id);
- active.status='confirmed';active.driver_id=did;subRide(active.id);watchCompletion();
+ active.status='confirmed';active.driver_id=did;subRide(active.id);watchCompletion();watchUnread(active.id);
  await db.from('offers').update({status:'selected'}).eq('id',oid);
  await db.from('offers').update({status:'declined'}).eq('ride_id',active.id).neq('id',oid);
  if(offCh){db.removeChannel(offCh);offCh=null;}
@@ -1252,9 +1253,34 @@ async function openChat(rideId,back){
   lastMsgAt=data.length?data[data.length-1].created_at:null;
  }
  if(chatCh){db.removeChannel(chatCh);chatCh=null;}
+ chatUnread=0;
+ if(lastMsgAt)setSeen(rideId,lastMsgAt);
  startChatPoll(rideId);
 }
 let chatPoll=null,lastMsgAt=null;
+let chatUnread=0,unreadPoll=null;
+function seenKey(rid){return 'bmb_seen_'+rid;}
+function getSeen(rid){try{return localStorage.getItem(seenKey(rid))||null;}catch(e){return null;}}
+function setSeen(rid,ts){try{if(ts)localStorage.setItem(seenKey(rid),ts);}catch(e){}}
+function watchUnread(rideId){
+ if(unreadPoll)clearInterval(unreadPoll);
+ chatUnread=0;
+ const tick=async()=>{
+  const inChat=(role==='passenger'&&pTab==='chat')||(role==='driver'&&dTab==='chat');
+  const stillActive=(role==='passenger'&&active&&active.id===rideId)||(role==='driver'&&dActive&&dActive.id===rideId);
+  if(!stillActive){clearInterval(unreadPoll);unreadPoll=null;chatUnread=0;return;}
+  if(inChat)return;
+  const r=await api('/api/chat-list',{ride_id:rideId,after:getSeen(rideId)});
+  if(r.error||!r.items)return;
+  const mine=r.items.filter(x=>x.sender_id!==me.id);
+  if(mine.length){
+   chatUnread=mine.length;
+   if(role==='passenger'&&pTab!=='chat')drawBar();
+   if(role==='driver'&&dTab==='ride')drawD();
+  }
+ };
+ tick();unreadPoll=setInterval(tick,10000);
+}
 function startChatPoll(rideId){
  if(chatPoll)clearInterval(chatPoll);
  chatPoll=setInterval(async()=>{
@@ -1264,7 +1290,7 @@ function startChatPoll(rideId){
   const box=document.getElementById('cm');
   if(box&&box.querySelector('.empty'))box.innerHTML='';
   r.items.forEach(msg=>{if(msg.sender_id!==me.id)putMsg(msg);});
-  lastMsgAt=r.items[r.items.length-1].created_at;
+  lastMsgAt=r.items[r.items.length-1].created_at;setSeen(rideId,lastMsgAt);
  },4000);
 }
 function putMsg(msg){
@@ -1533,11 +1559,12 @@ async function dRide(m){
  ${r.comment?`<div class="rcom" style="margin:0 0 12px">💬 ${esc(r.comment)}</div>`:''}
  <div class="dbox"><div class="ava">${esc(r.passenger_name)[0]||'?'}</div><div style="flex:1"><div class="nm">${esc(r.passenger_name)||'Пассажир'}</div><div class="sub">${cancelTxt(p?.cancel_as_passenger)}</div><div class="sub">${r.status==='in_progress'?'в машине':'ждёт вас'}</div><div class="sub" id="dphone" style="color:var(--dim)">телефон загружается…</div></div></div>
  <div id="dcallwrap"></div>
- <button class="btn" onclick="openChat('${r.id}','driver')">Написать пассажиру</button>
+ <button class="btn" onclick="openChat('${r.id}','driver')">Написать пассажиру${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</button>
  ${r.arrived?'<div class="note">✅ Пассажир уведомлён, что вы подъехали</div>':`<button class="btn arrived-btn" onclick="dArrived()">📍 Я подъехал</button>`}
  <button class="btn ghost" onclick="dDone()">Завершить поездку</button>
  <button class="btn dang" onclick="dCancel()">Отказаться от заказа</button></div>`;
  loadRideContact(r.id,'пассажиру');
+ if(!unreadPoll)watchUnread(r.id);
 }
 async function dArrived(){await Q(db.from('rides').update({arrived:true}).eq('id',dActive.id),'Не удалось отметить');dActive.arrived=true;T('Пассажиру ушло уведомление');dGo('ride');}
 async function dDone(){

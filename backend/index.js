@@ -235,7 +235,7 @@ async function notifyLoop() {
         if (other) {
           const tid = await tgIdOf(other);
           if (tid) await send(tid, `💬 <b>${msg.sender_name || 'Новое сообщение'}</b>\n${msg.text}`,
-            { reply_markup: { inline_keyboard: [[{ text: '💬 Открыть чат', web_app: { url: `${APP_URL}?s=chat&ride=${msg.ride_id}` } }]] } });
+            { reply_markup: { inline_keyboard: [[{ text: '💬 Ответить', web_app: { url: `${APP_URL}?s=chat&ride=${msg.ride_id}` } }]] } });
         }
       }
       await db.from('messages').update({ notified: true }).eq('id', msg.id);
@@ -244,17 +244,25 @@ async function notifyLoop() {
     // поездка завершена -> обоим
     const { data: fin } = await db.from('rides').select('*').eq('status', 'completed').eq('done_notified', false);
     for (const r of fin || []) {
-      const base = `🏁 <b>Поездка завершена</b>\n\n📍 ${r.from_address}\n🏁 ${r.to_address}${r.price ? `\n💰 ${r.price} ₽` : ''}`;
+      const kindTxt = r.kind === 'delivery' ? '📦 Доставка выполнена' : '🏁 Поездка завершена';
+      const when = new Date(r.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const base = `<b>${kindTxt}</b>\n\n📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${r.to_city ? `\n🛣 <b>Город:</b> ${r.to_city}` : ''}${r.price ? `\n💰 <b>Сумма:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}\n🕒 ${when}`;
       // пассажиру
+      let drvName = '', drvCar = '';
+      if (r.driver_id) {
+        const { data: dv } = await db.from('users').select('name,car,plate').eq('id', r.driver_id).maybeSingle();
+        if (dv) { drvName = dv.name || ''; drvCar = `${dv.car || ''}${dv.plate ? ' · ' + dv.plate : ''}`; }
+      }
       if (r.passenger_id) {
         const tid = await tgIdOf(r.passenger_id);
-        if (tid) await send(tid, `${base}\n\nОцените поездку в приложении — это поможет другим пассажирам.`,
-          { reply_markup: { inline_keyboard: [[wa('Оценить поездку', 'order')]] } });
+        if (tid) await send(tid,
+          `${base}${drvName ? `\n👤 <b>Водитель:</b> ${drvName}${drvCar ? ` (${drvCar})` : ''}` : ''}\n\nОцените поездку — это поможет другим пассажирам.`,
+          { reply_markup: { inline_keyboard: [[wa('Оценить', 'order')]] } });
       }
-      // водителю
       if (r.driver_id) {
         const tid = await tgIdOf(r.driver_id);
-        if (tid) await send(tid, `${base}\n\nСпасибо за работу!`,
+        if (tid) await send(tid,
+          `${base}${r.passenger_name ? `\n👤 <b>Пассажир:</b> ${r.passenger_name}` : ''}\n\nСпасибо за работу!`,
           { reply_markup: { inline_keyboard: [[wa('К заявкам', 'driver')]] } });
       }
       await db.from('rides').update({ done_notified: true }).eq('id', r.id);
@@ -567,7 +575,7 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v24-cars' });
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v25-chat-badge' });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
