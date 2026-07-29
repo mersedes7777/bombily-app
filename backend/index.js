@@ -626,23 +626,24 @@ const notifyStaff = async (text, kb) => {
 async function fetchAvatar(userId) {
   try {
     const { data: u } = await db.from('users').select('telegram_id').eq('id', userId).maybeSingle();
-    if (!u || !u.telegram_id) return null;
+    if (!u || !u.telegram_id) return { path: null, why: 'нет telegram id' };
     const ph = await tg('getUserProfilePhotos', { user_id: u.telegram_id, limit: 1 });
-    const sizes = ph && ph.result && ph.result.photos && ph.result.photos[0];
-    if (!sizes || !sizes.length) return null;
+    if (!ph || !ph.ok) return { path: null, why: 'телеграм отказал: ' + ((ph && ph.description) || 'нет ответа') };
+    const sizes = ph.result && ph.result.photos && ph.result.photos[0];
+    if (!sizes || !sizes.length) return { path: null, why: 'фото не установлено или скрыто' };
     const fileId = sizes[sizes.length - 1].file_id;
     const f = await tg('getFile', { file_id: fileId });
-    if (!f || !f.result || !f.result.file_path) return null;
+    if (!f || !f.ok || !f.result || !f.result.file_path) return { path: null, why: 'не удалось получить файл' };
     const url = `https://api.telegram.org/file/bot${TOKEN}/${f.result.file_path}`;
     const r = await fetch(url);
-    if (!r.ok) return null;
+    if (!r.ok) return { path: null, why: 'файл не скачался (' + r.status + ')' };
     const buf = Buffer.from(await r.arrayBuffer());
-    const path = `${userId}/avatar_${Date.now()}.jpg`;
+    const path = `${userId}/avatar.jpg`;
     const up = await db.storage.from('docs').upload(path, buf, { contentType: 'image/jpeg', upsert: true });
-    if (up.error) return null;
+    if (up.error) return { path: null, why: 'хранилище: ' + up.error.message };
     await db.from('contacts').upsert({ user_id: userId, photo_path: path, updated_at: new Date().toISOString() });
-    return path;
-  } catch (e) { return null; }
+    return { path, why: null };
+  } catch (e) { return { path: null, why: 'сбой: ' + e.message }; }
 }
 const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role);
 const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
@@ -667,7 +668,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v28-avatars',
+    ok: true, service: 'bombily-backend', version: 'v29-driver-stats',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -1102,9 +1103,9 @@ http.createServer(async (req, res) => {
 
       // подтянуть аватар через бота, если его нет (staff)
       if (act === 'avatar-fetch') {
-        const p = await fetchAvatar(tid);
-        if (!p) return json(res, 200, { ok: true, url: null });
-        const { data: s } = await db.storage.from('docs').createSignedUrl(p, 3600);
+        const r2 = await fetchAvatar(tid);
+        if (!r2.path) return json(res, 200, { ok: true, url: null, why: r2.why });
+        const { data: s } = await db.storage.from('docs').createSignedUrl(r2.path, 3600);
         return json(res, 200, { ok: true, url: s ? s.signedUrl : null });
       }
 
@@ -1239,6 +1240,53 @@ http.createServer(async (req, res) => {
           }
         }
         return json(res, 200, { ok: true, items: [...found.values()].slice(0, 40) });
+      }
+
+      // статистика по водителям за период
+      if (act === 'drivers-stats') {
+        const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 29 * 864e5).toISOString();
+        const to = body.to ? new Date(body.to + 'T23:59:59').toISOString() : new Date().toISOString();
+        const { data: rows } = await db.from('rides').select('driver_id,status,price,created_at,kind,to_city')
+          .not('driver_id', 'is', null).gte('created_at', from).lte('created_at', to).limit(5000);
+        const { data: drv } = await db.from('users').select('id,name,car,telegram_id,status,driver_status')
+          .eq('driver_status', 'approved');
+        const agg = {};
+        (drv || []).forEach(d => { agg[d.id] = { id: d.id, name: d.name, car: d.car, tag: String(d.telegram_id || '').slice(-4), online: d.status === 'online', taken: 0, done: 0, cancelled: 0, money: 0, delivery: 0, intercity: 0 }; });
+        (rows || []).forEach(r => {
+          const a2 = agg[r.driver_id];
+          if (!a2) return;
+          a2.taken++;
+          if (r.status === 'completed') { a2.done++; a2.money += Number(r.price) || 0; }
+          if (String(r.status).startsWith('cancelled')) a2.cancelled++;
+          if (r.kind === 'delivery') a2.delivery++;
+          if (r.to_city) a2.intercity++;
+        });
+        const list = Object.values(agg).sort((x, y) => y.money - x.money || y.done - x.done);
+        return json(res, 200, { ok: true, items: list, from, to });
+      }
+
+      // разбивка по дням: по всем или по одному водителю
+      if (act === 'days-stats') {
+        const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 13 * 864e5).toISOString();
+        const to = body.to ? new Date(body.to + 'T23:59:59').toISOString() : new Date().toISOString();
+        let q = db.from('rides').select('status,price,created_at').gte('created_at', from).lte('created_at', to).limit(5000);
+        if (body.driver_id) q = q.eq('driver_id', body.driver_id);
+        const { data: rows } = await q;
+        const byDay = {};
+        (rows || []).forEach(r => {
+          const d = String(r.created_at).slice(0, 10);
+          byDay[d] = byDay[d] || { day: d, taken: 0, done: 0, cancelled: 0, money: 0 };
+          byDay[d].taken++;
+          if (r.status === 'completed') { byDay[d].done++; byDay[d].money += Number(r.price) || 0; }
+          if (String(r.status).startsWith('cancelled')) byDay[d].cancelled++;
+        });
+        let name = null;
+        if (body.driver_id) {
+          const { data: d } = await db.from('users').select('name').eq('id', body.driver_id).maybeSingle();
+          name = d ? d.name : null;
+        }
+        const days = Object.values(byDay).sort((a2, b2) => b2.day.localeCompare(a2.day));
+        return json(res, 200, { ok: true, days, name });
       }
 
       // подробная статистика

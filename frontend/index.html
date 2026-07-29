@@ -292,6 +292,9 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
  font-family:Oswald,sans-serif;font-weight:700;font-size:32px;
 }
 .ucava img{width:100%;height:100%;object-fit:cover;display:block;}
+.drange{display:flex;align-items:center;gap:8px;padding:0 14px 8px;}
+.drange input{flex:1;min-width:0;background:var(--surf);border:1px solid var(--line2);border-radius:10px;padding:9px 10px;color:var(--ink);font-size:13px;font-family:'Roboto Mono',monospace;outline:none;}
+.drange span{color:var(--dim);}
 .search{display:flex;align-items:center;gap:10px;background:var(--surf);border:1px solid var(--line);border-radius:13px;padding:11px 14px;box-sizing:border-box;}
 .search svg{width:17px;height:17px;flex:0 0 17px;stroke:var(--dim);fill:none;stroke-width:2;}
 .search input{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--ink);font-family:Inter,sans-serif;font-size:14.5px;}
@@ -1417,8 +1420,6 @@ function drawMyOffs(){
    const left=o._left||'';
    return `<div class="card"><div class="ava">⏳</div><div style="flex:1;min-width:0"><div class="nm">${o.price} ₽</div><div class="sub">${o._route?esc(o._route):'пассажир ещё выбирает'}</div><div class="tmr" id="tm${o.id}">${left}</div></div><button class="rolebtn" onclick="pullOff('${o.id}')">отозвать</button></div>`;
  }).join('')}</div>`;
- loadPplPhones(list.map(u=>u.id).slice(0,60));
- loadAvatars(list.map(u=>u.id).slice(0,20));
 }
 let avatarQueue=[],avatarBusy=false;
 async function loadAvatars(ids){
@@ -1974,14 +1975,103 @@ function pplSearch(v){
  pplTimer=setTimeout(()=>aPpl(document.getElementById('main')),250);
 }
 let finTab='sub';
+let statFrom='',statTo='',statView='total',statDrv=null;
+function dstr(d){return d.toISOString().slice(0,10);}
+function initStatRange(){
+ if(statFrom&&statTo)return;
+ const now=new Date();
+ statTo=dstr(now);
+ statFrom=dstr(new Date(now.getTime()-29*864e5));
+}
+function setStatRange(days){
+ const now=new Date();
+ statTo=dstr(now);statFrom=dstr(new Date(now.getTime()-(days-1)*864e5));
+ aStat(document.getElementById('main'));
+}
+function applyStatRange(){
+ const f=document.getElementById('sf')?.value,t=document.getElementById('st')?.value;
+ if(f)statFrom=f;if(t)statTo=t;
+ if(statFrom>statTo){T('Начало позже конца');return;}
+ aStat(document.getElementById('main'));
+}
+function statGo(v,drv){statView=v;statDrv=drv||null;aStat(document.getElementById('main'));}
+function rangeBar(){
+ return `<div class="seg">
+  <div onclick="setStatRange(1)">Сегодня</div>
+  <div onclick="setStatRange(7)">7 дней</div>
+  <div onclick="setStatRange(30)">30 дней</div>
+ </div>
+ <div class="drange">
+  <input type="date" id="sf" value="${statFrom}"><span>—</span><input type="date" id="st" value="${statTo}">
+  <button class="rolebtn" onclick="applyStatRange()">показать</button>
+ </div>
+ <div class="seg">
+  <div class="${statView==='total'?'on':''}" onclick="statGo('total')">Итоги</div>
+  <div class="${statView==='drivers'?'on':''}" onclick="statGo('drivers')">Водители</div>
+  <div class="${statView==='days'?'on':''}" onclick="statGo('days')">По дням</div>
+ </div>`;
+}
+async function aStatDrivers(m){
+ m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
+ const r=await api('/api/admin',{action:'drivers-stats',from:statFrom,to:statTo});
+ if(r.error){m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Не удалось загрузить</div>`;return;}
+ const items=r.items||[];
+ const tot=items.reduce((a,x)=>({taken:a.taken+x.taken,done:a.done+x.done,money:a.money+x.money}),{taken:0,done:0,money:0});
+ m.innerHTML=`<div class="head"><h2>Отчёт</h2><span class="m">${statFrom} — ${statTo}</span></div>
+ ${rangeBar()}
+ <div class="agrid" style="padding:0 14px">
+  <div class="ac"><div class="n g">${tot.taken}</div><div class="l">заказов взято</div></div>
+  <div class="ac"><div class="n">${tot.done}</div><div class="l">завершено</div></div>
+  <div class="ac"><div class="n a">${tot.money}</div><div class="l">оборот, ₽</div></div>
+  <div class="ac"><div class="n">${items.filter(x=>x.taken>0).length}</div><div class="l">работали</div></div>
+ </div>
+ <div class="sec">Водители · нажмите для разбивки по дням</div>
+ ${items.length?items.map(d=>`<div class="card" onclick="statGo('days','${d.id}')" style="cursor:pointer">
+   <div class="ava">${esc(d.name)[0]||'?'}</div>
+   <div style="flex:1;min-width:0">
+    <div class="nm">${esc(d.name)} <span class="idtag">#${d.tag}</span>${d.online?' <span style="color:var(--g);font-size:10px">на линии</span>':''}</div>
+    <div class="sub">${esc(d.car)||'—'}</div>
+    <div class="sub" style="margin-top:3px">взял ${d.taken} · выполнил ${d.done}${d.cancelled?' · отказов '+d.cancelled:''}${d.delivery?' · доставок '+d.delivery:''}${d.intercity?' · межгород '+d.intercity:''}</div>
+   </div>
+   <div style="text-align:right"><div class="price">${d.money} ₽</div><div class="sub" style="font-size:10px">${d.done?Math.round(d.money/d.done):0} ₽ средний</div></div>
+  </div>`).join(''):'<div class="empty">Нет данных за период</div>'}
+ <div style="height:20px"></div>`;
+}
+async function aStatDays(m){
+ m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
+ const r=await api('/api/admin',{action:'days-stats',from:statFrom,to:statTo,driver_id:statDrv});
+ if(r.error){m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Не удалось загрузить</div>`;return;}
+ const days=r.days||[];
+ const tot=days.reduce((a,x)=>({taken:a.taken+x.taken,done:a.done+x.done,money:a.money+x.money}),{taken:0,done:0,money:0});
+ m.innerHTML=`<div class="head"><h2>${r.name?esc(r.name):'По дням'}</h2><span class="m">${statFrom} — ${statTo}</span></div>
+ ${rangeBar()}
+ ${statDrv?`<div style="padding:0 14px 10px"><button class="rolebtn" onclick="statGo('drivers')">‹ ко всем водителям</button></div>`:''}
+ <div class="agrid" style="padding:0 14px">
+  <div class="ac"><div class="n g">${tot.taken}</div><div class="l">заявок</div></div>
+  <div class="ac"><div class="n">${tot.done}</div><div class="l">завершено</div></div>
+  <div class="ac"><div class="n a">${tot.money}</div><div class="l">оборот, ₽</div></div>
+  <div class="ac"><div class="n">${tot.done?Math.round(tot.money/tot.done):0}</div><div class="l">средний чек</div></div>
+ </div>
+ <div class="sec">Дни</div>
+ <div class="sthead"><div class="sl">дата</div><div class="sv2">всего</div><div class="sv2">готово</div><div class="sv2">отмен</div><div class="sv2">₽</div></div>
+ ${days.length?days.map(d=>{
+   const dt=new Date(d.day+'T12:00:00');
+   const lbl=dt.toLocaleDateString('ru',{day:'2-digit',month:'2-digit'})+' '+['вс','пн','вт','ср','чт','пт','сб'][dt.getDay()];
+   return `<div class="strow"><div class="sl">${lbl}</div><div class="sv2">${d.taken}</div><div class="sv2">${d.done}</div><div class="sv2" style="color:${d.cancelled?'var(--red)':'inherit'}">${d.cancelled}</div><div class="sv2" style="color:var(--am)">${d.money}</div></div>`;
+  }).join(''):'<div class="empty">Нет данных за период</div>'}
+ <div style="height:20px"></div>`;
+}
 async function aStat(m){
- m.innerHTML='<div class="head"><h2>Отчёт</h2></div><div class="empty">Считаем…</div>';
+ initStatRange();
+ if(statView==='drivers')return aStatDrivers(m);
+ if(statView==='days')return aStatDays(m);
+ m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
  const s=await api('/api/admin',{action:'stats'});
- if(s.error){m.innerHTML='<div class="head"><h2>Отчёт</h2></div><div class="empty">Не удалось загрузить</div>';return;}
+ if(s.error){m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Не удалось загрузить</div>`;return;}
  const row=(lbl,a,b,c,d)=>`<div class="strow"><div class="sl">${lbl}</div><div class="sv2">${a}</div><div class="sv2">${b}</div><div class="sv2">${c}</div><div class="sv2">${d}</div></div>`;
  const cityList=Object.entries(s.cities||{}).sort((x,y)=>y[1]-x[1]);
- m.innerHTML=`<div class="head"><h2>Отчёт</h2><span class="m">за всё время ${s.rides.all} заявок</span></div>
-
+ m.innerHTML=`<div class="head"><h2>Отчёт</h2><span class="m">всего ${s.rides.all} заявок</span></div>
+ ${rangeBar()}
  <div class="sec">Главное сегодня</div>
  <div class="agrid" style="padding:0 14px">
   <div class="ac"><div class="n g">${s.rides.today}</div><div class="l">заявок сегодня</div></div>
@@ -2259,6 +2349,8 @@ async function aPpl(m){
    const av=pplAvatars[u.id];
    return `<div class="ai"><div class="ava" id="av${u.id}">${av?`<img src="${av}" alt="">`:(esc(u.name)[0]||'?')}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''} <span class="idtag">#${tag}</span></div><div style="font-size:11.5px;color:var(--dim)">${ph?esc(ph):(u.has_phone?'телефон загружается…':'без телефона')}${u.car?' · '+esc(u.car):''}${reg?' · с '+reg:''}</div>${u.admin_note?`<div class="unote">✎ ${esc(u.admin_note)}</div>`:''}</div>${on}${bn}${bd}${u.tg_username?`<a class="tgmini" href="https://t.me/${esc(u.tg_username)}" target="_blank" onclick="event.stopPropagation()" title="Написать в Telegram">✈️</a>`:'<span class="tgmini off" title="Нет ника">✈️</span>'}<button class="rolebtn" onclick="userCard('${u.id}')">открыть</button></div>`;
  }).join('')}</div>`;
+ loadPplPhones(list.map(u=>u.id).slice(0,60));
+ loadAvatars(list.map(u=>u.id).slice(0,20));
 }
 function writeUser(uid,name){
  const m=document.createElement('div');m.className='mask';m.id='sh2';
@@ -2286,7 +2378,8 @@ async function userCard(id){
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:90vh;overflow-y:auto">
  <div class="ucava" id="ucava">${pplAvatars[u.id]?`<img src="${pplAvatars[u.id]}" alt="">`:(esc(u.name)[0]||'?')}</div>
- <h3 style="text-align:center">${esc(u.name)} <span class="idtag">#${String(u.telegram_id||'').slice(-4)}</span></h3><div class="s"><span id="ucfio"></span>ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
+ <h3 style="text-align:center">${esc(u.name)} <span class="idtag">#${String(u.telegram_id||'').slice(-4)}</span></h3>
+ <div id="ucwhy" style="text-align:center;font-size:10.5px;color:var(--dim);margin:-6px 0 8px"></div><div class="s"><span id="ucfio"></span>ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
  <div class="ucontact">
   <span class="ucbtn dim" id="ucphone">${u.has_phone?'телефон загружается…':'телефон не указан'}</span>
   ${u.tg_username?`<a class="ucbtn tg" href="https://t.me/${esc(u.tg_username)}" target="_blank">✈️ Открыть в Telegram</a>`:''}
@@ -2347,12 +2440,15 @@ async function userCard(id){
     const r=await api('/api/admin',{action:'avatars',ids:[id]});
     if(r&&r.map&&r.map[id])pplAvatars[id]=r.map[id];
    }
+   let why=null;
    if(!pplAvatars[id]){
     const f=await api('/api/admin',{action:'avatar-fetch',target_id:id});
-    if(f&&f.url)pplAvatars[id]=f.url;
+    if(f&&f.url)pplAvatars[id]=f.url;else if(f&&f.why)why=f.why;
    }
    const el=document.getElementById('ucava');
    if(el&&pplAvatars[id])el.innerHTML=`<img src="${pplAvatars[id]}" alt="">`;
+   const wh=document.getElementById('ucwhy');
+   if(wh&&!pplAvatars[id]&&why)wh.textContent='фото: '+why;
   }catch(e){}
  })();
  api('/api/admin',{action:'user-phone',target_id:id}).then(r=>{
