@@ -167,210 +167,272 @@ async function poll() {
 const tgIdOf = async id => (await db.from('users').select('telegram_id').eq('id', id).maybeSingle()).data?.telegram_id;
 
 async function notifyLoop() {
-  try {
-    // новая заявка -> водителям
-    const { data: rides } = await db.from('rides').select('*').eq('status', 'created').eq('notified', false);
-    for (const r of rides || []) {
-      let q = db.from('users').select('telegram_id').eq('status', 'online').in('role', ['driver', 'both']);
-      if (r.kind === 'delivery') q = q.eq('delivery', true);
-      if (r.to_city) q = q.eq('intercity', true);
-      if (r.target_driver_id) q = db.from('users').select('telegram_id').eq('id', r.target_driver_id);
-      const { data: drv } = await q;
-      const isDel = r.kind === 'delivery';
-      const isInter = !!r.to_city;
-      const head = r.target_driver_id
-        ? (isDel ? '🎯 <b>Доставка лично вам</b>' : isInter ? '🎯 <b>Межгород лично вам</b>' : '🎯 <b>Заявка лично вам</b>')
-        : (isDel ? '📦 <b>Новая доставка</b>' : isInter ? `🛣 <b>Межгород в ${r.to_city}</b>` : '🚕 <b>Новая заявка</b>');
-      const extra = `${r.to_city ? `\n🛣 Город назначения: <b>${r.to_city}</b>` : ''}${r.passenger_price ? `\n💰 Пассажир предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
-      for (const d of drv || [])
-        if (d.telegram_id) await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
-          { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'driver')]] } });
-      await db.from('rides').update({ notified: true }).eq('id', r.id);
-    }
-
-    // отклик -> пассажиру
-    const { data: offs } = await db.from('offers').select('*').eq('notified', false).eq('status', 'pending');
-    for (const o of offs || []) {
-      const { data: ride } = await db.from('rides').select('passenger_id,to_address').eq('id', o.ride_id).maybeSingle();
-      if (ride) {
-        const tid = await tgIdOf(ride.passenger_id);
-        if (tid) await send(tid, `💰 <b>${o.driver_name || 'Водитель'} назвал цену: ${o.price} ₽</b>\nМаршрут: ${ride.to_address}`,
-          { reply_markup: { inline_keyboard: [[wa('Посмотреть', 'order')]] } });
+    try {
+      // новая заявка -> водителям
+      const { data: rides } = await db.from('rides').select('*').eq('status', 'created').eq('notified', false);
+      for (const r of rides || []) {
+        let q = db.from('users').select('telegram_id').eq('status', 'online').in('role', ['driver', 'both']);
+        if (r.kind === 'delivery') q = q.eq('delivery', true);
+        if (r.to_city) q = q.eq('intercity', true);
+        if (r.target_driver_id) q = db.from('users').select('telegram_id').eq('id', r.target_driver_id);
+        const { data: drv } = await q;
+        const isDel = r.kind === 'delivery';
+        const isInter = !!r.to_city;
+        const head = r.target_driver_id
+          ? (isDel ? '🎯 <b>Доставка лично вам</b>' : isInter ? '🎯 <b>Межгород лично вам</b>' : '🎯 <b>Заявка лично вам</b>')
+          : (isDel ? '📦 <b>Новая доставка</b>' : isInter ? `🛣 <b>Межгород в ${r.to_city}</b>` : '🚕 <b>Новая заявка</b>');
+        const extra = `${r.to_city ? `\n🛣 Город назначения: <b>${r.to_city}</b>` : ''}${r.passenger_price ? `\n💰 Пассажир предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
+        for (const d of drv || [])
+          if (d.telegram_id) await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
+            { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'driver')]] } });
+        await db.from('rides').update({ notified: true }).eq('id', r.id);
       }
-      await db.from('offers').update({ notified: true }).eq('id', o.id);
-    }
 
-    // выбрали -> водителю
-    const { data: conf } = await db.from('rides').select('*').eq('status', 'confirmed').eq('driver_notified', false);
-    for (const r of conf || []) {
-      const route = `📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${r.price ? `\n💰 <b>Цена:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
+    } catch (e) { notifyErrors['новая заявка -> водителям'] = e.message; console.error('notify:новая заявка -> водителям', e.message); }
 
-      // водителю — контакты пассажира
-      if (r.driver_id) {
-        const tid = await tgIdOf(r.driver_id);
+    try {
+      // отклик -> пассажиру
+      const { data: offs } = await db.from('offers').select('*').eq('notified', false).eq('status', 'pending');
+      for (const o of offs || []) {
+        const { data: ride } = await db.from('rides').select('passenger_id,to_address').eq('id', o.ride_id).maybeSingle();
+        if (ride) {
+          const tid = await tgIdOf(ride.passenger_id);
+          if (tid) await send(tid, `💰 <b>${o.driver_name || 'Водитель'} назвал цену: ${o.price} ₽</b>\nМаршрут: ${ride.to_address}`,
+            { reply_markup: { inline_keyboard: [[wa('Посмотреть', 'order')]] } });
+        }
+        await db.from('offers').update({ notified: true }).eq('id', o.id);
+      }
+
+    } catch (e) { notifyErrors['отклик -> пассажиру'] = e.message; console.error('notify:отклик -> пассажиру', e.message); }
+
+    try {
+      // выбрали -> водителю
+      const { data: conf } = await db.from('rides').select('*').eq('status', 'confirmed').eq('driver_notified', false);
+      for (const r of conf || []) {
+        const route = `📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${r.price ? `\n💰 <b>Цена:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
+
+        // водителю — контакты пассажира
+        if (r.driver_id) {
+          const tid = await tgIdOf(r.driver_id);
+          if (tid) {
+            const card = await contactCard(r.passenger_id, 'Пассажир');
+            await send(tid, `✅ <b>Вас выбрали!</b>\n\n${route}${card}`,
+              { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
+          }
+        }
+        // пассажиру — контакты водителя
+        if (r.passenger_id) {
+          const tid = await tgIdOf(r.passenger_id);
+          if (tid) {
+            const card = await contactCard(r.driver_id, 'Водитель');
+            await send(tid, `🚕 <b>Водитель принял заказ</b>\n\n${route}${card}`,
+              { reply_markup: { inline_keyboard: [[wa('Открыть поездку', 'order')]] } });
+          }
+        }
+        await db.from('rides').update({ driver_notified: true }).eq('id', r.id);
+      }
+
+    } catch (e) { notifyErrors['выбрали -> водителю'] = e.message; console.error('notify:выбрали -> водителю', e.message); }
+
+    try {
+      // сообщения чата -> второй стороне
+      const { data: msgs } = await db.from('messages').select('*').eq('notified', false);
+      for (const msg of msgs || []) {
+        const { data: ride } = await db.from('rides').select('passenger_id,driver_id').eq('id', msg.ride_id).maybeSingle();
+        if (ride) {
+          const other = msg.sender_id === ride.passenger_id ? ride.driver_id : ride.passenger_id;
+          if (other) {
+            const tid = await tgIdOf(other);
+            if (tid) await send(tid, `💬 <b>${msg.sender_name || 'Новое сообщение'}</b>\n${msg.text}`,
+              { reply_markup: { inline_keyboard: [[{ text: '💬 Ответить', web_app: { url: `${APP_URL}?s=chat&ride=${msg.ride_id}` } }]] } });
+          }
+        }
+        await db.from('messages').update({ notified: true }).eq('id', msg.id);
+      }
+
+    } catch (e) { notifyErrors['сообщения чата -> второй стороне'] = e.message; console.error('notify:сообщения чата -> второй стороне', e.message); }
+
+    try {
+      // поездка завершена -> обоим
+      const { data: fin } = await db.from('rides').select('*').eq('status', 'completed').eq('done_notified', false);
+      for (const r of fin || []) {
+        const kindTxt = r.kind === 'delivery' ? '📦 Доставка выполнена' : '🏁 Поездка завершена';
+        const when = new Date(r.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const base = `<b>${kindTxt}</b>\n\n📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${r.to_city ? `\n🛣 <b>Город:</b> ${r.to_city}` : ''}${r.price ? `\n💰 <b>Сумма:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}\n🕒 ${when}`;
+        // пассажиру
+        let drvName = '', drvCar = '';
+        if (r.driver_id) {
+          const { data: dv } = await db.from('users').select('name,car,plate').eq('id', r.driver_id).maybeSingle();
+          if (dv) { drvName = dv.name || ''; drvCar = `${dv.car || ''}${dv.plate ? ' · ' + dv.plate : ''}`; }
+        }
+        if (r.passenger_id) {
+          const tid = await tgIdOf(r.passenger_id);
+          if (tid) await send(tid,
+            `${base}${drvName ? `\n👤 <b>Водитель:</b> ${drvName}${drvCar ? ` (${drvCar})` : ''}` : ''}\n\nОцените поездку — это поможет другим пассажирам.`,
+            { reply_markup: { inline_keyboard: [[wa('Оценить', 'order')]] } });
+        }
+        if (r.driver_id) {
+          const tid = await tgIdOf(r.driver_id);
+          if (tid) await send(tid,
+            `${base}${r.passenger_name ? `\n👤 <b>Пассажир:</b> ${r.passenger_name}` : ''}\n\nСпасибо за работу!`,
+            { reply_markup: { inline_keyboard: [[wa('К заявкам', 'driver')]] } });
+        }
+        await db.from('rides').update({ done_notified: true }).eq('id', r.id);
+      }
+
+    } catch (e) { notifyErrors['поездка завершена -> обоим'] = e.message; console.error('notify:поездка завершена -> обоим', e.message); }
+
+    try {
+      // смена закончилась -> итог водителю
+      const { data: sh } = await db.from('shifts').select('*').eq('notified', false).not('ended_at', 'is', null);
+      for (const s of sh || []) {
+        const tid = await tgIdOf(s.driver_id);
         if (tid) {
-          const card = await contactCard(r.passenger_id, 'Пассажир');
-          await send(tid, `✅ <b>Вас выбрали!</b>\n\n${route}${card}`,
-            { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
+          const h = Math.floor((s.minutes || 0) / 60), mm = (s.minutes || 0) % 60;
+          const { data: rr } = await db.from('rides')
+            .select('price')
+            .eq('driver_id', s.driver_id).eq('status', 'completed')
+            .gte('created_at', s.started_at).lte('created_at', s.ended_at);
+          const done = (rr || []).length;
+          const earned = (rr || []).reduce((a, x) => a + (Number(x.price) || 0), 0);
+          const perHour = s.minutes > 0 ? Math.round(earned / (s.minutes / 60)) : 0;
+          await send(tid, `🏁 <b>Смена окончена</b>\nНа линии: <b>${h} ч ${mm} мин</b>\nПоездок: <b>${done}</b>\nЗаработано: <b>${earned} ₽</b>${done ? `\nВ среднем: ${Math.round(earned / done)} ₽ за поездку · ${perHour} ₽ в час` : ''}\n\nОтдыхайте, возвращайтесь когда будет удобно.`);
+        }
+        await db.from('shifts').update({ notified: true }).eq('id', s.id);
+      }
+
+    } catch (e) { notifyErrors['смена закончилась -> итог водителю'] = e.message; console.error('notify:смена закончилась -> итог водителю', e.message); }
+
+    try {
+      // водитель приехал -> пассажиру
+      const { data: arr } = await db.from('rides').select('*').eq('arrived', true).eq('arrived_notified', false);
+      for (const r of arr || []) {
+        const tid = await tgIdOf(r.passenger_id);
+        if (tid) await send(tid, `🚗 <b>Водитель на месте</b>\n${r.from_address}\nМашина ждёт вас.`);
+        await db.from('rides').update({ arrived_notified: true }).eq('id', r.id);
+      }
+
+    } catch (e) { notifyErrors['водитель приехал -> пассажиру'] = e.message; console.error('notify:водитель приехал -> пассажиру', e.message); }
+
+    try {
+      // отзывы становятся видимыми, когда обе стороны оценили
+      const { data: hidden } = await db.from('reviews').select('*').eq('visible', false);
+      for (const rv of hidden || []) {
+        const { data: pair } = await db.from('reviews').select('id').eq('ride_id', rv.ride_id).neq('id', rv.id).limit(1);
+        const old = Date.now() - new Date(rv.created_at).getTime() > 24 * 3600 * 1000;
+        if ((pair && pair.length) || old) {
+          await db.from('reviews').update({ visible: true }).eq('ride_id', rv.ride_id);
         }
       }
-      // пассажиру — контакты водителя
-      if (r.passenger_id) {
-        const tid = await tgIdOf(r.passenger_id);
+
+    } catch (e) { notifyErrors['отзывы становятся видимыми, когда обе ст'] = e.message; console.error('notify:отзывы становятся видимыми, когда обе ст', e.message); }
+
+    try {
+      // новые отзывы -> уведомить того, о ком отзыв (только когда отзыв стал видимым)
+      // уведомляем не сразу, а через 5 минут после того, как отзыв оставили
+      const revCut = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: nrev } = await db.from('reviews').select('*')
+        .eq('visible', true).eq('notified', false).lt('created_at', revCut);
+      for (const rv of nrev || []) {
+        const tid = await tgIdOf(rv.target_id);
         if (tid) {
-          const card = await contactCard(r.driver_id, 'Водитель');
-          await send(tid, `🚕 <b>Водитель принял заказ</b>\n\n${route}${card}`,
-            { reply_markup: { inline_keyboard: [[wa('Открыть поездку', 'order')]] } });
+          const stars = '⭐'.repeat(rv.rating);
+          await send(tid, `📝 <b>Новый отзыв о вас</b>\n${stars}${rv.comment ? '\n«' + rv.comment + '»' : ''}\n\nОткройте приложение, вкладка «Отзывы».`);
         }
+        await db.from('reviews').update({ notified: true }).eq('id', rv.id);
       }
-      await db.from('rides').update({ driver_notified: true }).eq('id', r.id);
-    }
 
-    // сообщения чата -> второй стороне
-    const { data: msgs } = await db.from('messages').select('*').eq('notified', false);
-    for (const msg of msgs || []) {
-      const { data: ride } = await db.from('rides').select('passenger_id,driver_id').eq('id', msg.ride_id).maybeSingle();
-      if (ride) {
-        const other = msg.sender_id === ride.passenger_id ? ride.driver_id : ride.passenger_id;
-        if (other) {
-          const tid = await tgIdOf(other);
-          if (tid) await send(tid, `💬 <b>${msg.sender_name || 'Новое сообщение'}</b>\n${msg.text}`,
-            { reply_markup: { inline_keyboard: [[{ text: '💬 Ответить', web_app: { url: `${APP_URL}?s=chat&ride=${msg.ride_id}` } }]] } });
+    } catch (e) { notifyErrors['новые отзывы -> уведомить того, о ком от'] = e.message; console.error('notify:новые отзывы -> уведомить того, о ком от', e.message); }
+
+    try {
+      // сообщения от админа -> юзеру в бот
+      const { data: ams } = await db.from('admin_msgs').select('*').eq('sent', false);
+      for (const a of ams || []) {
+        const tid = await tgIdOf(a.to_user);
+        if (tid) await send(tid, `<b>Сообщение от администрации Бомбилы:</b>\n${a.text}`);
+        await db.from('admin_msgs').update({ sent: true }).eq('id', a.id);
+      }
+
+    } catch (e) { notifyErrors['сообщения от админа -> юзеру в бот'] = e.message; console.error('notify:сообщения от админа -> юзеру в бот', e.message); }
+
+    try {
+      // одобренный возврат -> отправить промокод
+      const { data: appr } = await db.from('winback_queue').select('*').eq('status', 'approved');
+      for (const w of appr || []) {
+        const { data: u } = await db.from('users').select('telegram_id,name').eq('id', w.user_id).maybeSingle();
+        if (u && u.telegram_id) {
+          const code = 'BACK' + Math.random().toString(36).slice(2, 6).toUpperCase();
+          const exp = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+          await db.from('promos').insert({ code, days: 2, for_user: w.user_id, expires_at: exp });
+          await db.from('users').update({ winback_sent: new Date().toISOString() }).eq('id', w.user_id);
+          await send(u.telegram_id,
+            `🎁 <b>Мы соскучились!</b>\nДержите промокод на <b>2 дня бесплатной работы</b>:\n\n<code>${code}</code>\n\nВведите в приложении → Профиль → Подписка → «Промокод». Действует 7 дней.`);
         }
+        await db.from('winback_queue').update({ status: 'done' }).eq('id', w.id);
       }
-      await db.from('messages').update({ notified: true }).eq('id', msg.id);
-    }
 
-    // поездка завершена -> обоим
-    const { data: fin } = await db.from('rides').select('*').eq('status', 'completed').eq('done_notified', false);
-    for (const r of fin || []) {
-      const kindTxt = r.kind === 'delivery' ? '📦 Доставка выполнена' : '🏁 Поездка завершена';
-      const when = new Date(r.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-      const base = `<b>${kindTxt}</b>\n\n📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${r.to_city ? `\n🛣 <b>Город:</b> ${r.to_city}` : ''}${r.price ? `\n💰 <b>Сумма:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}\n🕒 ${when}`;
-      // пассажиру
-      let drvName = '', drvCar = '';
-      if (r.driver_id) {
-        const { data: dv } = await db.from('users').select('name,car,plate').eq('id', r.driver_id).maybeSingle();
-        if (dv) { drvName = dv.name || ''; drvCar = `${dv.car || ''}${dv.plate ? ' · ' + dv.plate : ''}`; }
-      }
-      if (r.passenger_id) {
-        const tid = await tgIdOf(r.passenger_id);
-        if (tid) await send(tid,
-          `${base}${drvName ? `\n👤 <b>Водитель:</b> ${drvName}${drvCar ? ` (${drvCar})` : ''}` : ''}\n\nОцените поездку — это поможет другим пассажирам.`,
-          { reply_markup: { inline_keyboard: [[wa('Оценить', 'order')]] } });
-      }
-      if (r.driver_id) {
-        const tid = await tgIdOf(r.driver_id);
-        if (tid) await send(tid,
-          `${base}${r.passenger_name ? `\n👤 <b>Пассажир:</b> ${r.passenger_name}` : ''}\n\nСпасибо за работу!`,
-          { reply_markup: { inline_keyboard: [[wa('К заявкам', 'driver')]] } });
-      }
-      await db.from('rides').update({ done_notified: true }).eq('id', r.id);
-    }
+    } catch (e) { notifyErrors['одобренный возврат -> отправить промокод'] = e.message; console.error('notify:одобренный возврат -> отправить промокод', e.message); }
 
-    // смена закончилась -> итог водителю
-    const { data: sh } = await db.from('shifts').select('*').eq('notified', false).not('ended_at', 'is', null);
-    for (const s of sh || []) {
-      const tid = await tgIdOf(s.driver_id);
-      if (tid) {
-        const h = Math.floor((s.minutes || 0) / 60), mm = (s.minutes || 0) % 60;
-        const { data: rr } = await db.from('rides')
-          .select('price')
-          .eq('driver_id', s.driver_id).eq('status', 'completed')
-          .gte('created_at', s.started_at).lte('created_at', s.ended_at);
-        const done = (rr || []).length;
-        const earned = (rr || []).reduce((a, x) => a + (Number(x.price) || 0), 0);
-        const perHour = s.minutes > 0 ? Math.round(earned / (s.minutes / 60)) : 0;
-        await send(tid, `🏁 <b>Смена окончена</b>\nНа линии: <b>${h} ч ${mm} мин</b>\nПоездок: <b>${done}</b>\nЗаработано: <b>${earned} ₽</b>${done ? `\nВ среднем: ${Math.round(earned / done)} ₽ за поездку · ${perHour} ₽ в час` : ''}\n\nОтдыхайте, возвращайтесь когда будет удобно.`);
+    try {
+      // отмена заказа -> уведомляем вторую сторону
+      const { data: canc } = await db.from('rides').select('*')
+        .like('status', 'cancelled%').eq('cancel_notified', false);
+      for (const r of canc || []) {
+        const byPassenger = String(r.status).includes('passenger');
+        const route = `${r.from_address} → ${r.to_address}`;
+        if (byPassenger && r.driver_id) {
+          const tid = await tgIdOf(r.driver_id);
+          if (tid) await send(tid, `❌ <b>Пассажир отменил заказ</b>\n${route}\n\nМожете принимать другие заявки.`,
+            { reply_markup: { inline_keyboard: [[wa('К заявкам', 'driver')]] } });
+        } else if (!byPassenger && r.passenger_id) {
+          const tid = await tgIdOf(r.passenger_id);
+          if (tid) await send(tid, `❌ <b>Заказ отменён</b>\n${route}\n\nПопробуйте отправить заявку снова — на линии есть другие водители.`,
+            { reply_markup: { inline_keyboard: [[wa('Заказать снова', 'order')]] } });
+        }
+        await db.from('rides').update({ cancel_notified: true }).eq('id', r.id);
       }
-      await db.from('shifts').update({ notified: true }).eq('id', s.id);
-    }
 
-    // водитель приехал -> пассажиру
-    const { data: arr } = await db.from('rides').select('*').eq('arrived', true).eq('arrived_notified', false);
-    for (const r of arr || []) {
-      const tid = await tgIdOf(r.passenger_id);
-      if (tid) await send(tid, `🚗 <b>Водитель на месте</b>\n${r.from_address}\nМашина ждёт вас.`);
-      await db.from('rides').update({ arrived_notified: true }).eq('id', r.id);
-    }
+    } catch (e) { notifyErrors['отмена заказа -> уведомляем вторую сторо'] = e.message; console.error('notify:отмена заказа -> уведомляем вторую сторо', e.message); }
 
-    // отзывы становятся видимыми, когда обе стороны оценили
-    const { data: hidden } = await db.from('reviews').select('*').eq('visible', false);
-    for (const rv of hidden || []) {
-      const { data: pair } = await db.from('reviews').select('id').eq('ride_id', rv.ride_id).neq('id', rv.id).limit(1);
-      const old = Date.now() - new Date(rv.created_at).getTime() > 24 * 3600 * 1000;
-      if ((pair && pair.length) || old) {
-        await db.from('reviews').update({ visible: true }).eq('ride_id', rv.ride_id);
+    try {
+      // водитель отказался: заявка вернулась в общий пул -> сообщаем пассажиру
+      const { data: back } = await db.from('rides').select('*')
+        .eq('status', 'created').eq('cancelled_by', 'driver').eq('cancel_notified', false);
+      for (const r of back || []) {
+        if (r.passenger_id) {
+          const tid = await tgIdOf(r.passenger_id);
+          if (tid) await send(tid, `↩️ <b>Водитель отказался от заказа</b>\n${r.from_address} → ${r.to_address}\n\nЗаявка снова активна — ждём других водителей.`,
+            { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
+        }
+        await db.from('rides').update({ cancel_notified: true }).eq('id', r.id);
       }
-    }
 
-    // новые отзывы -> уведомить того, о ком отзыв (только когда отзыв стал видимым)
-    // уведомляем не сразу, а через 5 минут после того, как отзыв оставили
-    const revCut = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const { data: nrev } = await db.from('reviews').select('*')
-      .eq('visible', true).eq('notified', false).lt('created_at', revCut);
-    for (const rv of nrev || []) {
-      const tid = await tgIdOf(rv.target_id);
-      if (tid) {
-        const stars = '⭐'.repeat(rv.rating);
-        await send(tid, `📝 <b>Новый отзыв о вас</b>\n${stars}${rv.comment ? '\n«' + rv.comment + '»' : ''}\n\nОткройте приложение, вкладка «Отзывы».`);
+    } catch (e) { notifyErrors['водитель отказался: заявка вернулась в о'] = e.message; console.error('notify:водитель отказался: заявка вернулась в о', e.message); }
+    try {
+      // одна сторона оценила -> напоминаем второй
+      const cut2 = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+      const { data: fin2 } = await db.from('rides').select('*')
+        .eq('status', 'completed').eq('review_nudged', false).lt('created_at', new Date().toISOString()).limit(50);
+      for (const r of fin2 || []) {
+        if (!r.driver_id || !r.passenger_id) continue;
+        const { data: revs } = await db.from('reviews').select('from_id,created_at').eq('ride_id', r.id);
+        if (!revs || revs.length === 0) continue;
+        if (revs.length >= 2) { await db.from('rides').update({ review_nudged: true }).eq('id', r.id); continue; }
+        // прошло ли 2 минуты с момента первого отзыва
+        if (revs[0].created_at > cut2) continue;
+        const who = revs[0].from_id;
+        const other = who === r.passenger_id ? r.driver_id : r.passenger_id;
+        const tid = await tgIdOf(other);
+        if (tid) {
+          const isDrv = other === r.driver_id;
+          await send(tid,
+            `⭐ <b>Оцените ${isDrv ? 'пассажира' : 'поездку'}</b>\n${r.from_address} → ${r.to_address}\n\nВторая сторона уже оставила оценку. Оставьте свою — отзывы откроются обоим.`,
+            { reply_markup: { inline_keyboard: [[wa('Оценить', isDrv ? 'driver' : 'order')]] } });
+        }
+        await db.from('rides').update({ review_nudged: true }).eq('id', r.id);
       }
-      await db.from('reviews').update({ notified: true }).eq('id', rv.id);
-    }
+    } catch (e) { notifyErrors['review-nudge'] = e.message; console.error('notify:review-nudge', e.message); }
 
-    // сообщения от админа -> юзеру в бот
-    const { data: ams } = await db.from('admin_msgs').select('*').eq('sent', false);
-    for (const a of ams || []) {
-      const tid = await tgIdOf(a.to_user);
-      if (tid) await send(tid, `<b>Сообщение от администрации Бомбилы:</b>\n${a.text}`);
-      await db.from('admin_msgs').update({ sent: true }).eq('id', a.id);
-    }
-
-    // одобренный возврат -> отправить промокод
-    const { data: appr } = await db.from('winback_queue').select('*').eq('status', 'approved');
-    for (const w of appr || []) {
-      const { data: u } = await db.from('users').select('telegram_id,name').eq('id', w.user_id).maybeSingle();
-      if (u && u.telegram_id) {
-        const code = 'BACK' + Math.random().toString(36).slice(2, 6).toUpperCase();
-        const exp = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
-        await db.from('promos').insert({ code, days: 2, for_user: w.user_id, expires_at: exp });
-        await db.from('users').update({ winback_sent: new Date().toISOString() }).eq('id', w.user_id);
-        await send(u.telegram_id,
-          `🎁 <b>Мы соскучились!</b>\nДержите промокод на <b>2 дня бесплатной работы</b>:\n\n<code>${code}</code>\n\nВведите в приложении → Профиль → Подписка → «Промокод». Действует 7 дней.`);
-      }
-      await db.from('winback_queue').update({ status: 'done' }).eq('id', w.id);
-    }
-
-    // отмена заказа -> уведомляем вторую сторону
-    const { data: canc } = await db.from('rides').select('*')
-      .like('status', 'cancelled%').eq('cancel_notified', false);
-    for (const r of canc || []) {
-      const byPassenger = String(r.status).includes('passenger');
-      const route = `${r.from_address} → ${r.to_address}`;
-      if (byPassenger && r.driver_id) {
-        const tid = await tgIdOf(r.driver_id);
-        if (tid) await send(tid, `❌ <b>Пассажир отменил заказ</b>\n${route}\n\nМожете принимать другие заявки.`,
-          { reply_markup: { inline_keyboard: [[wa('К заявкам', 'driver')]] } });
-      } else if (!byPassenger && r.passenger_id) {
-        const tid = await tgIdOf(r.passenger_id);
-        if (tid) await send(tid, `❌ <b>Заказ отменён</b>\n${route}\n\nПопробуйте отправить заявку снова — на линии есть другие водители.`,
-          { reply_markup: { inline_keyboard: [[wa('Заказать снова', 'order')]] } });
-      }
-      await db.from('rides').update({ cancel_notified: true }).eq('id', r.id);
-    }
-
-    // водитель отказался: заявка вернулась в общий пул -> сообщаем пассажиру
-    const { data: back } = await db.from('rides').select('*')
-      .eq('status', 'created').eq('cancelled_by', 'driver').eq('cancel_notified', false);
-    for (const r of back || []) {
-      if (r.passenger_id) {
-        const tid = await tgIdOf(r.passenger_id);
-        if (tid) await send(tid, `↩️ <b>Водитель отказался от заказа</b>\n${r.from_address} → ${r.to_address}\n\nЗаявка снова активна — ждём других водителей.`,
-          { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
-      }
-      await db.from('rides').update({ cancel_notified: true }).eq('id', r.id);
-    }
-  } catch (e) { console.error('notify', e.message); }
   setTimeout(notifyLoop, 4000);
 }
 
@@ -557,6 +619,7 @@ const notifyStaff = async (text, kb) => {
 const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role);
 const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
 
+const notifyErrors = {};
 const rateMap = new Map();
 setInterval(() => { const t = Date.now(); for (const [k, v] of rateMap) if (t - v.t > 300000) rateMap.delete(k); }, 300000);
 
@@ -575,7 +638,10 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: 'v25-chat-badge' });
+  if (req.method === 'GET') return json(res, 200, {
+    ok: true, service: 'bombily-backend', version: 'v26-notify-fix',
+    notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
+  });
 
   const body = await readBody(req);
   const me = await userFromInit(body.initData || '');
