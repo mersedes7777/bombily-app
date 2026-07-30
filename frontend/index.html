@@ -874,7 +874,9 @@ function drvCard(d){
   <div class="nmx">${esc(d.name)}</div>
   <div class="row"><span class="k">${d.vehicle_type==='moto'?'🏍':'🚗'}</span><span class="car">${esc(d.car)||(d.vehicle_type==='moto'?'мотоцикл':'машина не указана')}</span></div>
   <div class="row"><span class="k">📍 стоит:</span><span class="loc">${esc(d.spot)||'место не указано'}</span></div>
-  ${d.delivery?'<div class="row"><span class="k">📦</span><span style="color:#5B9DF9;font-weight:500">берёт доставку</span></div>':''}
+  ${d.vehicle_type==='moto'
+    ?'<div class="row"><span class="k">📦</span><span style="color:#5B9DF9;font-weight:500">только доставка, без пассажиров</span></div>'
+    :(d.delivery?'<div class="row"><span class="k">📦</span><span style="color:#5B9DF9;font-weight:500">берёт доставку</span></div>':'')}
   ${d.intercity?'<div class="row"><span class="k">🛣</span><span style="color:#A98BF5;font-weight:500">возит в другие города</span></div>':''}
   ${d.status!=='online'?'<div class="row"><span class="k">сейчас оффлайн</span></div>':''}
  </div>
@@ -901,16 +903,20 @@ async function togFav(id){
 }
 
 async function pickDriver(id){
- orderKind='ride';
  const{data}=await db.from('users').select('*').eq('id',id).single();
+ if(!data)return T('Водитель не найден');
+ // мотокурьер возит только посылки — сразу открываем доставку
+ orderKind=(data.vehicle_type==='moto')?'delivery':'ride';
+ interCity=false;
  targetDrv=data;pTab='order';drawP();
+ if(orderKind==='delivery')T('Мотокурьер возит только доставку');
 }
 function formHTML(d){
  const ch=places().map((p,i)=>`<div class="chip" onclick="document.getElementById('to').value='${esc(p)}'">📍 ${esc(p)}<span class="x" onclick="event.stopPropagation();delPlace(${i})">✕</span></div>`).join('');
  const hdr=d?`<div class="card" style="margin:14px 14px 0"><div class="ava">${esc(d.name)[0]}</div><div style="flex:1"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':''}${d.car?'<span>· '+esc(d.car)+'</span>':''}</div></div></div>`:'';
  const isDel=orderKind==='delivery';
  return `<div class="head"><h2>${isDel?(d?'Доставка водителю':'Заказать доставку'):(d?'Заявка водителю':'Заявка всем')}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="${isDel?'Откуда забрать':'Откуда — адрес или ориентир'}"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="${isDel?'Куда доставить':'Куда едем'}"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div>
- ${!isDel?`<div class="fr"><label>Куда едем</label><div class="tabsw"><div class="${!interCity?'on':''}" onclick="interCity=false;document.getElementById('host').innerHTML=formHTML(targetDrv)">По городу</div><div class="${interCity?'on':''}" onclick="interCity=true;document.getElementById('host').innerHTML=formHTML(targetDrv)">🛣 Межгород</div></div></div>`:''}
+ ${(!isDel&&!(d&&d.vehicle_type==='moto'))?`<div class="fr"><label>Куда едем</label><div class="tabsw"><div class="${!interCity?'on':''}" onclick="interCity=false;document.getElementById('host').innerHTML=formHTML(targetDrv)">По городу</div><div class="${interCity?'on':''}" onclick="interCity=true;document.getElementById('host').innerHTML=formHTML(targetDrv)">🛣 Межгород</div></div></div>`:''}
  ${(!isDel&&interCity)?`<div class="fr"><label>Город назначения</label><select id="ocity" onchange="document.getElementById('ocityx').style.display=this.value==='__other'?'block':'none'" style="width:100%;background:transparent;border:none;color:var(--ink);font-size:15px;outline:none;padding:2px 0">${CITIES.filter(c=>c!==me.city).map(c=>`<option value="${c}">${c}</option>`).join('')}<option value="__other">Другой город…</option></select><input id="ocityx" placeholder="впишите город" style="display:none;margin-top:8px;width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:9px;padding:10px;color:var(--ink);font-size:14px;outline:none" oninput=""></div>`:''}
  <div class="fr"><label>${isDel?'Что везём — обязательно':'Комментарий для водителя (не обязательно)'}</label><input id="ocom" placeholder="${isDel?'документы, пакет из аптеки, торт…':'трое, большая сумка, второй подъезд…'}" maxlength="200"></div>
  <div class="fr"><label>Ваша цена, ₽ (не обязательно)</label><input id="oprice" inputmode="numeric" placeholder="например 300"></div>
@@ -943,6 +949,7 @@ async function send(did){
  const com=(document.getElementById('ocom')?.value||'').trim().slice(0,200);
  const pp=parseInt(document.getElementById('oprice')?.value)||null;
  if(pp!==null&&(pp<1||pp>100000))return T('Проверьте цену');
+ if(targetDrv&&targetDrv.vehicle_type==='moto'&&orderKind!=='delivery')return T('Этот курьер возит только доставку');
  if(orderKind==='delivery'&&!com)return T('Напишите, что нужно доставить');
  if(orderKind==='delivery'&&!did){
   const{count:dc}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city).eq('delivery',true);
