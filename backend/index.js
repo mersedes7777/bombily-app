@@ -669,7 +669,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v35-audit-clean',
+    ok: true, service: 'bombily-backend', version: 'v36-fio-private',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -851,7 +851,7 @@ http.createServer(async (req, res) => {
       if (vType === 'moto') { updApply.delivery = true; updApply.intercity = false; }
       await db.from('users').update(updApply).eq('id', me.id);
       try {
-        await notifyStaff(`${vType === 'moto' ? '🏍' : '🚗'} <b>Новая заявка${vType === 'moto' ? ' (мотокурьер)' : ' в водители'}</b>\n${fullName}\n📞 ${phone}`,
+        await notifyStaff(`${vType === 'moto' ? '🏍' : '🚗'} <b>Новая заявка${vType === 'moto' ? ' (мотокурьер)' : ' в водители'}</b>\n${me.name}\n📞 ${phone}\n\nФИО и документы — в панели.`,
           { reply_markup: { inline_keyboard: [[wa('Открыть заявки', 'admin')]] } });
       } catch (e) { console.error('notifyStaff apply', e.message); }
       return json(res, 200, { ok: true });
@@ -1242,7 +1242,8 @@ http.createServer(async (req, res) => {
       // карточка пользователя с телефоном (staff)
       if (act === 'user-phone') {
         const { data: c } = await db.from('contacts').select('phone,full_name').eq('user_id', tid).maybeSingle();
-        return json(res, 200, { ok: true, phone: c ? c.phone : null, full_name: c ? c.full_name : null });
+        // ФИО по документам — только администраторам
+        return json(res, 200, { ok: true, phone: c ? c.phone : null, full_name: (c && isAdminUp(me)) ? c.full_name : null });
       }
       // телефоны заявок в водители (staff)
       if (act === 'apps-phones') {
@@ -1250,7 +1251,8 @@ http.createServer(async (req, res) => {
         if (!ids.length) return json(res, 200, { ok: true, map: {} });
         const { data } = await db.from('contacts').select('user_id,phone,full_name').in('user_id', ids);
         const map = {}, names = {};
-        (data || []).forEach(c => { map[c.user_id] = c.phone; if (c.full_name) names[c.user_id] = c.full_name; });
+        const canSeeFio = isAdminUp(me);
+        (data || []).forEach(c => { map[c.user_id] = c.phone; if (canSeeFio && c.full_name) names[c.user_id] = c.full_name; });
         return json(res, 200, { ok: true, map, names });
       }
       if (act === 'del-review') {
