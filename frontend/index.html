@@ -550,11 +550,20 @@ let curShift=null,shiftTick=null,pendingShift=null;
 let pendingDone=null;
 let active=null,dActive=null,offCh=null,inCh=null,myCh=null,rideCh=null,reqs=[],myOffs=[],targetDrv=null;
 
+function bootMsg(t){
+ const e=document.querySelector('#boot .btag');
+ if(e)e.textContent=t;
+}
+const BOOT_T0=Date.now();
 function hideBoot(){
  const b=document.getElementById('boot');
  if(!b)return;
- b.classList.add('gone');
- setTimeout(()=>{b.style.display='none';},380);
+ // не мигаем: заставка живёт минимум 900 мс
+ const wait=Math.max(0,900-(Date.now()-BOOT_T0));
+ setTimeout(()=>{
+  b.classList.add('gone');
+  setTimeout(()=>{b.style.display='none';},380);
+ },wait);
 }
 function showErr(msg){const e=document.getElementById('err');document.getElementById('errt').textContent=msg;e.style.display='block';}
 function hideErr(){document.getElementById('err').style.display='none';}
@@ -661,7 +670,7 @@ function withTimeout(promise,ms,label){
 }
 async function boot(){
  try{
-  document.getElementById('boot').innerHTML='<div style="color:#7f8d86">Подключение к базе…</div>';
+  bootMsg('соединяемся…');
   let{data,error:qerr}=await withTimeout(db.from('users').select('*').eq('telegram_id',tgId).maybeSingle(),10000,'запрос пользователя');
   if(qerr)throw qerr;
   if(!data){
@@ -676,24 +685,37 @@ async function boot(){
   if(tu&&tu.first_name&&/^Гость/i.test(me.name||'')){
    try{await db.from('users').update({name:tu.first_name}).eq('id',me.id);me.name=tu.first_name;}catch(e){}
   }
-  try{const{data:st}=await db.from('settings').select('*').eq('id',1).maybeSingle();if(st)SETTINGS=st;}catch(e){}
-  await loadUnreadRev();
-  // личные данные (телефон, ФИО, сохранённые адреса) лежат в закрытом хранилище
-  try{
-   const pr=await withTimeout(api('/api/my-private'),6000,'личные данные');
+  bootMsg('почти готово…');
+  // всё независимое грузим разом, а не по очереди
+  const [stR,,prR]=await Promise.allSettled([
+   db.from('settings').select('*').eq('id',1).maybeSingle(),
+   loadUnreadRev(),
+   withTimeout(api('/api/my-private'),4000,'личные данные')
+  ]);
+  if(stR.status==='fulfilled'&&stR.value&&stR.value.data)SETTINGS=stR.value.data;
+  if(prR.status==='fulfilled'){
+   const pr=prR.value;
    if(pr&&!pr.error){
     if(pr.phone)me.phone=pr.phone;
     if(pr.full_name)me.full_name=pr.full_name;
     me.places=pr.places||'[]';
    }
-  }catch(e){}
+  }else{
+   // не дождались — догрузим фоном, экран не держим
+   api('/api/my-private').then(pr=>{
+    if(!pr||pr.error)return;
+    if(pr.phone)me.phone=pr.phone;
+    if(pr.full_name)me.full_name=pr.full_name;
+    if(pr.places){me.places=pr.places;if(role==='passenger'&&pTab==='order')drawP();}
+   }).catch(()=>{});
+  }
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){me.staff_role='owner';}
   if(me.is_banned){document.getElementById('boot').innerHTML='<div style="color:#e2585a"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return;}
   hideBoot();
   // интерфейс показан: посторонние ошибки (например от скрипта Telegram
   // при открытии клавиатуры) больше не должны закрывать экран
   window.__booted=true;
-  const miss=await checkSchema();
+  const miss=window.__skipSchema?[]:await checkSchema();
   if(miss.length){
    document.getElementById('boot').classList.remove('gone');document.getElementById('boot').style.display='flex';
    document.getElementById('boot').innerHTML='<div style="color:#e2585a;line-height:1.6"><b>База не обновлена</b><br><br>Не выполнены файлы:<br><b>'+miss.join('<br>')+'</b><br><br>Откройте Supabase → SQL Editor и выполните их, затем перезапустите приложение.</div>';
