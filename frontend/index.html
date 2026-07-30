@@ -1432,7 +1432,7 @@ async function inbox(m){
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
  ${me.vehicle_type==='moto'
-  ? `<div class="motonote">🏍 Мотокурьер — вам приходят только заказы на доставку</div>`
+  ? `<div class="motonote">🏍 На мотоцикле · ${esc(me.car)||'мотоцикл'} — приходят только заказы на доставку</div>`
   : `<div class="modes">
   <button class="mode ${me.delivery?'on':''}" onclick="togDelivery()"><span class="mi2">📦</span>Доставка<i>${me.delivery?'вкл':'выкл'}</i></button>
   <button class="mode ${me.intercity?'on':''}" onclick="togIntercity()"><span class="mi2">🛣</span>Межгород<i>${me.intercity?'вкл':'выкл'}</i></button>
@@ -1543,8 +1543,11 @@ async function tglOn(){
 async function shiftSheet(){
  let hrs=8;
  const opts=[4,6,8,10];
+ const cars=await shiftVehicles();
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>Выйти на линию</h3><div class="s">На сколько выходите? По истечении времени смена закроется сама и придёт итог. Максимум 10 часов подряд.</div><div id="shl"></div>
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Выйти на линию</h3><div class="s">На сколько выходите? По истечении времени смена закроется сама и придёт итог. Максимум 10 часов подряд.</div>
+ ${cars.length>1?`<div class="sec" style="padding-left:0">На чём работаете</div><div id="shveh">${cars.map(c=>`<div class="carrow ${c.is_active?'act':''}" onclick="pickShiftVeh('${c.id}')"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${c.kind==='moto'?'🏍 ':'🚗 '}${esc(c.brand)}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px"><span class="plate">${esc(c.plate)}</span>${c.kind==='moto'?' · только доставка':''}</div></div>${c.is_active?'<span style="color:var(--g);font-size:12px;font-weight:600">выбрано</span>':''}</div>`).join('')}</div>`:''}
+ <div id="shl"></div>
  <div class="fr"><label>Или до конкретного времени</label>
   <div class="tsel">
    <select id="sh_h"><option value="">час</option></select>
@@ -1568,6 +1571,15 @@ async function shiftSheet(){
   }
   hs.onchange=()=>{document.querySelectorAll('#shl .plan').forEach(p=>p.classList.remove('on'));};
  }
+}
+async function pickShiftVeh(id){
+ const r=await api('/api/car-activate',{car_id:id});
+ if(r.error)return T(r.error==='not_approved'?'Транспорт ещё не проверен':'Ошибка');
+ me.car=r.brand;me.plate=r.plate;me.vehicle_type=r.kind;
+ if(r.kind==='moto'){me.delivery=true;me.intercity=false;}
+ const old=document.getElementById('sh');if(old)old.remove();
+ shiftSheet();
+ T(r.kind==='moto'?'Мотоцикл — будут приходить доставки':'Работаете на '+r.brand);
 }
 function clearShTime(){const h=document.getElementById('sh_h');if(h)h.value='';}
 async function startShift(){
@@ -1642,7 +1654,7 @@ async function saveSpot(){
 async function load(){
  const cut=new Date(Date.now()-10*60000).toISOString();
  let q=db.from('rides').select('*').eq('status','created').eq('city',me.city).gt('created_at',cut);
- if(me.vehicle_type==='moto')q=q.eq('kind','delivery');
+ if(me.vehicle_type==='moto'||(me.car&&/мото|moto/i.test(me.car)&&me.delivery))q=q.eq('kind','delivery');
  else{
   if(!me.delivery)q=q.or('kind.is.null,kind.eq.ride');
   if(!me.intercity)q=q.is('to_city',null);
@@ -1778,6 +1790,10 @@ function dProfHTML(){
  }
  return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.vehicle_type==='moto'?'<div class="pr" style="margin-top:4px;color:#5B9DF9">🏍 мотокурьер · только доставка</div>':(me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':'')}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Мой транспорт</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Весь транспорт ›</span></div></div></div>
  <div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
+}
+async function shiftVehicles(){
+ const r=await api('/api/cars-list');
+ return (r.items||[]).filter(c=>c.approved);
 }
 async function myCars(){
  const m=document.createElement('div');m.className='mask';m.id='sh';

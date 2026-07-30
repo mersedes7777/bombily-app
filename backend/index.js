@@ -172,7 +172,7 @@ async function notifyLoop() {
       const { data: rides } = await db.from('rides').select('*').eq('status', 'created').eq('notified', false);
       for (const r of rides || []) {
         let q = db.from('users').select('telegram_id').eq('status', 'online').in('role', ['driver', 'both']);
-        if (r.kind === 'delivery') q = q.eq('delivery', true);
+        if (r.kind === 'delivery') q = q.or('delivery.eq.true,vehicle_type.eq.moto'); // мотокурьеры получают доставку всегда
         else q = q.or('vehicle_type.is.null,vehicle_type.eq.car');  // мотоциклы возят только доставку
         if (r.to_city) q = q.eq('intercity', true);
         if (r.target_driver_id) q = db.from('users').select('telegram_id').eq('id', r.target_driver_id);
@@ -669,7 +669,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v32-pending-vehicles',
+    ok: true, service: 'bombily-backend', version: 'v33-shift-vehicle',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -810,6 +810,7 @@ http.createServer(async (req, res) => {
       const isMoto = c.kind === 'moto';
       const upd = { car: c.brand, plate: c.plate, vehicle_type: isMoto ? 'moto' : 'car' };
       if (isMoto) { upd.delivery = true; upd.intercity = false; }
+      if (me.role === 'passenger') upd.role = 'both';
       await db.from('users').update(upd).eq('id', me.id);
       return json(res, 200, { ok: true, brand: c.brand, plate: c.plate, kind: c.kind || 'car' });
     }
