@@ -669,7 +669,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v31-moto-vehicle',
+    ok: true, service: 'bombily-backend', version: 'v32-pending-vehicles',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -792,9 +792,12 @@ http.createServer(async (req, res) => {
       if (!brand || !plate) return json(res, 400, { error: 'bad_input' });
       const { count } = await db.from('cars').select('*', { count: 'exact', head: true }).eq('user_id', me.id);
       if ((count || 0) >= 5) return json(res, 400, { error: 'too_many' });
-      await db.from('cars').insert({ user_id: me.id, brand, plate, kind, photo: body.photo || null, approved: false });
-      await notifyStaff(`${kind === 'moto' ? '🏍' : '🚙'} <b>Новый транспорт на проверку</b>\n${me.name}\n${brand} · ${plate}${kind === 'moto' ? '\n(мотоцикл — только доставка)' : ''}`,
-        { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
+      const ins = await db.from('cars').insert({ user_id: me.id, brand, plate, kind, photo: body.photo || null, approved: false });
+      if (ins.error) return json(res, 400, { error: ins.error.message });
+      try {
+        await notifyStaff(`${kind === 'moto' ? '🏍' : '🚙'} <b>Новый транспорт на проверку</b>\n${me.name}\n${brand} · ${plate}${kind === 'moto' ? '\n(мотоцикл — только доставка)' : ''}`,
+          { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
+      } catch (e) { console.error('notifyStaff car-add', e.message); }
       return json(res, 200, { ok: true });
     }
 
@@ -846,8 +849,10 @@ http.createServer(async (req, res) => {
       const updApply = { has_phone: true, driver_status: 'pending', vehicle_type: vType };
       if (vType === 'moto') { updApply.delivery = true; updApply.intercity = false; }
       await db.from('users').update(updApply).eq('id', me.id);
-      await notifyStaff(`${vType === 'moto' ? '🏍' : '🚗'} <b>Новая заявка${vType === 'moto' ? ' (мотокурьер)' : ' в водители'}</b>\n${fullName}\n📞 ${phone}`,
-        { reply_markup: { inline_keyboard: [[wa('Открыть заявки', 'admin')]] } });
+      try {
+        await notifyStaff(`${vType === 'moto' ? '🏍' : '🚗'} <b>Новая заявка${vType === 'moto' ? ' (мотокурьер)' : ' в водители'}</b>\n${fullName}\n📞 ${phone}`,
+          { reply_markup: { inline_keyboard: [[wa('Открыть заявки', 'admin')]] } });
+      } catch (e) { console.error('notifyStaff apply', e.message); }
       return json(res, 200, { ok: true });
     }
 
@@ -909,9 +914,11 @@ http.createServer(async (req, res) => {
         review_id: body.review_id || null,
         kind: body.kind || 'user'
       });
-      await notifyStaff(
-        `${isReview ? '📝' : '⚠️'} <b>${isReview ? 'Спор по отзыву' : 'Новая жалоба'}</b>\nОт: ${me.name}${isReview ? '' : `\nНа: ${body.target_name || '—'}`}\nПричина: ${String(body.reason || '').slice(0, 200)}`,
-        { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
+      try {
+        await notifyStaff(
+          `${isReview ? '📝' : '⚠️'} <b>${isReview ? 'Спор по отзыву' : 'Новая жалоба'}</b>\nОт: ${me.name}${isReview ? '' : `\nНа: ${body.target_name || '—'}`}\nПричина: ${String(body.reason || '').slice(0, 200)}`,
+          { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
+      } catch (e) { console.error('notifyStaff complaint', e.message); }
       return json(res, 200, { ok: true });
     }
 
@@ -1017,12 +1024,37 @@ http.createServer(async (req, res) => {
 
       // счётчики для значков в панели
       if (act === 'admin-counts') {
-        const [{ count: apps }, { count: cmps }, { count: sup }] = await Promise.all([
+        const [{ count: apps }, { count: cmps }, { count: sup }, { count: cars }] = await Promise.all([
           db.from('users').select('*', { count: 'exact', head: true }).eq('driver_status', 'pending'),
           db.from('complaints').select('*', { count: 'exact', head: true }).in('status', ['new','pending']),
-          db.from('support_msgs').select('*', { count: 'exact', head: true }).eq('answered', false)
+          db.from('support_msgs').select('*', { count: 'exact', head: true }).eq('answered', false),
+          db.from('cars').select('*', { count: 'exact', head: true }).eq('approved', false)
         ]);
-        return json(res, 200, { ok: true, apps: apps || 0, complaints: cmps || 0, support: sup || 0 });
+        return json(res, 200, { ok: true, apps: (apps || 0) + (cars || 0), complaints: cmps || 0, support: sup || 0 });
+      }
+
+      // весь транспорт на проверке (staff)
+      if (act === 'cars-pending-list') {
+        const { data } = await db.from('cars').select('*').eq('approved', false).order('created_at', { ascending: false }).limit(50);
+        const ids = [...new Set((data || []).map(c => c.user_id))];
+        let owners = {};
+        if (ids.length) {
+          const { data: us } = await db.from('users').select('id,name,telegram_id,tg_username,driver_status').in('id', ids);
+          (us || []).forEach(u => { owners[u.id] = u; });
+        }
+        const out = [];
+        for (const c of data || []) {
+          let url = null;
+          if (c.photo) {
+            const p = docPath(c.photo);
+            if (p) {
+              const { data: s } = await db.storage.from('docs').createSignedUrl(p, 3600);
+              if (s && s.signedUrl) url = s.signedUrl;
+            }
+          }
+          out.push({ ...c, photo_url: url, owner: owners[c.user_id] || null });
+        }
+        return json(res, 200, { ok: true, items: out });
       }
 
       // машины пользователя (staff)
@@ -1264,10 +1296,13 @@ http.createServer(async (req, res) => {
         const to = body.to ? new Date(body.to + 'T23:59:59').toISOString() : new Date().toISOString();
         const { data: rows } = await db.from('rides').select('driver_id,status,price,created_at,kind,to_city')
           .not('driver_id', 'is', null).gte('created_at', from).lte('created_at', to).limit(5000);
-        const { data: drv } = await db.from('users').select('id,name,car,telegram_id,status,driver_status')
+        let dq = db.from('users').select('id,name,car,telegram_id,status,driver_status,vehicle_type')
           .eq('driver_status', 'approved');
+        if (body.vehicle === 'moto') dq = dq.eq('vehicle_type', 'moto');
+        if (body.vehicle === 'car') dq = dq.or('vehicle_type.is.null,vehicle_type.eq.car');
+        const { data: drv } = await dq;
         const agg = {};
-        (drv || []).forEach(d => { agg[d.id] = { id: d.id, name: d.name, car: d.car, tag: String(d.telegram_id || '').slice(-4), online: d.status === 'online', taken: 0, done: 0, cancelled: 0, money: 0, delivery: 0, intercity: 0 }; });
+        (drv || []).forEach(d => { agg[d.id] = { id: d.id, name: d.name, car: d.car, moto: d.vehicle_type === 'moto', tag: String(d.telegram_id || '').slice(-4), online: d.status === 'online', taken: 0, done: 0, cancelled: 0, money: 0, delivery: 0, intercity: 0 }; });
         (rows || []).forEach(r => {
           const a2 = agg[r.driver_id];
           if (!a2) return;

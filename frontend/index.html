@@ -1969,9 +1969,11 @@ async function aApps(m){
   ${a.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(a.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}
   <button class="acbtn wr" onclick="writeUser('${a.id}','${esc(a.full_name)||esc(a.name)}')">💬 В бота</button>
  </div>
- <div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>`;
+ <div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>
+ <div id="pendcars"></div>`;
  loadAppPhones((apps||[]).map(x=>x.id));
  (apps||[]).forEach(x=>{if(x.doc_license||x.doc_pts||x.doc_car)loadDocs(x.id,'docs'+x.id);});
+ loadPendingCars();
 }
 async function okDrv(id){
  const c=document.getElementById('ac'+id).value.trim(),p=document.getElementById('ap'+id).value.trim();
@@ -2027,7 +2029,7 @@ function pplSearch(v){
  pplTimer=setTimeout(()=>aPpl(document.getElementById('main')),250);
 }
 let finTab='sub';
-let statFrom='',statTo='',statView='total',statDrv=null;
+let statFrom='',statTo='',statView='total',statDrv=null,statVeh='all';
 function dstr(d){return d.toISOString().slice(0,10);}
 function initStatRange(){
  if(statFrom&&statTo)return;
@@ -2061,11 +2063,16 @@ function rangeBar(){
   <div class="${statView==='total'?'on':''}" onclick="statGo('total')">Итоги</div>
   <div class="${statView==='drivers'?'on':''}" onclick="statGo('drivers')">Водители</div>
   <div class="${statView==='days'?'on':''}" onclick="statGo('days')">По дням</div>
- </div>`;
+ </div>
+ ${statView==='drivers'?`<div class="seg">
+  <div class="${statVeh==='all'?'on':''}" onclick="statVeh='all';aStat(document.getElementById('main'))">Все</div>
+  <div class="${statVeh==='car'?'on':''}" onclick="statVeh='car';aStat(document.getElementById('main'))">🚗 Машины</div>
+  <div class="${statVeh==='moto'?'on':''}" onclick="statVeh='moto';aStat(document.getElementById('main'))">🏍 Мото</div>
+ </div>`:''}`;
 }
 async function aStatDrivers(m){
  m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
- const r=await api('/api/admin',{action:'drivers-stats',from:statFrom,to:statTo});
+ const r=await api('/api/admin',{action:'drivers-stats',from:statFrom,to:statTo,vehicle:statVeh});
  if(r.error){m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Не удалось загрузить</div>`;return;}
  const items=r.items||[];
  const tot=items.reduce((a,x)=>({taken:a.taken+x.taken,done:a.done+x.done,money:a.money+x.money}),{taken:0,done:0,money:0});
@@ -2081,8 +2088,8 @@ async function aStatDrivers(m){
  ${items.length?items.map(d=>`<div class="card" onclick="statGo('days','${d.id}')" style="cursor:pointer">
    <div class="ava">${esc(d.name)[0]||'?'}</div>
    <div style="flex:1;min-width:0">
-    <div class="nm">${esc(d.name)} <span class="idtag">#${d.tag}</span>${d.online?' <span style="color:var(--g);font-size:10px">на линии</span>':''}</div>
-    <div class="sub">${esc(d.car)||'—'}</div>
+    <div class="nm">${d.moto?'🏍 ':''}${esc(d.name)} <span class="idtag">#${d.tag}</span>${d.online?' <span style="color:var(--g);font-size:10px">на линии</span>':''}</div>
+    <div class="sub">${esc(d.car)||'—'}${d.moto?' · мотокурьер':''}</div>
     <div class="sub" style="margin-top:3px">взял ${d.taken} · выполнил ${d.done}${d.cancelled?' · отказов '+d.cancelled:''}${d.delivery?' · доставок '+d.delivery:''}${d.intercity?' · межгород '+d.intercity:''}</div>
    </div>
    <div style="text-align:right"><div class="price">${d.money} ₽</div><div class="sub" style="font-size:10px">${d.done?Math.round(d.money/d.done):0} ₽ средний</div></div>
@@ -2344,6 +2351,34 @@ async function loadDocs(userId,containerId){
   sl.innerHTML=url?`<a href="${url}" target="_blank"><img src="${url}"></a>`
    :'<div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">нет доступа</div>';
  });
+}
+async function loadPendingCars(){
+ const box=document.getElementById('pendcars');if(!box)return;
+ const r=await api('/api/admin',{action:'cars-pending-list'});
+ const items=r.items||[];
+ if(!items.length){box.innerHTML='';return;}
+ box.innerHTML=`<div class="sec">Транспорт на проверке <span class="m">${items.length}</span></div>
+ <div style="padding:0 0 24px">${items.map(c=>`<div class="req">
+  <div class="rt">${c.kind==='moto'?'🏍 ':'🚗 '}${esc(c.brand)} · <span class="plate">${esc(c.plate)}</span></div>
+  <div class="rm">от ${esc(c.owner?c.owner.name:'—')}${c.owner?' <span class="idtag">#'+String(c.owner.telegram_id||'').slice(-4)+'</span>':''}${c.kind==='moto'?' · мотоцикл, только доставка':''}</div>
+  ${c.photo_url?`<a href="${c.photo_url}" target="_blank"><img src="${c.photo_url}" style="width:100%;max-height:170px;object-fit:cover;border-radius:11px;margin-top:10px"></a>`:'<div class="rm" style="margin-top:8px;color:var(--am)">фото не приложено</div>'}
+  <div class="appcontact">
+   ${c.owner&&c.owner.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(c.owner.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}
+   <button class="acbtn wr" onclick="writeUser('${c.user_id}','${esc(c.owner?c.owner.name:'')}')">💬 В бота</button>
+   <button class="acbtn" onclick="userCard('${c.user_id}')">Карточка</button>
+  </div>
+  <div class="ra"><button class="acc" onclick="approvePendCar('${c.id}')">Одобрить</button><button class="skip" onclick="rejectPendCar('${c.id}')">Отклонить</button></div>
+ </div>`).join('')}</div>`;
+}
+async function approvePendCar(cid){
+ const r=await api('/api/admin',{action:'car-approve',car_id:cid});
+ if(r.error)return T('Ошибка');
+ T('Транспорт одобрен');loadPendingCars();
+}
+async function rejectPendCar(cid){
+ const r=await api('/api/admin',{action:'car-remove',car_id:cid});
+ if(r.error)return T('Ошибка');
+ T('Отклонено');loadPendingCars();
 }
 async function loadAppPhones(ids){
  if(!ids||!ids.length)return;
