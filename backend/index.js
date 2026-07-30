@@ -669,7 +669,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v34-audit',
+    ok: true, service: 'bombily-backend', version: 'v35-audit-clean',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -942,7 +942,8 @@ http.createServer(async (req, res) => {
       // запись в журнал — всё, кроме чтения
       const readOnly = new Set(['promo-list','support-list','support-count','winback-list','cars-of-user',
         'cars-pending','cars-pending-list','doc-urls','user-phone','apps-phones','admin-counts','stats',
-        'drivers-stats','days-stats','user-search','avatars','avatar-fetch']);
+        'drivers-stats','days-stats','user-search','avatars','avatar-fetch',
+        'audit-list','audit-actors']);
       if (!readOnly.has(act)) {
         const clean = {};
         Object.keys(body || {}).forEach(k => {
@@ -1067,6 +1068,13 @@ http.createServer(async (req, res) => {
           db.from('cars').select('*', { count: 'exact', head: true }).eq('approved', false)
         ]);
         return json(res, 200, { ok: true, apps: (apps || 0) + (cars || 0), complaints: cmps || 0, support: sup || 0 });
+      }
+
+      // очистить журнал — только владелец
+      if (act === 'audit-clear') {
+        if (!iAmOwner) return json(res, 403, { error: 'forbidden' });
+        await db.from('audit_log').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        return json(res, 200, { ok: true });
       }
 
       // журнал действий — только владелец
