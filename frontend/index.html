@@ -381,7 +381,66 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .plan .best{font-size:9px;background:var(--g);color:#06120b;padding:2px 6px;border-radius:5px;font-weight:700;margin-left:6px;vertical-align:middle;}
 #toast{position:fixed;left:50%;bottom:100px;transform:translateX(-50%) translateY(16px);background:var(--g);color:#06120b;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:700;opacity:0;transition:.28s;z-index:90;pointer-events:none;max-width:88%;text-align:center;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-#boot{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;color:var(--dim);font-size:14px;padding:20px;text-align:center;}
+#boot{
+ position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;
+ z-index:200;color:var(--dim);font-size:14px;padding:20px;text-align:center;
+ transition:opacity .35s ease;
+}
+#boot.gone{opacity:0;pointer-events:none;}
+
+.bsplash{display:flex;flex-direction:column;align-items:center;gap:0;}
+
+/* шашечки — как на борту такси */
+.bchk{
+ width:132px;height:9px;margin-bottom:26px;border-radius:2px;
+ background:
+  repeating-linear-gradient(90deg,#f2f5f3 0 11px,transparent 11px 22px) 0 0/22px 4.5px repeat-x,
+  repeating-linear-gradient(90deg,transparent 0 11px,#f2f5f3 11px 22px) 0 4.5px/22px 4.5px repeat-x;
+ opacity:.9;
+ animation:bchkin .5s ease both;
+}
+@keyframes bchkin{from{opacity:0;transform:translateY(-6px)}to{opacity:.9;transform:none}}
+
+/* вывеска: по ней проходит свет фар */
+.bmark{
+ position:relative;font-family:Oswald,sans-serif;font-weight:700;
+ font-size:44px;line-height:1;letter-spacing:2.5px;color:#f2f5f3;
+ animation:bmarkin .55s .1s ease both;
+}
+.bmark em{font-style:normal;color:var(--g);}
+.bmark::after{
+ content:"";position:absolute;inset:-6px -22px;pointer-events:none;
+ background:linear-gradient(102deg,transparent 38%,rgba(255,255,255,.55) 48%,rgba(255,255,255,.15) 56%,transparent 64%);
+ transform:translateX(-115%);
+ animation:bsweep 2.6s 1s ease-in-out infinite;
+ mix-blend-mode:screen;
+}
+@keyframes bmarkin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes bsweep{0%{transform:translateX(-115%)}55%,100%{transform:translateX(115%)}}
+
+.btag{
+ margin-top:12px;font-family:Inter,sans-serif;font-size:12.5px;letter-spacing:.4px;
+ color:var(--dim);animation:bmarkin .55s .25s ease both;
+}
+
+/* дорожная разметка вместо крутилки */
+.broad{
+ position:relative;width:148px;height:2px;margin-top:34px;border-radius:2px;
+ background:rgba(255,255,255,.07);overflow:hidden;
+ animation:bmarkin .55s .4s ease both;
+}
+.broad i{
+ position:absolute;inset:0;
+ background:repeating-linear-gradient(90deg,var(--g) 0 16px,transparent 16px 34px);
+ animation:broadrun 1.1s linear infinite;
+}
+@keyframes broadrun{from{transform:translateX(-34px)}to{transform:translateX(0)}}
+
+@media (prefers-reduced-motion:reduce){
+ .bmark::after{animation:none;opacity:0;}
+ .broad i{animation:none;}
+ .bchk,.bmark,.btag,.broad{animation-duration:.01ms;}
+}
 </style>
 </head>
 <body>
@@ -395,7 +454,14 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
   <div id="toast"></div>
   <div id="err"><span class="x" onclick="hideErr()">✕</span><b>Что-то пошло не так</b><span id="errt"></span></div>
 </div>
-<div id="boot">Загрузка…</div>
+<div id="boot">
+  <div class="bsplash">
+    <div class="bchk"></div>
+    <div class="bmark"><span>БОМ</span><em>БИЛЫ</em></div>
+    <div class="btag">свой водитель рядом</div>
+    <div class="broad"><i></i></div>
+  </div>
+</div>
 <script>
 window.onerror=function(msg,srcFile,line,col,err){
  // приложение уже запущено — не рушим экран из-за посторонней ошибки
@@ -405,7 +471,7 @@ window.onerror=function(msg,srcFile,line,col,err){
  if(human.indexOf('Script error')!==-1||!human){
   human='Не загрузилась часть приложения.<br><br>Обычно помогает: проверить интернет и открыть заново.';
  }
- b.style.display='flex';
+ b.classList.remove('gone');b.style.display='flex';
  b.innerHTML='<div style="color:#e2585a;padding:24px;line-height:1.7;text-align:center">'+human+
   '<br><br><button onclick="location.reload()" style="background:#33d17e;color:#06120b;border:none;border-radius:12px;padding:12px 22px;font-size:15px;font-weight:700;cursor:pointer">Попробовать снова</button></div>';
 };
@@ -484,6 +550,12 @@ let curShift=null,shiftTick=null,pendingShift=null;
 let pendingDone=null;
 let active=null,dActive=null,offCh=null,inCh=null,myCh=null,rideCh=null,reqs=[],myOffs=[],targetDrv=null;
 
+function hideBoot(){
+ const b=document.getElementById('boot');
+ if(!b)return;
+ b.classList.add('gone');
+ setTimeout(()=>{b.style.display='none';},380);
+}
 function showErr(msg){const e=document.getElementById('err');document.getElementById('errt').textContent=msg;e.style.display='block';}
 function hideErr(){document.getElementById('err').style.display='none';}
 function netMsg(e){
@@ -617,13 +689,13 @@ async function boot(){
   }catch(e){}
   if(tgId===OWNER_ID&&me.staff_role!=='owner'){me.staff_role='owner';}
   if(me.is_banned){document.getElementById('boot').innerHTML='<div style="color:#e2585a"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return;}
-  document.getElementById('boot').style.display='none';
+  hideBoot();
   // интерфейс показан: посторонние ошибки (например от скрипта Telegram
   // при открытии клавиатуры) больше не должны закрывать экран
   window.__booted=true;
   const miss=await checkSchema();
   if(miss.length){
-   document.getElementById('boot').style.display='flex';
+   document.getElementById('boot').classList.remove('gone');document.getElementById('boot').style.display='flex';
    document.getElementById('boot').innerHTML='<div style="color:#e2585a;line-height:1.6"><b>База не обновлена</b><br><br>Не выполнены файлы:<br><b>'+miss.join('<br>')+'</b><br><br>Откройте Supabase → SQL Editor и выполните их, затем перезапустите приложение.</div>';
    return;
   }
