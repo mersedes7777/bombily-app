@@ -72,6 +72,33 @@ async function setupBot() {
 /* ---------- поддержка ---------- */
 const waitingSupport = new Set();   // кто сейчас пишет админу
 const fwdMap = new Map();
+async function setStaffReply(staffTg, targetTg, supportId){
+  try { await db.from('staff_reply').upsert({ staff_tg: staffTg, target_tg: targetTg, support_id: supportId || null, created_at: new Date().toISOString() }); } catch(e){}
+}
+async function getStaffReply(staffTg){
+  try { const { data } = await db.from('staff_reply').select('*').eq('staff_tg', staffTg).maybeSingle(); return data || null; } catch(e){ return null; }
+}
+async function clearStaffReply(staffTg){
+  try { await db.from('staff_reply').delete().eq('staff_tg', staffTg); } catch(e){}
+}
+async function deliverStaffReply(staffChat, link, m, text, hasPhoto){
+  const staff = await staffByTg(staffChat);
+  if (!staff) { await send(staffChat, '⛔ Отвечать могут только администраторы.'); return true; }
+  const photoId = hasPhoto ? m.photo[m.photo.length - 1].file_id : null;
+  if (photoId) {
+    await tg('sendPhoto', { chat_id: link.target_tg, photo: photoId, caption: `<b>Ответ администрации</b>${text ? '\n' + text : ''}`, parse_mode: 'HTML' });
+  } else {
+    if (!text) { await send(staffChat, 'Напишите текст ответа.'); return true; }
+    await send(link.target_tg, `<b>Ответ администрации:</b>\n${text}`);
+  }
+  if (link.support_id) {
+    try {
+      await db.from('support_msgs').update({ answered: true, answered_by: staff.id, answered_by_name: staff.name }).eq('id', link.support_id);
+    } catch (e) {}
+  }
+  await send(staffChat, '✅ Ответ отправлен');
+  return true;
+}
 async function setWait(tgid){ waitingSupport.add(tgid); try{ await db.from('support_wait').upsert({ tg: tgid, created_at: new Date().toISOString() }); }catch(e){} }
 async function isWaiting(tgid){
   if (waitingSupport.has(tgid)) return true;
@@ -92,6 +119,16 @@ async function onUpdate(u) {
   if (u.callback_query) {
     const cq = u.callback_query, chat = cq.from.id;
     await tg('answerCallbackQuery', { callback_query_id: cq.id });
+    if (cq.data && cq.data.startsWith('rep:')) {
+      const staff = await staffByTg(chat);
+      if (!staff) { await send(chat, '⛔ Отвечать могут только администраторы.'); return; }
+      const parts = cq.data.split(':');
+      const targetTg = Number(parts[1]);
+      const supportId = parts[2] && parts[2] !== '0' ? parts[2] : null;
+      await setStaffReply(chat, targetTg, supportId);
+      await send(chat, '✍️ Напишите ответ — он уйдёт человеку. Можно отправить и фото.\n\nЧтобы отменить, напишите /cancel');
+      return;
+    }
     if (cq.data === 'support') {
       await setWait(chat);
       await send(chat, 'Напишите сообщение или пришлите фото — всё уйдёт администрации. Ответ придёт сюда же.');
@@ -110,8 +147,18 @@ async function onUpdate(u) {
     db.from('users').update({ tg_username: m.from.username }).eq('telegram_id', chat).then(()=>{}, ()=>{});
   }
 
-  // ответ админа на пересланное сообщение
-  // ответ сотрудника на пересланное обращение
+  // отмена режима ответа
+  if (text === '/cancel') { await clearStaffReply(chat); return send(chat, 'Отменено.'); }
+
+  // сотрудник нажал «Ответить» и теперь пишет ответ
+  const pending = await getStaffReply(chat);
+  if (pending && pending.target_tg && !text.startsWith('/')) {
+    await clearStaffReply(chat);
+    await deliverStaffReply(chat, pending, m, text, hasPhoto);
+    return;
+  }
+
+  // ответ сотрудника цитатой на пересланное обращение
   if (m.reply_to_message) {
     let link = null;
     try {
@@ -201,7 +248,7 @@ async function onUpdate(u) {
     } catch (e) {}
 
     const who = `${m.from.first_name || ''} ${m.from.username ? '@' + m.from.username : ''} (ID ${chat})`;
-    const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${who}\n\n${text || ''}\n\n<i>Ответьте на это сообщение — ответ уйдёт человеку. Можно ответить и фотографией.</i>`;
+    const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${who}\n\n${text || ''}\n\n<i>Нажмите «Ответить» ниже или ответьте на это сообщение.</i>`;
 
     // уведомляем всю модерацию, каждому запоминаем связку для ответа
     const { data: staff } = await db.from('users').select('telegram_id')
@@ -210,11 +257,15 @@ async function onUpdate(u) {
     if (OWNER) ids.add(Number(OWNER));
     for (const sid of ids) {
       try {
+        const kb = { reply_markup: { inline_keyboard: [
+          [{ text: '✍️ Ответить', callback_data: `rep:${chat}:${supportId || 0}` }],
+          [wa('Открыть панель', 'admin')]
+        ] } };
         let sent;
         if (photoId) {
-          sent = await tg('sendPhoto', { chat_id: sid, photo: photoId, caption: head, parse_mode: 'HTML' });
+          sent = await tg('sendPhoto', { chat_id: sid, photo: photoId, caption: head, parse_mode: 'HTML', reply_markup: kb.reply_markup });
         } else {
-          sent = await send(sid, head);
+          sent = await send(sid, head, kb);
         }
         const mid = sent && sent.result && sent.result.message_id;
         if (mid) {
@@ -760,7 +811,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v39-support-app',
+    ok: true, service: 'bombily-backend', version: 'v40-reply-button',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -941,15 +992,19 @@ http.createServer(async (req, res) => {
         const { data: sg } = await db.storage.from('docs').createSignedUrl(body.photo, 3600);
         if (sg && sg.signedUrl) photoUrl = sg.signedUrl;
       }
-      const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${me.name}${me.tg_username ? ' @' + me.tg_username : ''} (ID ${me.telegram_id})\n\n${txt}\n\n<i>Ответьте на это сообщение — ответ уйдёт человеку.</i>`;
+      const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${me.name}${me.tg_username ? ' @' + me.tg_username : ''} (ID ${me.telegram_id})\n\n${txt}\n\n<i>Нажмите «Ответить» ниже.</i>`;
       try {
         const { data: staff } = await db.from('users').select('telegram_id').in('staff_role', ['owner', 'admin', 'moderator']);
         const ids = new Set((staff || []).map(s => s.telegram_id).filter(Boolean));
         if (OWNER) ids.add(Number(OWNER));
         for (const sid of ids) {
+          const kb2 = { reply_markup: { inline_keyboard: [
+            [{ text: '✍️ Ответить', callback_data: `rep:${me.telegram_id}:${supportId || 0}` }],
+            [wa('Открыть панель', 'admin')]
+          ] } };
           let sent;
-          if (photoUrl) sent = await tg('sendPhoto', { chat_id: sid, photo: photoUrl, caption: head, parse_mode: 'HTML' });
-          else sent = await send(sid, head);
+          if (photoUrl) sent = await tg('sendPhoto', { chat_id: sid, photo: photoUrl, caption: head, parse_mode: 'HTML', reply_markup: kb2.reply_markup });
+          else sent = await send(sid, head, kb2);
           const mid = sent && sent.result && sent.result.message_id;
           if (mid) {
             fwdMap.set(mid, me.telegram_id);
