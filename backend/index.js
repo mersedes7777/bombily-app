@@ -669,7 +669,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v33-shift-vehicle',
+    ok: true, service: 'bombily-backend', version: 'v34-audit',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -928,6 +928,36 @@ http.createServer(async (req, res) => {
       if (!isStaff(me)) return json(res, 403, { error: 'forbidden' });
       const act = body.action;
       const tid = body.target_id;
+      const iAmOwner = me.staff_role === 'owner' || String(me.telegram_id) === String(OWNER);
+
+      // владельца нельзя трогать никому, кроме него самого
+      let targetUser = null;
+      if (tid) {
+        const { data: tu } = await db.from('users').select('staff_role,name,telegram_id').eq('id', tid).maybeSingle();
+        targetUser = tu || null;
+        const targetIsOwner = tu && (tu.staff_role === 'owner' || String(tu.telegram_id) === String(OWNER));
+        if (targetIsOwner && !iAmOwner) return json(res, 403, { error: 'owner_protected' });
+      }
+
+      // запись в журнал — всё, кроме чтения
+      const readOnly = new Set(['promo-list','support-list','support-count','winback-list','cars-of-user',
+        'cars-pending','cars-pending-list','doc-urls','user-phone','apps-phones','admin-counts','stats',
+        'drivers-stats','days-stats','user-search','avatars','avatar-fetch']);
+      if (!readOnly.has(act)) {
+        const clean = {};
+        Object.keys(body || {}).forEach(k => {
+          if (k === 'initData' || k === 'action' || k === 'photo') return;
+          const v = body[k];
+          if (v === null || v === undefined || v === '') return;
+          clean[k] = typeof v === 'string' ? v.slice(0, 200) : v;
+        });
+        db.from('audit_log').insert({
+          actor_id: me.id, actor_name: me.name, actor_role: me.staff_role || 'staff',
+          action: act, target_id: tid || null,
+          target_name: targetUser ? targetUser.name : null,
+          details: Object.keys(clean).length ? JSON.stringify(clean).slice(0, 1000) : null
+        }).then(() => {}, () => {});
+      }
 
       if (act === 'adjust-balance' && isAdminUp(me)) {
         const { data: u } = await db.from('users').select('balance,name').eq('id', tid).single();
@@ -936,14 +966,19 @@ http.createServer(async (req, res) => {
         return json(res, 200, { ok: true });
       }
       if (act === 'ban') {
+        if (!isAdminUp(me)) return json(res, 403, { error: 'forbidden' });
         await db.from('users').update({ is_banned: !!body.value, status: 'offline' }).eq('id', tid);
         return json(res, 200, { ok: true });
       }
-      if (act === 'set-role' && me.staff_role === 'owner') {
+      if (act === 'set-role') {
+        if (!iAmOwner) return json(res, 403, { error: 'forbidden' });
+        const allowedRoles = ['admin', 'moderator', 'none'];
+        if (!allowedRoles.includes(body.role)) return json(res, 400, { error: 'bad_role' });
         await db.from('users').update({ staff_role: body.role }).eq('id', tid);
         return json(res, 200, { ok: true });
       }
       if (act === 'driver-status') {
+        if (!isAdminUp(me)) return json(res, 403, { error: 'forbidden' });
         const upd = { driver_status: body.status };
         if (body.car !== undefined) upd.car = body.car;
         if (body.plate !== undefined) upd.plate = body.plate;
@@ -1032,6 +1067,30 @@ http.createServer(async (req, res) => {
           db.from('cars').select('*', { count: 'exact', head: true }).eq('approved', false)
         ]);
         return json(res, 200, { ok: true, apps: (apps || 0) + (cars || 0), complaints: cmps || 0, support: sup || 0 });
+      }
+
+      // журнал действий — только владелец
+      if (act === 'audit-list') {
+        if (!iAmOwner) return json(res, 403, { error: 'forbidden' });
+        let q = db.from('audit_log').select('*').order('created_at', { ascending: false }).limit(100);
+        if (body.actor) q = q.eq('actor_id', body.actor);
+        if (body.since) q = q.gte('created_at', body.since);
+        const { data } = await q;
+        return json(res, 200, { ok: true, items: data || [] });
+      }
+
+      // кто из персонала что делал — сводка (только владелец)
+      if (act === 'audit-actors') {
+        if (!iAmOwner) return json(res, 403, { error: 'forbidden' });
+        const since = new Date(Date.now() - 30 * 864e5).toISOString();
+        const { data } = await db.from('audit_log').select('actor_id,actor_name,actor_role').gte('created_at', since).limit(2000);
+        const map = {};
+        (data || []).forEach(r => {
+          if (!r.actor_id) return;
+          map[r.actor_id] = map[r.actor_id] || { id: r.actor_id, name: r.actor_name, role: r.actor_role, count: 0 };
+          map[r.actor_id].count++;
+        });
+        return json(res, 200, { ok: true, items: Object.values(map).sort((a2, b2) => b2.count - a2.count) });
       }
 
       // весь транспорт на проверке (staff)

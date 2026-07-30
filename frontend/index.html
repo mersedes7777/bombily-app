@@ -292,6 +292,11 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
  font-family:Oswald,sans-serif;font-weight:700;font-size:32px;
 }
 .ucava img{width:100%;height:100%;object-fit:cover;display:block;}
+.logrow{display:flex;gap:10px;padding:11px 16px;border-top:1px solid var(--line);}
+.lgt{font-family:'Roboto Mono',monospace;font-size:10.5px;color:var(--dim);width:74px;flex-shrink:0;padding-top:2px;}
+.lgb{flex:1;min-width:0;font-size:13px;line-height:1.5;}
+.lgr{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;}
+.lgd{font-size:11.5px;color:var(--am);margin-top:3px;}
 .motonote{margin:-4px 14px 14px;padding:11px 13px;background:rgba(91,157,249,.1);border:1px solid rgba(91,157,249,.25);border-radius:12px;font-size:12.5px;color:#8FBEFB;}
 .drange{display:flex;align-items:center;gap:8px;padding:0 14px 8px;}
 .drange input{flex:1;min-width:0;background:var(--surf);border:1px solid var(--line2);border-radius:10px;padding:9px 10px;color:var(--ink);font-size:13px;font-family:'Roboto Mono',monospace;outline:none;}
@@ -556,6 +561,7 @@ const jget=f=>{try{return JSON.parse(me[f]||'[]')}catch(e){return[]}};
 const places=()=>jget('places');
 const favs=()=>jget('favs');
 const isStaff=()=>me&&['owner','admin','moderator'].includes(me.staff_role);
+const isOwner=()=>!!me&&(me.staff_role==='owner'||String(me.telegram_id)===String(OWNER_ID));
 const isDrv=()=>me&&(me.role==='driver'||me.role==='both');
 
 const MIG=[
@@ -2197,12 +2203,66 @@ async function aStat(m){
  ${cityList.length?cityList.map(([c,n])=>`<div class="card"><div style="flex:1"><div class="nm" style="font-size:14px">${esc(c)}</div></div><div class="price">${n}</div></div>`).join(''):'<div class="empty">Пока нет заявок</div>'}
  <div style="height:20px"></div>`;
 }
+const ACT_RU={
+ 'adjust-balance':'изменил баланс','ban':'заблокировал/разблокировал','set-role':'изменил права',
+ 'driver-status':'изменил статус водителя','edit-user':'отредактировал профиль','del-review':'удалил отзыв',
+ 'promo-create':'создал промокод','promo-delete':'удалил промокод','settings-update':'изменил настройки',
+ 'support-answer':'ответил в поддержку','support-hide':'скрыл обращение','send-msg':'написал пользователю',
+ 'winback-set':'обработал возврат','complaint-resolve':'закрыл жалобу','car-approve':'одобрил транспорт',
+ 'car-remove':'удалил транспорт','car-add-admin':'добавил транспорт'
+};
+let logActor=null;
+async function finLog(c){
+ c.innerHTML='<div class="empty">Загрузка…</div>';
+ const [r,a]=await Promise.all([
+  api('/api/admin',{action:'audit-list',actor:logActor}),
+  api('/api/admin',{action:'audit-actors'})
+ ]);
+ if(r.error){c.innerHTML='<div class="empty">'+(r.error==='forbidden'?'Журнал доступен только владельцу':'Не удалось загрузить')+'</div>';return;}
+ const items=r.items||[];
+ const actors=a.items||[];
+ const roleRu={owner:'владелец',admin:'админ',moderator:'модератор'};
+ c.innerHTML=`
+ <div class="note" style="margin:0 14px 12px">Все действия администраторов и модераторов. Видите только вы.</div>
+ ${actors.length?`<div class="seg">
+   <div class="${!logActor?'on':''}" onclick="logActor=null;aFin(document.getElementById('main'))">Все</div>
+   ${actors.map(x=>`<div class="${logActor===x.id?'on':''}" onclick="logActor='${x.id}';aFin(document.getElementById('main'))">${esc(x.name)} ${x.count}</div>`).join('')}
+  </div>`:''}
+ ${items.length?items.map(l=>{
+   const t=new Date(l.created_at);
+   const when=t.toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+   const what=ACT_RU[l.action]||l.action;
+   let det='';
+   try{
+    const d=l.details?JSON.parse(l.details):null;
+    if(d){
+     const parts=[];
+     if(d.amount!==undefined)parts.push(d.amount>0?'+'+d.amount+' ₽':d.amount+' ₽');
+     if(d.code)parts.push('код '+d.code);
+     if(d.role)parts.push('роль: '+(roleRu[d.role]||d.role));
+     if(d.status)parts.push('статус: '+d.status);
+     if(d.value!==undefined)parts.push(d.value?'включено':'выключено');
+     if(d.text)parts.push('«'+String(d.text).slice(0,60)+'»');
+     if(d.note)parts.push(d.note);
+     if(d.fields)parts.push(Object.keys(d.fields).join(', '));
+     det=parts.join(' · ');
+    }
+   }catch(e){}
+   return `<div class="logrow">
+    <div class="lgt">${when}</div>
+    <div class="lgb"><b>${esc(l.actor_name)}</b> <span class="lgr">${roleRu[l.actor_role]||l.actor_role||''}</span><br>${what}${l.target_name?' → <b>'+esc(l.target_name)+'</b>':''}${det?`<div class="lgd">${esc(det)}</div>`:''}</div>
+   </div>`;
+  }).join(''):'<div class="empty"><b>Записей нет</b>Здесь появятся действия персонала.</div>'}
+ <div style="height:20px"></div>`;
+}
 async function aFin(m){
  const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат']];
+ if(isOwner())seg.push(['log','🔒 Журнал']);
  m.innerHTML=`<div class="head"><h2>Финансы</h2><span class="m">${SETTINGS.paid_mode?'платно':'бесплатно'}</span></div>
  <div class="seg">${seg.map(s=>`<div class="${finTab===s[0]?'on':''}" onclick="finTab='${s[0]}';aFin(document.getElementById('main'))">${s[1]}</div>`).join('')}</div>
  <div id="fincont"><div class="empty">Загрузка…</div></div>`;
  const c=document.getElementById('fincont');
+ if(finTab==='log')return finLog(c);
  if(finTab==='sub')finSub(c);
  else if(finTab==='promo')finPromo(c);
  else if(finTab==='ref')finRef(c);
@@ -2537,7 +2597,7 @@ async function userCard(id){
  </div>
  <div class="sa" style="flex-wrap:wrap">
   <button class="c" onclick="closeSh()">Закрыть</button>
-  ${canRole?`<button class="c" onclick="closeSh();roleSheet('${u.id}','${esc(u.name)}','${u.staff_role||'none'}')">Права</button>`:''}
+  ${(canRole&&isOwner())?`<button class="c" onclick="closeSh();roleSheet('${u.id}','${esc(u.name)}','${u.staff_role||'none'}')">Права</button>`:''}
   <button class="c" style="color:${u.is_banned?'var(--g)':'var(--red)'};border-color:${u.is_banned?'var(--g)':'var(--red)'}!important" onclick="toggleBan('${u.id}',${!!u.is_banned})">${u.is_banned?'Разбанить':'Забанить'}</button>
   <button class="o" onclick="saveUser('${u.id}')">Сохранить</button>
  </div></div>`;
