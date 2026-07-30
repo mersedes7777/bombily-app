@@ -1308,7 +1308,8 @@ async function openRideFrom(id){
 async function markRevSeen(){unreadRev=0;}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
- return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div><div class="mi" onclick="T('Поддержка: напишите в бот, кнопка «Связь с админом»')"><span>Поддержка</span><span class="c">›</span></div></div>`;
+ return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
+ <div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div><div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div></div>`;
 }
 function disputeRev(rid,about,text){
  let reason='Отзыв не соответствует действительности';
@@ -1323,8 +1324,39 @@ async function sendDispute(rid){
  await api('/api/complaint',{reason:'Спор по отзыву: '+window._drGet(),comment:document.getElementById('dc').value.trim(),review_id:rid,kind:'review'});
  closeSh();T('Жалоба на отзыв отправлена модерации');
 }
+async function supportSheet(){
+ window._supPhoto=null;
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Связь с администрацией</h3><div class="s">Опишите вопрос или проблему. Можно приложить фото — например, чек или скриншот. Ответ придёт в бота.</div>
+ <textarea class="ta" id="supmsg" placeholder="Что случилось?" style="min-height:110px"></textarea>
+ <div class="up" id="supu" onclick="pickSupPhoto()"><div class="ic" id="supi">📷</div><div class="tx">Фото<small>не обязательно</small></div><span class="st" id="sups">приложить</span></div>
+ <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="sendSupport()">Отправить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+function pickSupPhoto(){
+ const i=document.createElement('input');i.type='file';i.accept='image/*';
+ i.onchange=async()=>{
+  const f=i.files[0];if(!f)return;
+  const st=document.getElementById('sups');if(st)st.textContent='загрузка…';
+  try{
+   const small=await shrink(f,1400);
+   const path=`support/${me.id}_${Date.now()}.jpg`;
+   const{error}=await db.storage.from('docs').upload(path,small,{upsert:true,contentType:'image/jpeg'});
+   if(error){if(st)st.textContent='ошибка';T('Не загрузилось');return;}
+   window._supPhoto=path;
+   if(st){st.textContent='готово ✓';st.style.color='var(--g)';}
+  }catch(e){if(st)st.textContent='ошибка';T('Не загрузилось');}
+ };
+ i.click();
+}
+async function sendSupport(){
+ const t=(document.getElementById('supmsg').value||'').trim();
+ if(!t&&!window._supPhoto)return T('Напишите сообщение или приложите фото');
+ const r=await api('/api/support-send',{text:t,photo:window._supPhoto||null});
+ if(r.error)return T(r.error==='empty'?'Напишите сообщение':'Не удалось отправить');
+ closeSh();window._supPhoto=null;T('Отправлено — ответ придёт в бота');
+}
 async function myReviews(){
-
  const{data}=await db.from('reviews').select('*').eq('target_id',me.id).eq('visible',true).order('created_at',{ascending:false}).limit(20);
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:80vh;overflow-y:auto"><h3>Отзывы обо мне</h3><div class="s">Что о вас пишут водители</div>${(data||[]).length?data.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="closeSh();disputeRev('${r.id}','${esc(r.from_name)}','${esc(r.comment)}')">оспорить</button></div>`).join(''):'<div class="sub" style="padding:10px 0">Отзывов пока нет</div>'}<div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div></div>`;

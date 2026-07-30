@@ -72,6 +72,12 @@ async function setupBot() {
 /* ---------- поддержка ---------- */
 const waitingSupport = new Set();   // кто сейчас пишет админу
 const fwdMap = new Map();
+async function setWait(tgid){ waitingSupport.add(tgid); try{ await db.from('support_wait').upsert({ tg: tgid, created_at: new Date().toISOString() }); }catch(e){} }
+async function isWaiting(tgid){
+  if (waitingSupport.has(tgid)) return true;
+  try { const { data } = await db.from('support_wait').select('tg').eq('tg', tgid).maybeSingle(); return !!data; } catch(e){ return false; }
+}
+async function clearWait(tgid){ waitingSupport.delete(tgid); try{ await db.from('support_wait').delete().eq('tg', tgid); }catch(e){} }
 async function staffByTg(tgid) {
   try {
     const { data } = await db.from('users').select('id,name,staff_role,telegram_id').eq('telegram_id', tgid).maybeSingle();
@@ -87,15 +93,18 @@ async function onUpdate(u) {
     const cq = u.callback_query, chat = cq.from.id;
     await tg('answerCallbackQuery', { callback_query_id: cq.id });
     if (cq.data === 'support') {
-      waitingSupport.add(chat);
-      await send(chat, 'Напишите ваше сообщение одним текстом — оно уйдёт администратору. Ответ придёт сюда же.');
+      await setWait(chat);
+      await send(chat, 'Напишите сообщение или пришлите фото — всё уйдёт администрации. Ответ придёт сюда же.');
     }
     return;
   }
 
   const m = u.message;
-  if (!m || !m.text) return;
-  const chat = m.chat.id, text = m.text.trim();
+  if (!m) return;
+  const hasPhoto = !!(m.photo && m.photo.length);
+  if (!m.text && !hasPhoto) return;           // стикеры, голосовые и прочее пропускаем
+  const chat = m.chat.id;
+  const text = String(m.text || m.caption || '').trim();
   // сохраняем username телеграма для связи из админки
   if (m.from && m.from.username) {
     db.from('users').update({ tg_username: m.from.username }).eq('telegram_id', chat).then(()=>{}, ()=>{});
@@ -134,7 +143,7 @@ async function onUpdate(u) {
   }
 
   if (text.startsWith('/start')) {
-    waitingSupport.delete(chat);
+    await clearWait(chat);
     // реферальная ссылка: /start ref_CODE
     const parts = text.split(/\s+/);
     const param = parts[1] || '';
@@ -163,15 +172,15 @@ async function onUpdate(u) {
     return send(chat, 'Открываю приложение:', { reply_markup: { inline_keyboard: [[wa('Открыть', s, m.from)]] } });
   }
   if (text === '💬 Связь с админом' || text.startsWith('/support')) {
-    waitingSupport.add(chat);
-    return send(chat, 'Напишите ваше сообщение одним текстом — оно уйдёт администратору.');
+    await setWait(chat);
+    return send(chat, 'Напишите сообщение или пришлите фото — всё уйдёт администрации.');
   }
 
   // сообщение в режиме поддержки (текст и/или фото)
-  if (waitingSupport.has(chat)) {
-    const photoId = m.photo && m.photo.length ? m.photo[m.photo.length - 1].file_id : null;
+  if (await isWaiting(chat)) {
+    const photoId = hasPhoto ? m.photo[m.photo.length - 1].file_id : null;
     if (!text && !photoId) return send(chat, 'Напишите сообщение текстом или пришлите фото.');
-    waitingSupport.delete(chat);
+    await clearWait(chat);
 
     let uRow = null;
     try { const r0 = await db.from('users').select('id').eq('telegram_id', chat).maybeSingle(); uRow = r0.data || null; } catch (e) {}
@@ -217,7 +226,7 @@ async function onUpdate(u) {
     return send(chat, '✅ Сообщение отправлено администрации. Ответ придёт сюда.');
   }
 
-  await send(chat, 'Выберите действие кнопками ниже 👇', { reply_markup: kbFor(m.from) });
+  await send(chat, 'Кнопки внизу экрана 👇 Если нужна помощь — «💬 Связь с админом».', { reply_markup: kbFor(m.from) });
   return send(chat, 'Или откройте приложение:', { reply_markup: mainKbFor(m.from) });
 }
 
@@ -751,7 +760,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v38-apply-car',
+    ok: true, service: 'bombily-backend', version: 'v39-support-app',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -910,6 +919,44 @@ http.createServer(async (req, res) => {
           await db.from('users').update({ car: null, plate: null, status: 'offline' }).eq('id', me.id);
         }
       }
+      return json(res, 200, { ok: true });
+    }
+
+    // --- написать в поддержку из приложения ---
+    if (req.url === '/api/support-send') {
+      const txt = String(body.text || '').trim().slice(0, 2000);
+      if (!txt && !body.photo) return json(res, 400, { error: 'empty' });
+      let supportId = null;
+      try {
+        const ins = await db.from('support_msgs').insert({
+          from_tg: me.telegram_id, from_name: me.name,
+          from_username: me.tg_username || null,
+          from_user: me.id, text: txt || '(фото)', photo: body.photo || null
+        }).select().single();
+        if (ins.data) supportId = ins.data.id;
+      } catch (e) { return json(res, 500, { error: 'db' }); }
+
+      let photoUrl = null;
+      if (body.photo) {
+        const { data: sg } = await db.storage.from('docs').createSignedUrl(body.photo, 3600);
+        if (sg && sg.signedUrl) photoUrl = sg.signedUrl;
+      }
+      const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${me.name}${me.tg_username ? ' @' + me.tg_username : ''} (ID ${me.telegram_id})\n\n${txt}\n\n<i>Ответьте на это сообщение — ответ уйдёт человеку.</i>`;
+      try {
+        const { data: staff } = await db.from('users').select('telegram_id').in('staff_role', ['owner', 'admin', 'moderator']);
+        const ids = new Set((staff || []).map(s => s.telegram_id).filter(Boolean));
+        if (OWNER) ids.add(Number(OWNER));
+        for (const sid of ids) {
+          let sent;
+          if (photoUrl) sent = await tg('sendPhoto', { chat_id: sid, photo: photoUrl, caption: head, parse_mode: 'HTML' });
+          else sent = await send(sid, head);
+          const mid = sent && sent.result && sent.result.message_id;
+          if (mid) {
+            fwdMap.set(mid, me.telegram_id);
+            await db.from('bot_replies').insert({ message_id: mid, staff_tg: sid, target_tg: me.telegram_id, support_id: supportId });
+          }
+        }
+      } catch (e) { console.error('support-send notify', e.message); }
       return json(res, 200, { ok: true });
     }
 
