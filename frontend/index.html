@@ -1776,13 +1776,13 @@ function dProfHTML(){
  }else if(SETTINGS.ref_enabled){
   subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Зовите своих</div><div class="scs">Бонус за каждого приглашённого водителя</div></div><button class="subbtn" onclick="refSheet()">Пригласить</button></div>`;
  }
- return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.vehicle_type==='moto'?'<div class="pr" style="margin-top:4px;color:#5B9DF9">🏍 мотокурьер · только доставка</div>':(me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':'')}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Моя машина</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Мои машины ›</span></div></div></div>
+ return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.vehicle_type==='moto'?'<div class="pr" style="margin-top:4px;color:#5B9DF9">🏍 мотокурьер · только доставка</div>':(me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':'')}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Мой транспорт</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Весь транспорт ›</span></div></div></div>
  <div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
 async function myCars(){
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Мои машины</h3><div class="s">Выберите, на какой работаете сегодня. Её видят пассажиры. Новую машину проверяет администрация.</div><div id="carlist"><div class="empty">Загрузка…</div></div>
- <div class="sa"><button class="c" onclick="closeSh()">Закрыть</button><button class="o" onclick="addCarSheet()">Добавить машину</button></div></div>`;
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Мой транспорт</h3><div class="s">Выберите, на чём работаете сегодня — это видят пассажиры. Мотоцикл переключает вас в режим доставки. Новый транспорт проверяет администрация.</div><div id="carlist"><div class="empty">Загрузка…</div></div>
+ <div class="sa"><button class="c" onclick="closeSh()">Закрыть</button><button class="o" onclick="openAddCar()">Добавить транспорт</button></div></div>`;
  document.getElementById('device').appendChild(m);
  loadCars();
 }
@@ -1790,11 +1790,11 @@ async function loadCars(){
  const box=document.getElementById('carlist');if(!box)return;
  const r=await api('/api/cars-list');
  const items=r.items||[];
- if(!items.length){box.innerHTML='<div class="empty"><b>Машин пока нет</b>Добавьте — администрация проверит.</div>';return;}
+ if(!items.length){box.innerHTML='<div class="empty"><b>Транспорта пока нет</b>Добавьте машину или мотоцикл — администрация проверит.</div>';return;}
  box.innerHTML=items.map(c=>`<div class="carrow ${c.is_active?'act':''}">
   <div style="flex:1;min-width:0">
-   <div style="font-size:14.5px;font-weight:600">${esc(c.brand)}</div>
-   <div style="font-size:12px;color:var(--dim);margin-top:3px"><span class="plate">${esc(c.plate)}</span> ${c.approved?(c.is_active?'<span style="color:var(--g)">· работаете на ней</span>':''):'<span style="color:var(--am)">· на проверке</span>'}</div>
+   <div style="font-size:14.5px;font-weight:600">${c.kind==='moto'?'🏍 ':'🚗 '}${esc(c.brand)}</div>
+   <div style="font-size:12px;color:var(--dim);margin-top:3px"><span class="plate">${esc(c.plate)}</span> ${c.approved?(c.is_active?'<span style="color:var(--g)">· работаете на нём</span>':''):'<span style="color:var(--am)">· на проверке</span>'}${c.kind==='moto'?' · только доставка':''}</div>
   </div>
   ${c.approved&&!c.is_active?`<button class="rolebtn" onclick="activateCar('${c.id}')">выбрать</button>`:''}
   ${!c.is_active?`<button class="rolebtn" style="color:var(--red)" onclick="delCar('${c.id}')">✕</button>`:''}
@@ -1803,22 +1803,38 @@ async function loadCars(){
 async function activateCar(id){
  const r=await api('/api/car-activate',{car_id:id});
  if(r.error)return T(r.error==='not_approved'?'Машина ещё не проверена':'Ошибка');
- me.car=r.brand;me.plate=r.plate;T('Работаете на '+r.brand);loadCars();drawD();
+ me.car=r.brand;me.plate=r.plate;me.vehicle_type=r.kind;
+ if(r.kind==='moto'){me.delivery=true;me.intercity=false;}
+ T(r.kind==='moto'?'Мотоцикл выбран — приходят только доставки':'Работаете на '+r.brand);
+ loadCars();drawD();
 }
 async function delCar(id){
  const r=await api('/api/car-delete',{car_id:id});
  if(r.error)return T('Ошибка');
  T('Машина удалена');loadCars();
 }
+let newCarKind='car';
+function openAddCar(){newCarKind='car';window._carPhoto=null;window._ncBrand='';window._ncPlate='';addCarSheet();}
 function addCarSheet(){
  const m=document.createElement('div');m.className='mask';m.id='sh2';
- m.innerHTML=`<div class="sheet"><h3>Добавить машину</h3><div class="s">Пока администрация не проверит, работать на ней нельзя. Фото помогает проверить быстрее.</div>
- <div class="fr"><label>Марка и модель</label><input id="nc_brand" placeholder="Lada Vesta"></div>
- <div class="fr"><label>Гос. номер</label><input id="nc_plate" placeholder="А123ВС" style="text-transform:uppercase"></div>
- <div class="up" id="ncu" onclick="pickCarPhoto()"><div class="ic" id="nci">🚗</div><div class="tx">Фото машины<small>спереди, чтобы был виден номер</small></div><span class="st" id="ncs">загрузить</span></div>
+ m.innerHTML=`<div class="sheet"><h3>Добавить транспорт</h3><div class="s">Пока администрация не проверит, работать на нём нельзя. Фото помогает проверить быстрее.</div>
+ <div class="tabsw" style="margin-bottom:12px">
+  <div class="${newCarKind==='car'?'on':''}" onclick="setCarKind('car')">🚗 Машина</div>
+  <div class="${newCarKind==='moto'?'on':''}" onclick="setCarKind('moto')">🏍 Мотоцикл</div>
+ </div>
+ ${newCarKind==='moto'?'<div class="note" style="margin:0 0 12px">Когда выберете мотоцикл рабочим, вам будут приходить <b>только доставки</b>. Переключиться обратно на машину можно в любой момент.</div>':''}
+ <div class="fr"><label>Марка и модель</label><input id="nc_brand" placeholder="${newCarKind==='moto'?'Honda CB 400':'Lada Vesta'}" value="${esc(window._ncBrand||'')}"></div>
+ <div class="fr"><label>Гос. номер</label><input id="nc_plate" placeholder="А123ВС" style="text-transform:uppercase" value="${esc(window._ncPlate||'')}"></div>
+ <div class="up" id="ncu" onclick="pickCarPhoto()"><div class="ic" id="nci">${newCarKind==='moto'?'🏍':'🚗'}</div><div class="tx">Фото транспорта<small>чтобы был виден номер</small></div><span class="st" id="ncs">${window._carPhoto?'готово ✓':'загрузить'}</span></div>
  <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="saveCar()">Отправить</button></div></div>`;
  document.getElementById('device').appendChild(m);
- window._carPhoto=null;
+}
+function setCarKind(k){
+ const b=document.getElementById('nc_brand'),p=document.getElementById('nc_plate');
+ window._ncBrand=b?b.value:'';window._ncPlate=p?p.value:'';
+ newCarKind=k;
+ const old=document.getElementById('sh2');if(old)old.remove();
+ addCarSheet();
 }
 function pickCarPhoto(){
  const i=document.createElement('input');i.type='file';i.accept='image/*';
@@ -1841,7 +1857,7 @@ async function saveCar(){
  const plate=(document.getElementById('nc_plate').value||'').trim().toUpperCase();
  if(!brand)return T('Впишите марку');
  if(!plate)return T('Впишите госномер');
- const r=await api('/api/car-add',{brand,plate,photo:window._carPhoto||null});
+ const r=await api('/api/car-add',{brand,plate,kind:newCarKind,photo:window._carPhoto||null});
  if(r.error)return T(r.error==='too_many'?'Больше 5 машин нельзя':'Не удалось отправить');
  document.getElementById('sh2').remove();T('Отправлено на проверку');loadCars();
 }
@@ -2538,7 +2554,7 @@ async function loadUserCars(uid){
  box.innerHTML=items.map(c=>`<div class="carrow ${c.is_active?'act':''}">
   ${c.photo_url?`<a href="${c.photo_url}" target="_blank"><img src="${c.photo_url}" style="width:52px;height:40px;object-fit:cover;border-radius:8px"></a>`:''}
   <div style="flex:1;min-width:0">
-   <div style="font-size:14px;font-weight:600">${esc(c.brand)}</div>
+   <div style="font-size:14px;font-weight:600">${c.kind==='moto'?'🏍 ':''}${esc(c.brand)}</div>
    <div style="font-size:11.5px;color:var(--dim);margin-top:3px"><span class="plate">${esc(c.plate)}</span>${c.is_active?' <span style="color:var(--g)">· рабочая</span>':''}${!c.approved?' <span style="color:var(--am)">· ждёт проверки</span>':''}</div>
   </div>
   ${!c.approved?`<button class="rolebtn" style="color:var(--g)" onclick="approveCar('${c.id}','${uid}')">одобрить</button>`:''}
@@ -2557,17 +2573,22 @@ async function removeCar(cid,uid){
 }
 function adminAddCar(uid){
  const m=document.createElement('div');m.className='mask';m.id='sh2';
- m.innerHTML=`<div class="sheet"><h3>Добавить машину</h3><div class="s">Добавленная вами машина сразу считается проверенной.</div>
+ m.innerHTML=`<div class="sheet"><h3>Добавить транспорт</h3><div class="s">Добавленный вами транспорт сразу считается проверенным.</div>
+ <div class="tabsw" style="margin-bottom:12px">
+  <div class="on" id="ak_car" onclick="window._akKind='car';this.classList.add('on');document.getElementById('ak_moto').classList.remove('on')">🚗 Машина</div>
+  <div id="ak_moto" onclick="window._akKind='moto';this.classList.add('on');document.getElementById('ak_car').classList.remove('on')">🏍 Мотоцикл</div>
+ </div>
  <div class="fr"><label>Марка и модель</label><input id="ac_brand" placeholder="Lada Vesta"></div>
  <div class="fr"><label>Гос. номер</label><input id="ac_plate" placeholder="А123ВС" style="text-transform:uppercase"></div>
  <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="doAdminAddCar('${uid}')">Добавить</button></div></div>`;
+ window._akKind='car';
  document.getElementById('device').appendChild(m);
 }
 async function doAdminAddCar(uid){
  const brand=(document.getElementById('ac_brand').value||'').trim();
  const plate=(document.getElementById('ac_plate').value||'').trim().toUpperCase();
  if(!brand||!plate)return T('Впишите марку и номер');
- const r=await api('/api/admin',{action:'car-add-admin',target_id:uid,brand,plate});
+ const r=await api('/api/admin',{action:'car-add-admin',target_id:uid,brand,plate,kind:window._akKind||'car'});
  if(r.error)return T('Ошибка');
  document.getElementById('sh2').remove();T('Машина добавлена');loadUserCars(uid);
 }

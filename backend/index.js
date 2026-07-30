@@ -669,7 +669,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v30-moto',
+    ok: true, service: 'bombily-backend', version: 'v31-moto-vehicle',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -788,11 +788,12 @@ http.createServer(async (req, res) => {
     if (req.url === '/api/car-add') {
       const brand = String(body.brand || '').trim().slice(0, 60);
       const plate = String(body.plate || '').trim().toUpperCase().slice(0, 15);
+      const kind = body.kind === 'moto' ? 'moto' : 'car';
       if (!brand || !plate) return json(res, 400, { error: 'bad_input' });
       const { count } = await db.from('cars').select('*', { count: 'exact', head: true }).eq('user_id', me.id);
       if ((count || 0) >= 5) return json(res, 400, { error: 'too_many' });
-      await db.from('cars').insert({ user_id: me.id, brand, plate, photo: body.photo || null, approved: false });
-      await notifyStaff(`🚙 <b>Новая машина на проверку</b>\n${me.name}\n${brand} · ${plate}`,
+      await db.from('cars').insert({ user_id: me.id, brand, plate, kind, photo: body.photo || null, approved: false });
+      await notifyStaff(`${kind === 'moto' ? '🏍' : '🚙'} <b>Новый транспорт на проверку</b>\n${me.name}\n${brand} · ${plate}${kind === 'moto' ? '\n(мотоцикл — только доставка)' : ''}`,
         { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
       return json(res, 200, { ok: true });
     }
@@ -803,8 +804,11 @@ http.createServer(async (req, res) => {
       if (!c.approved) return json(res, 400, { error: 'not_approved' });
       await db.from('cars').update({ is_active: false }).eq('user_id', me.id);
       await db.from('cars').update({ is_active: true }).eq('id', c.id);
-      await db.from('users').update({ car: c.brand, plate: c.plate }).eq('id', me.id);
-      return json(res, 200, { ok: true, brand: c.brand, plate: c.plate });
+      const isMoto = c.kind === 'moto';
+      const upd = { car: c.brand, plate: c.plate, vehicle_type: isMoto ? 'moto' : 'car' };
+      if (isMoto) { upd.delivery = true; upd.intercity = false; }
+      await db.from('users').update(upd).eq('id', me.id);
+      return json(res, 200, { ok: true, brand: c.brand, plate: c.plate, kind: c.kind || 'car' });
     }
 
     if (req.url === '/api/car-delete') {
@@ -1076,10 +1080,15 @@ http.createServer(async (req, res) => {
         const brand = String(body.brand || '').trim().slice(0, 60);
         const plate = String(body.plate || '').trim().toUpperCase().slice(0, 15);
         if (!brand || !plate || !tid) return json(res, 400, { error: 'bad_input' });
+        const kindA = body.kind === 'moto' ? 'moto' : 'car';
         const { data: existing } = await db.from('cars').select('id').eq('user_id', tid).eq('is_active', true).limit(1);
         const makeActive = !existing || !existing.length;
-        await db.from('cars').insert({ user_id: tid, brand, plate, approved: true, is_active: makeActive });
-        if (makeActive) await db.from('users').update({ car: brand, plate }).eq('id', tid);
+        await db.from('cars').insert({ user_id: tid, brand, plate, kind: kindA, approved: true, is_active: makeActive });
+        if (makeActive) {
+          const u2 = { car: brand, plate, vehicle_type: kindA };
+          if (kindA === 'moto') { u2.delivery = true; u2.intercity = false; }
+          await db.from('users').update(u2).eq('id', tid);
+        }
         return json(res, 200, { ok: true });
       }
 
