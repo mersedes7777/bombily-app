@@ -1343,11 +1343,13 @@ async function saveP(){
  }
  Object.assign(me,p);T('Сохранено');drawP();
 }
-function openApply(){window._appFio=undefined;window._appPh=undefined;appVeh='car';applyDrv();}
+function openApply(){window._appFio=undefined;window._appPh=undefined;window._appCar='';window._appPlate='';appVeh='car';applyDrv();}
 function switchVeh(v){
  // сохраняем введённое перед перерисовкой
  const f=document.getElementById('afio'),p=document.getElementById('ap');
  window._appFio=f?f.value:'';window._appPh=p?p.value:'';
+ const cc=document.getElementById('acar'),pp2=document.getElementById('aplate');
+ window._appCar=cc?cc.value:'';window._appPlate=pp2?pp2.value:'';
  appVeh=v;applyDrv();
 }
 function applyDrv(){
@@ -1361,6 +1363,7 @@ function applyDrv(){
  <div class="reqbox">
   <div class="reqt">Что понадобится</div>
   <div class="reqi">Настоящие ФИО</div>
+  <div class="reqi">Марка и госномер транспорта</div>
   ${appVeh==='moto'
    ? '<div class="reqi">Фото водительских прав</div>'
    : '<div class="reqi">Фото машины спереди — чтобы читался госномер</div><div class="reqi">Фото водительских прав</div><div class="reqi">Фото техпаспорта</div>'}
@@ -1369,6 +1372,8 @@ function applyDrv(){
  <div class="fr"><label>Фамилия Имя Отчество · только для проверки</label><input id="afio" value="${esc(window._appFio!==undefined?window._appFio:me.full_name)}" placeholder="Иванов Иван Иванович"></div>
  <div class="note" style="margin:0 0 12px">Пассажиры будут видеть только ваше имя — <b>${esc(me.name)}</b>. ФИО нужны администрации для проверки документов.</div>
  <div class="fr"><label>Телефон</label><input id="ap" value="${esc(window._appPh!==undefined?window._appPh:me.phone)}" placeholder="+7 (900) 000-00-00" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
+ <div class="fr"><label>${appVeh==='moto'?'Марка мотоцикла':'Марка и модель машины'}</label><input id="acar" value="${esc(window._appCar||'')}" placeholder="${appVeh==='moto'?'Honda CB 400':'Lada Vesta, белая'}" maxlength="60"></div>
+ <div class="fr"><label>Гос. номер</label><input id="aplate" value="${esc(window._appPlate||'')}" placeholder="А123ВС" style="text-transform:uppercase" maxlength="15"></div>
  ${appVeh==='car'?`<div class="up" id="u3" onclick="pick('car')"><div class="ic" id="i3">🚗</div><div class="tx">Машина спереди<small>обязательно виден госномер</small></div><span class="st" id="s3">загрузить</span></div>`:''}
  <div class="up" id="u1" onclick="pick('license')"><div class="ic" id="i1">🪪</div><div class="tx">Водительские права<small>разворот, чтобы читалось</small></div><span class="st" id="s1">загрузить</span></div>
  ${appVeh==='car'?`<div class="up" id="u2" onclick="pick('pts')"><div class="ic" id="i2">📄</div><div class="tx">Техпаспорт<small>ПТС или СТС на эту машину</small></div><span class="st" id="s2">загрузить</span></div>`:''}
@@ -1426,7 +1431,11 @@ async function sendApp(){
   if(!me.doc_car)return T('Загрузите фото машины с номером');
   if(!me.doc_pts)return T('Загрузите фото техпаспорта');
  }
- const r=await api('/api/apply-driver',{phone:phoneFmt(p),full_name:fio,vehicle_type:appVeh});
+ const carN=(document.getElementById('acar').value||'').trim();
+ const plateN=(document.getElementById('aplate').value||'').trim().toUpperCase();
+ if(!carN)return T(appVeh==='moto'?'Впишите марку мотоцикла':'Впишите марку машины');
+ if(!plateN)return T('Впишите госномер');
+ const r=await api('/api/apply-driver',{phone:phoneFmt(p),full_name:fio,vehicle_type:appVeh,car:carN,plate:plateN});
  if(r.error){
   const msg={bad_phone:'Введите корректный телефон',bad_name:'Впишите фамилию и имя полностью',need_docs:'Загрузите все три фотографии',already:'Вы уже водитель'}[r.error]||'Не удалось отправить заявку';
   return T(msg);
@@ -2043,9 +2052,34 @@ async function supportList(){
  const data=_r.items||[];
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Обращения в поддержку</h3><div class="s">Новые сообщения от пользователей. Выберите, кому ответить.</div>
- ${(data&&data.length)?data.map(s=>`<div class="cp"><div class="rs">${esc(s.from_name)}</div><div class="mt">${new Date(s.created_at).toLocaleString('ru')}</div><div class="rs" style="font-weight:500;font-size:13.5px">«${esc(s.text)}»</div><div class="ra"><button class="o" onclick="answerSupport('${s.id}','${s.from_user||''}','${s.from_tg}','${esc(s.from_name)}')">Ответить</button><button class="c" onclick="markAnswered('${s.id}')">Скрыть</button></div></div>`).join(''):'<div class="empty"><b>Нет новых обращений</b></div>'}
+ ${(data&&data.length)?data.map(s=>`<div class="cp">
+   <div style="display:flex;align-items:center;gap:10px">
+    <div class="ava" id="sav${s.from_user||s.id}">${esc(s.from_name)[0]||'?'}</div>
+    <div style="flex:1;min-width:0">
+     <div class="rs">${esc(s.from_name)} <span class="idtag">#${String(s.from_tg||'').slice(-4)}</span></div>
+     <div class="mt">${new Date(s.created_at).toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+    </div>
+   </div>
+   <div class="rs" style="font-weight:500;font-size:13.5px;margin-top:8px">«${esc(s.text)}»</div>
+   ${s.photo_url?`<a href="${s.photo_url}" target="_blank"><img src="${s.photo_url}" style="width:100%;max-height:200px;object-fit:cover;border-radius:11px;margin-top:9px"></a>`:''}
+   <div class="appcontact">
+    ${s.from_username?`<a class="acbtn tg" href="https://t.me/${esc(s.from_username)}" target="_blank">✈️ @${esc(s.from_username)}</a>`:'<span class="acbtn dim">нет ника</span>'}
+    ${s.from_user?`<button class="acbtn" onclick="closeSh();userCard('${s.from_user}')">Карточка</button>`:''}
+   </div>
+   <div class="ra"><button class="o" onclick="answerSupport('${s.id}','${s.from_user||''}','${s.from_tg}','${esc(s.from_name)}')">Ответить</button><button class="c" onclick="markAnswered('${s.id}')">Скрыть</button></div>
+  </div>`).join(''):'<div class="empty"><b>Нет новых обращений</b>Сообщения из бота появятся здесь.</div>'}
  <div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div></div>`;
  document.getElementById('device').appendChild(m);
+ const ids=(data||[]).map(s=>s.from_user).filter(Boolean);
+ if(ids.length)api('/api/admin',{action:'avatars',ids}).then(r=>{
+  if(!r||!r.map)return;
+  Object.entries(r.map).forEach(([id,url])=>{
+   if(!url)return;
+   pplAvatars[id]=url;
+   const el=document.getElementById('sav'+id);
+   if(el)el.innerHTML=`<img src="${url}" alt="">`;
+  });
+ }).catch(()=>{});
 }
 function answerSupport(sid,uid,tg,name){
  const m=document.createElement('div');m.className='mask';m.id='sh2';
@@ -2094,7 +2128,8 @@ async function aOver(m){
 }
 async function aApps(m){
  const{data:apps}=await db.from('users').select('*').eq('driver_status','pending');
- m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div class="rt" id="afio${a.id}">${esc(a.name)}</div><div class="rm"><span id="aph${a.id}">${a.has_phone?'телефон загружается…':'без телефона'}</span> · ID ${a.telegram_id}${a.age?' · '+a.age+' лет':''}</div>
+ m.innerHTML=`<div class="head"><h2>Заявки в водители</h2><span class="m">${(apps||[]).length}</span></div><div style="padding:8px 0 24px">${(apps||[]).length?apps.map(a=>`<div class="req"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><div class="ava" id="av${a.id}">${esc(a.name)[0]||'?'}</div><div class="rt" id="afio${a.id}" style="flex:1;min-width:0">${esc(a.name)}</div></div><div class="rm"><span id="aph${a.id}">${a.has_phone?'телефон загружается…':'без телефона'}</span> · ID ${a.telegram_id}</div>
+  ${a.car?`<div class="rm" style="margin-top:4px;color:var(--ink)">${a.vehicle_type==='moto'?'🏍':'🚗'} ${esc(a.car)} · <span class="plate">${esc(a.plate)}</span> <span style="color:var(--dim);font-size:11px">— со слов водителя, сверьте с документами</span></div>`:''}
 <div class="docs" id="docs${a.id}">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>a[d[0]]?`<div style="flex:1"><div class="docslot" data-k="${d[0]}"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">загрузка…</div></div><div class="cap">${d[1]}</div></div>`:`<div style="flex:1"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px">нет</div><div class="cap">${d[1]}</div></div>`).join('')}</div><div class="appcontact">
   <a class="acbtn call" id="acall${a.id}" style="display:none">📞 Позвонить</a>
   ${a.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(a.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}
@@ -2103,6 +2138,7 @@ async function aApps(m){
  <div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>
  <div id="pendcars"></div>`;
  loadAppPhones((apps||[]).map(x=>x.id));
+ loadAvatars((apps||[]).map(x=>x.id));
  (apps||[]).forEach(x=>{if(x.doc_license||x.doc_pts||x.doc_car)loadDocs(x.id,'docs'+x.id);});
  loadPendingCars();
 }
@@ -2121,9 +2157,10 @@ async function aCmp(m){
  if(uids.length){const{data:us}=await db.from('users').select('id,name,tg_username,has_phone').in('id',uids);(us||[]).forEach(u=>{umap[u.id]=u;});}
  m.innerHTML=`<div class="head"><h2>Жалобы</h2><span class="m">${(data||[]).length} открыто</span></div><div style="padding:8px 0 24px">${(data||[]).length?data.map(c=>{
  const isRev=c.kind==='review'&&c.review_id;
- return `<div class="cp"><span class="badge ${isRev?'am':'red'}">${isRev?'спор по отзыву':'жалоба'}</span><div class="rs">${isRev?'Оспаривает: '+esc(c.from_name):'На: '+esc(c.target_name)}</div><div class="mt">${isRev?'':'от '+esc(c.from_name)+' · '}${new Date(c.created_at).toLocaleDateString('ru')}</div><div class="rs" style="font-weight:500;font-size:13.5px">${esc(c.reason)}</div>${c.comment?'<div class="mt">«'+esc(c.comment)+'»</div>':''}${(()=>{const who=umap[isRev?c.from_id:c.target_id];const wid=isRev?c.from_id:c.target_id;if(!who)return '';return `<div class="appcontact"><a class="acbtn call" id="ccall${c.id}" style="display:none">📞 Позвонить</a>${who.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(who.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}<button class="acbtn wr" onclick="writeUser('${wid}','${esc(who.name)}')">💬 В бота</button></div>`;})()}
+ return `<div class="cp"><span class="badge ${isRev?'am':'red'}">${isRev?'спор по отзыву':'жалоба'}</span><div class="rs">${isRev?'Оспаривает: '+esc(c.from_name):'На: '+esc(c.target_name)}</div><div class="mt">${isRev?'':'от '+esc(c.from_name)+' · '}${new Date(c.created_at).toLocaleDateString('ru')}</div><div class="rs" style="font-weight:500;font-size:13.5px">${esc(c.reason)}</div>${c.comment?'<div class="mt">«'+esc(c.comment)+'»</div>':''}${(()=>{const who=umap[isRev?c.from_id:c.target_id];const wid=isRev?c.from_id:c.target_id;if(!who)return '';window.__cmpIds=(window.__cmpIds||[]).concat([wid]);return `<div class="appcontact"><a class="acbtn call" id="ccall${c.id}" style="display:none">📞 Позвонить</a>${who.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(who.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}<button class="acbtn wr" onclick="writeUser('${wid}','${esc(who.name)}')">💬 В бота</button></div>`;})()}
  <div class="ra">${isRev?`<button class="o" onclick="resolveCmp('${c.id}','dismiss')">Оставить отзыв</button><button class="b" onclick="killReview('${c.id}','${c.review_id}','${c.from_id}')">Удалить отзыв</button>`:`<button class="o" onclick="resolveCmp('${c.id}','dismiss')">Отклонить</button><button class="w" onclick="resolveCmp('${c.id}','warn','${c.target_id}')">Предупредить</button><button class="b" onclick="resolveCmp('${c.id}','ban','${c.target_id}')">Забанить</button>`}</div></div>`;
 }).join(''):'<div class="empty"><b>Жалоб нет</b>Все обращения разобраны.</div>'}</div>`;
+ loadAvatars([...new Set((window.__cmpIds||[]))]);window.__cmpIds=[];
  (data||[]).forEach(async c=>{
   const wid=(c.kind==='review'&&c.review_id)?c.from_id:c.target_id;
   const who=umap[wid];

@@ -71,7 +71,16 @@ async function setupBot() {
 
 /* ---------- поддержка ---------- */
 const waitingSupport = new Set();   // кто сейчас пишет админу
-const fwdMap = new Map();           // message_id у админа -> telegram_id пользователя
+const fwdMap = new Map();
+async function staffByTg(tgid) {
+  try {
+    const { data } = await db.from('users').select('id,name,staff_role,telegram_id').eq('telegram_id', tgid).maybeSingle();
+    if (!data) return null;
+    if (String(tgid) === String(OWNER)) return data;
+    if (['owner', 'admin', 'moderator'].includes(data.staff_role)) return data;
+    return null;
+  } catch (e) { return null; }
+}           // message_id у админа -> telegram_id пользователя
 
 async function onUpdate(u) {
   if (u.callback_query) {
@@ -93,11 +102,35 @@ async function onUpdate(u) {
   }
 
   // ответ админа на пересланное сообщение
-  if (chat === OWNER && m.reply_to_message && fwdMap.has(m.reply_to_message.message_id)) {
-    const to = fwdMap.get(m.reply_to_message.message_id);
-    await send(to, `<b>Ответ администратора:</b>\n${text}`);
-    await send(OWNER, '✅ Отправлено');
-    return;
+  // ответ сотрудника на пересланное обращение
+  if (m.reply_to_message) {
+    let link = null;
+    try {
+      const { data } = await db.from('bot_replies').select('*').eq('message_id', m.reply_to_message.message_id).maybeSingle();
+      link = data || null;
+    } catch (e) {}
+    if (!link && fwdMap.has(m.reply_to_message.message_id)) {
+      link = { target_tg: fwdMap.get(m.reply_to_message.message_id), support_id: null };
+    }
+    if (link && link.target_tg) {
+      const staff = await staffByTg(chat);
+      if (!staff) { await send(chat, '⛔ Отвечать могут только администраторы.'); return; }
+      const photoId = m.photo && m.photo.length ? m.photo[m.photo.length - 1].file_id : null;
+      if (photoId) {
+        await tg('sendPhoto', { chat_id: link.target_tg, photo: photoId, caption: `<b>Ответ администрации</b>${text ? '\n' + text : ''}`, parse_mode: 'HTML' });
+      } else {
+        if (!text) { await send(chat, 'Напишите текст ответа.'); return; }
+        await send(link.target_tg, `<b>Ответ администрации:</b>\n${text}`);
+      }
+      if (link.support_id) {
+        try {
+          await db.from('support_msgs').update({ answered: true, answered_by: staff.id, answered_by_name: staff.name })
+            .eq('id', link.support_id);
+        } catch (e) {}
+      }
+      await send(chat, '✅ Ответ отправлен');
+      return;
+    }
   }
 
   if (text.startsWith('/start')) {
@@ -134,18 +167,54 @@ async function onUpdate(u) {
     return send(chat, 'Напишите ваше сообщение одним текстом — оно уйдёт администратору.');
   }
 
-  // текст в режиме поддержки
+  // сообщение в режиме поддержки (текст и/или фото)
   if (waitingSupport.has(chat)) {
+    const photoId = m.photo && m.photo.length ? m.photo[m.photo.length - 1].file_id : null;
+    if (!text && !photoId) return send(chat, 'Напишите сообщение текстом или пришлите фото.');
     waitingSupport.delete(chat);
-    const who = `${m.from.first_name || ''} ${m.from.username ? '@' + m.from.username : ''} (ID ${chat})`;
-    // сохраним в базу для списка в панели
+
+    let uRow = null;
+    try { const r0 = await db.from('users').select('id').eq('telegram_id', chat).maybeSingle(); uRow = r0.data || null; } catch (e) {}
+
+    // фото сохраняем в закрытое хранилище, чтобы было видно в панели
+    let photoPath = null;
+    if (photoId) photoPath = await saveTgPhoto(photoId, uRow ? uRow.id : chat);
+
+    let supportId = null;
     try {
-      const { data: uRow } = await db.from('users').select('id').eq('telegram_id', chat).maybeSingle();
-      await db.from('support_msgs').insert({ from_tg: chat, from_name: (m.from.first_name || 'Гость'), from_user: uRow ? uRow.id : null, text });
+      const ins = await db.from('support_msgs').insert({
+        from_tg: chat, from_name: (m.from.first_name || 'Гость'),
+        from_username: m.from.username || null,
+        from_user: uRow ? uRow.id : null,
+        text: text || '(фото)', photo: photoPath
+      }).select().single();
+      if (ins.data) supportId = ins.data.id;
     } catch (e) {}
-    const r = await send(OWNER, `📨 <b>Сообщение в поддержку</b>\nОт: ${who}\n\n${text}\n\n<i>Ответьте на это сообщение — ответ уйдёт человеку. Либо ответьте из панели.</i>`);
-    if (r?.result?.message_id) fwdMap.set(r.result.message_id, chat);
-    return send(chat, '✅ Сообщение отправлено администратору. Ответ придёт сюда.');
+
+    const who = `${m.from.first_name || ''} ${m.from.username ? '@' + m.from.username : ''} (ID ${chat})`;
+    const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${who}\n\n${text || ''}\n\n<i>Ответьте на это сообщение — ответ уйдёт человеку. Можно ответить и фотографией.</i>`;
+
+    // уведомляем всю модерацию, каждому запоминаем связку для ответа
+    const { data: staff } = await db.from('users').select('telegram_id')
+      .in('staff_role', ['owner', 'admin', 'moderator']);
+    const ids = new Set((staff || []).map(s => s.telegram_id).filter(Boolean));
+    if (OWNER) ids.add(Number(OWNER));
+    for (const sid of ids) {
+      try {
+        let sent;
+        if (photoId) {
+          sent = await tg('sendPhoto', { chat_id: sid, photo: photoId, caption: head, parse_mode: 'HTML' });
+        } else {
+          sent = await send(sid, head);
+        }
+        const mid = sent && sent.result && sent.result.message_id;
+        if (mid) {
+          fwdMap.set(mid, chat);
+          await db.from('bot_replies').insert({ message_id: mid, staff_tg: sid, target_tg: chat, support_id: supportId });
+        }
+      } catch (e) {}
+    }
+    return send(chat, '✅ Сообщение отправлено администрации. Ответ придёт сюда.');
   }
 
   await send(chat, 'Выберите действие кнопками ниже 👇', { reply_markup: kbFor(m.from) });
@@ -624,6 +693,19 @@ const notifyStaff = async (text, kb) => {
 };
 
 // аватар через Bot API, если из приложения он не пришёл
+async function saveTgPhoto(fileId, ownerId) {
+  try {
+    const f = await tg('getFile', { file_id: fileId });
+    if (!f || !f.ok || !f.result || !f.result.file_path) return null;
+    const r = await fetch(`https://api.telegram.org/file/bot${TOKEN}/${f.result.file_path}`);
+    if (!r.ok) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    const path = `support/${ownerId}_${Date.now()}.jpg`;
+    const up = await db.storage.from('docs').upload(path, buf, { contentType: 'image/jpeg', upsert: true });
+    if (up.error) return null;
+    return path;
+  } catch (e) { return null; }
+}
 async function fetchAvatar(userId) {
   try {
     const { data: u } = await db.from('users').select('telegram_id').eq('id', userId).maybeSingle();
@@ -669,7 +751,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v36-fio-private',
+    ok: true, service: 'bombily-backend', version: 'v38-apply-car',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -847,11 +929,21 @@ http.createServer(async (req, res) => {
         if (!docs || !docs.doc_license || !docs.doc_pts || !docs.doc_car) return json(res, 400, { error: 'need_docs' });
       }
       await db.from('contacts').upsert({ user_id: me.id, phone, full_name: fullName, updated_at: new Date().toISOString() });
-      const updApply = { has_phone: true, driver_status: 'pending', vehicle_type: vType };
+      const carDecl = String(body.car || '').trim().slice(0, 60);
+      const plateDecl = String(body.plate || '').trim().toUpperCase().slice(0, 15);
+      if (!carDecl || !plateDecl) return json(res, 400, { error: 'need_car' });
+      const updApply = { has_phone: true, driver_status: 'pending', vehicle_type: vType, car: carDecl, plate: plateDecl };
       if (vType === 'moto') { updApply.delivery = true; updApply.intercity = false; }
       await db.from('users').update(updApply).eq('id', me.id);
+      // заявленный транспорт — на проверку вместе с заявкой
       try {
-        await notifyStaff(`${vType === 'moto' ? '🏍' : '🚗'} <b>Новая заявка${vType === 'moto' ? ' (мотокурьер)' : ' в водители'}</b>\n${me.name}\n📞 ${phone}\n\nФИО и документы — в панели.`,
+        const { data: ex } = await db.from('cars').select('id').eq('user_id', me.id).limit(1);
+        if (!ex || !ex.length) {
+          await db.from('cars').insert({ user_id: me.id, brand: carDecl, plate: plateDecl, kind: vType, approved: false, is_active: false });
+        }
+      } catch (e) {}
+      try {
+        await notifyStaff(`${vType === 'moto' ? '🏍' : '🚗'} <b>Новая заявка${vType === 'moto' ? ' (мотокурьер)' : ' в водители'}</b>\n${me.name}\n📞 ${phone}\n${vType === 'moto' ? '🏍' : '🚗'} ${carDecl} · ${plateDecl}\n\nФИО и документы — в панели.`,
           { reply_markup: { inline_keyboard: [[wa('Открыть заявки', 'admin')]] } });
       } catch (e) { console.error('notifyStaff apply', e.message); }
       return json(res, 200, { ok: true });
@@ -985,6 +1077,8 @@ http.createServer(async (req, res) => {
         if (body.plate !== undefined) upd.plate = body.plate;
         if (body.status === 'approved') {
           upd.role = 'both';
+          // одобряем заявленный транспорт
+          try { await db.from('cars').update({ approved: true, is_active: true }).eq('user_id', tid); } catch (e) {}
           if (body.car && body.plate) {
             const { data: ex } = await db.from('cars').select('id').eq('user_id', tid).limit(1);
             if (!ex || !ex.length) {
@@ -1508,7 +1602,16 @@ http.createServer(async (req, res) => {
       // ---- обращения в поддержку ----
       if (act === 'support-list') {
         const { data } = await db.from('support_msgs').select('*').eq('answered', false).order('created_at', { ascending: false }).limit(60);
-        return json(res, 200, { ok: true, items: data || [] });
+        const out = [];
+        for (const s of data || []) {
+          let purl = null;
+          if (s.photo) {
+            const { data: sg } = await db.storage.from('docs').createSignedUrl(s.photo, 3600);
+            if (sg && sg.signedUrl) purl = sg.signedUrl;
+          }
+          out.push({ ...s, photo_url: purl });
+        }
+        return json(res, 200, { ok: true, items: out });
       }
       if (act === 'support-count') {
         const { count } = await db.from('support_msgs').select('*', { count: 'exact', head: true }).eq('answered', false);
@@ -1522,7 +1625,8 @@ http.createServer(async (req, res) => {
         }
         if (!uid) return json(res, 400, { error: 'no_user' });
         await db.from('admin_msgs').insert({ to_user: uid, text: body.text });
-        if (body.support_id) await db.from('support_msgs').update({ answered: true }).eq('id', body.support_id);
+        if (body.support_id) await db.from('support_msgs')
+          .update({ answered: true, answered_by: me.id, answered_by_name: me.name }).eq('id', body.support_id);
         return json(res, 200, { ok: true });
       }
       if (act === 'support-hide') {
