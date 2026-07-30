@@ -292,6 +292,7 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
  font-family:Oswald,sans-serif;font-weight:700;font-size:32px;
 }
 .ucava img{width:100%;height:100%;object-fit:cover;display:block;}
+.motonote{margin:-4px 14px 14px;padding:11px 13px;background:rgba(91,157,249,.1);border:1px solid rgba(91,157,249,.25);border-radius:12px;font-size:12.5px;color:#8FBEFB;}
 .drange{display:flex;align-items:center;gap:8px;padding:0 14px 8px;}
 .drange input{flex:1;min-width:0;background:var(--surf);border:1px solid var(--line2);border-radius:10px;padding:9px 10px;color:var(--ink);font-size:13px;font-family:'Roboto Mono',monospace;outline:none;}
 .drange span{color:var(--dim);}
@@ -473,6 +474,7 @@ async function loadUnreadRev(){try{const{count}=await db.from('reviews').select(
 let me=null,role='passenger',pTab='home',dTab='inbox',aTab='over';
 let orderKind='ride';
 let interCity=false;
+let appVeh='car';
 let curShift=null,shiftTick=null,pendingShift=null;
 let pendingDone=null;
 let active=null,dActive=null,offCh=null,inCh=null,myCh=null,rideCh=null,reqs=[],myOffs=[],targetDrv=null;
@@ -501,6 +503,19 @@ window.addEventListener('unhandledrejection',e=>{
  showErr(netMsg(e.reason));
 });
 window.addEventListener('offline',()=>showErr('Нет интернета. Данные не обновляются.'));
+
+// тап по пустому месту закрывает клавиатуру
+(function(){
+ const closeKb=e=>{
+  const ae=document.activeElement;
+  if(!ae||!/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return;
+  const t=e.target;
+  if(t&&t.closest&&t.closest('input,textarea,select,button,a,label,.chip,.opt,.plan,.mode,.tg,.seg div,.tabsw div'))return;
+  ae.blur();
+ };
+ document.addEventListener('touchstart',closeKb,{passive:true});
+ document.addEventListener('mousedown',closeKb);
+})();
 window.addEventListener('online',()=>{hideErr();T('Связь восстановлена');});
 const T=t=>{const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');clearTimeout(window._t);window._t=setTimeout(()=>e.classList.remove('show'),2600);};
 const plural=(n,f)=>{n=Math.abs(Number(n)||0);const n10=n%10,n100=n%100;if(n10===1&&n100!==11)return f[0];if(n10>=2&&n10<=4&&(n100<10||n100>=20))return f[1];return f[2];};
@@ -857,7 +872,7 @@ function drvCard(d){
  return `<div class="dcard"><div class="ava" onclick="pickDriver('${d.id}')">${esc(d.name)[0]||'?'}</div>
  <div class="info" onclick="pickDriver('${d.id}')">
   <div class="nmx">${esc(d.name)}</div>
-  <div class="row"><span class="k">🚗</span><span class="car">${esc(d.car)||'машина не указана'}</span></div>
+  <div class="row"><span class="k">${d.vehicle_type==='moto'?'🏍':'🚗'}</span><span class="car">${esc(d.car)||(d.vehicle_type==='moto'?'мотоцикл':'машина не указана')}</span></div>
   <div class="row"><span class="k">📍 стоит:</span><span class="loc">${esc(d.spot)||'место не указано'}</span></div>
   ${d.delivery?'<div class="row"><span class="k">📦</span><span style="color:#5B9DF9;font-weight:500">берёт доставку</span></div>':''}
   ${d.intercity?'<div class="row"><span class="k">🛣</span><span style="color:#A98BF5;font-weight:500">возит в другие города</span></div>':''}
@@ -1213,22 +1228,35 @@ async function saveP(){
  }
  Object.assign(me,p);T('Сохранено');drawP();
 }
+function openApply(){window._appFio=undefined;window._appPh=undefined;appVeh='car';applyDrv();}
+function switchVeh(v){
+ // сохраняем введённое перед перерисовкой
+ const f=document.getElementById('afio'),p=document.getElementById('ap');
+ window._appFio=f?f.value:'';window._appPh=p?p.value:'';
+ appVeh=v;applyDrv();
+}
 function applyDrv(){
+ const old=document.getElementById('sh');if(old)old.remove();
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Стать бомбилой</h3><div class="s">Документы видит только администрация. Марку и госномер впишет админ после проверки.</div>
+ <div class="tabsw" style="margin-bottom:12px">
+  <div class="${appVeh==='car'?'on':''}" onclick="switchVeh('car')">🚗 Машина</div>
+  <div class="${appVeh==='moto'?'on':''}" onclick="switchVeh('moto')">🏍 Мотоцикл</div>
+ </div>
  <div class="reqbox">
   <div class="reqt">Что понадобится</div>
   <div class="reqi">Настоящие ФИО</div>
-  <div class="reqi">Фото машины спереди — чтобы читался госномер</div>
-  <div class="reqi">Фото водительских прав</div>
-  <div class="reqi">Фото техпаспорта</div>
+  ${appVeh==='moto'
+   ? '<div class="reqi">Фото водительских прав</div>'
+   : '<div class="reqi">Фото машины спереди — чтобы читался госномер</div><div class="reqi">Фото водительских прав</div><div class="reqi">Фото техпаспорта</div>'}
  </div>
- <div class="fr"><label>Фамилия Имя Отчество · только для проверки</label><input id="afio" value="${esc(me.full_name)}" placeholder="Иванов Иван Иванович"></div>
+ ${appVeh==='moto'?'<div class="note" style="margin:0 0 12px">Мотоциклы берут <b>только доставку</b> — посылки, документы, еду. Пассажирские заказы им не приходят.</div>':''}
+ <div class="fr"><label>Фамилия Имя Отчество · только для проверки</label><input id="afio" value="${esc(window._appFio!==undefined?window._appFio:me.full_name)}" placeholder="Иванов Иван Иванович"></div>
  <div class="note" style="margin:0 0 12px">Пассажиры будут видеть только ваше имя — <b>${esc(me.name)}</b>. ФИО нужны администрации для проверки документов.</div>
- <div class="fr"><label>Телефон</label><input id="ap" value="${esc(me.phone)}" placeholder="+7 (900) 000-00-00" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
- <div class="up" id="u3" onclick="pick('car')"><div class="ic" id="i3">🚗</div><div class="tx">Машина спереди<small>обязательно виден госномер</small></div><span class="st" id="s3">загрузить</span></div>
+ <div class="fr"><label>Телефон</label><input id="ap" value="${esc(window._appPh!==undefined?window._appPh:me.phone)}" placeholder="+7 (900) 000-00-00" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
+ ${appVeh==='car'?`<div class="up" id="u3" onclick="pick('car')"><div class="ic" id="i3">🚗</div><div class="tx">Машина спереди<small>обязательно виден госномер</small></div><span class="st" id="s3">загрузить</span></div>`:''}
  <div class="up" id="u1" onclick="pick('license')"><div class="ic" id="i1">🪪</div><div class="tx">Водительские права<small>разворот, чтобы читалось</small></div><span class="st" id="s1">загрузить</span></div>
- <div class="up" id="u2" onclick="pick('pts')"><div class="ic" id="i2">📄</div><div class="tx">Техпаспорт<small>ПТС или СТС на эту машину</small></div><span class="st" id="s2">загрузить</span></div>
+ ${appVeh==='car'?`<div class="up" id="u2" onclick="pick('pts')"><div class="ic" id="i2">📄</div><div class="tx">Техпаспорт<small>ПТС или СТС на эту машину</small></div><span class="st" id="s2">загрузить</span></div>`:''}
  <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="sendApp()">Отправить</button></div></div>`;
  document.getElementById('device').appendChild(m);
  const map={license:['doc_license',1],pts:['doc_pts',2],car:['doc_car',3]};
@@ -1278,10 +1306,12 @@ async function sendApp(){
  const p=document.getElementById('ap').value.trim();if(!p)return T('Введите телефон');
  const fio=(document.getElementById('afio').value||'').trim();
  if(fio.split(/\s+/).filter(Boolean).length<2)return T('Впишите фамилию и имя полностью');
- if(!me.doc_car)return T('Загрузите фото машины с номером');
  if(!me.doc_license)return T('Загрузите фото водительских прав');
- if(!me.doc_pts)return T('Загрузите фото техпаспорта');
- const r=await api('/api/apply-driver',{phone:phoneFmt(p),full_name:fio});
+ if(appVeh==='car'){
+  if(!me.doc_car)return T('Загрузите фото машины с номером');
+  if(!me.doc_pts)return T('Загрузите фото техпаспорта');
+ }
+ const r=await api('/api/apply-driver',{phone:phoneFmt(p),full_name:fio,vehicle_type:appVeh});
  if(r.error){
   const msg={bad_phone:'Введите корректный телефон',bad_name:'Впишите фамилию и имя полностью',need_docs:'Загрузите все три фотографии',already:'Вы уже водитель'}[r.error]||'Не удалось отправить заявку';
   return T(msg);
@@ -1401,10 +1431,12 @@ async function inbox(m){
  }
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
- <div class="modes">
+ ${me.vehicle_type==='moto'
+  ? `<div class="motonote">🏍 Мотокурьер — вам приходят только заказы на доставку</div>`
+  : `<div class="modes">
   <button class="mode ${me.delivery?'on':''}" onclick="togDelivery()"><span class="mi2">📦</span>Доставка<i>${me.delivery?'вкл':'выкл'}</i></button>
   <button class="mode ${me.intercity?'on':''}" onclick="togIntercity()"><span class="mi2">🛣</span>Межгород<i>${me.intercity?'вкл':'выкл'}</i></button>
- </div>
+ </div>`}
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 14px 12px"><button class="btn ghost" style="padding:10px;font-size:13px" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
  <div id="mo"></div>
  <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
@@ -1610,8 +1642,11 @@ async function saveSpot(){
 async function load(){
  const cut=new Date(Date.now()-10*60000).toISOString();
  let q=db.from('rides').select('*').eq('status','created').eq('city',me.city).gt('created_at',cut);
- if(!me.delivery)q=q.or('kind.is.null,kind.eq.ride');
- if(!me.intercity)q=q.is('to_city',null);
+ if(me.vehicle_type==='moto')q=q.eq('kind','delivery');
+ else{
+  if(!me.delivery)q=q.or('kind.is.null,kind.eq.ride');
+  if(!me.intercity)q=q.is('to_city',null);
+ }
  const{data}=await q.order('created_at',{ascending:false});
  reqs=(data||[]).filter(r=>!r.target_driver_id||r.target_driver_id===me.id);
  drawReqs();
@@ -1629,6 +1664,7 @@ function subIn(){
  inCh=db.channel('in').on('postgres_changes',{event:'INSERT',schema:'public',table:'rides'},p=>{
    const r=p.new;if(r.status!=='created')return;
    if(r.city&&me.city&&r.city!==me.city)return;
+   if(me.vehicle_type==='moto'&&r.kind!=='delivery')return;
    if(r.kind==='delivery'&&!me.delivery)return;
    if(r.to_city&&!me.intercity)return;
    if(r.target_driver_id&&r.target_driver_id!==me.id)return;
@@ -1740,7 +1776,7 @@ function dProfHTML(){
  }else if(SETTINGS.ref_enabled){
   subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Зовите своих</div><div class="scs">Бонус за каждого приглашённого водителя</div></div><button class="subbtn" onclick="refSheet()">Пригласить</button></div>`;
  }
- return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':''}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Моя машина</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Мои машины ›</span></div></div></div>
+ return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.vehicle_type==='moto'?'<div class="pr" style="margin-top:4px;color:#5B9DF9">🏍 мотокурьер · только доставка</div>':(me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':'')}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Моя машина</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Мои машины ›</span></div></div></div>
  <div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
 async function myCars(){

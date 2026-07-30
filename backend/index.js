@@ -173,6 +173,7 @@ async function notifyLoop() {
       for (const r of rides || []) {
         let q = db.from('users').select('telegram_id').eq('status', 'online').in('role', ['driver', 'both']);
         if (r.kind === 'delivery') q = q.eq('delivery', true);
+        else q = q.or('vehicle_type.is.null,vehicle_type.eq.car');  // мотоциклы возят только доставку
         if (r.to_city) q = q.eq('intercity', true);
         if (r.target_driver_id) q = db.from('users').select('telegram_id').eq('id', r.target_driver_id);
         const { data: drv } = await q;
@@ -668,7 +669,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v29-driver-stats',
+    ok: true, service: 'bombily-backend', version: 'v30-moto',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -830,12 +831,18 @@ http.createServer(async (req, res) => {
       const fullName = String(body.full_name || '').trim().slice(0, 120);
       if (fullName.split(/\s+/).filter(Boolean).length < 2) return json(res, 400, { error: 'bad_name' });
       if (me.driver_status === 'approved') return json(res, 400, { error: 'already' });
-      // все три документа обязательны
+      const vType = body.vehicle_type === 'moto' ? 'moto' : 'car';
       const { data: docs } = await db.from('users').select('doc_license,doc_pts,doc_car').eq('id', me.id).maybeSingle();
-      if (!docs || !docs.doc_license || !docs.doc_pts || !docs.doc_car) return json(res, 400, { error: 'need_docs' });
+      if (vType === 'moto') {
+        if (!docs || !docs.doc_license) return json(res, 400, { error: 'need_docs' });
+      } else {
+        if (!docs || !docs.doc_license || !docs.doc_pts || !docs.doc_car) return json(res, 400, { error: 'need_docs' });
+      }
       await db.from('contacts').upsert({ user_id: me.id, phone, full_name: fullName, updated_at: new Date().toISOString() });
-      await db.from('users').update({ has_phone: true, driver_status: 'pending' }).eq('id', me.id);
-      await notifyStaff(`🚗 <b>Новая заявка в водители</b>\n${fullName}\n📞 ${phone}`,
+      const updApply = { has_phone: true, driver_status: 'pending', vehicle_type: vType };
+      if (vType === 'moto') { updApply.delivery = true; updApply.intercity = false; }
+      await db.from('users').update(updApply).eq('id', me.id);
+      await notifyStaff(`${vType === 'moto' ? '🏍' : '🚗'} <b>Новая заявка${vType === 'moto' ? ' (мотокурьер)' : ' в водители'}</b>\n${fullName}\n📞 ${phone}`,
         { reply_markup: { inline_keyboard: [[wa('Открыть заявки', 'admin')]] } });
       return json(res, 200, { ok: true });
     }
