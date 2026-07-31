@@ -820,7 +820,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v45-idle-setting',
+    ok: true, service: 'bombily-backend', version: 'v47-community-toggle',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -1025,6 +1025,36 @@ http.createServer(async (req, res) => {
           }
         }
       } catch (e) { console.error('support-send notify', e.message); }
+      return json(res, 200, { ok: true });
+    }
+
+    // --- городское сообщество ---
+    if (req.url === '/api/community') {
+      try {
+        const { data: st } = await db.from('settings').select('community_enabled').eq('id', 1).maybeSingle();
+        if (!st || !st.community_enabled) return json(res, 200, { ok: true, city: null, off: true });
+      } catch (e) {}
+      const cityName = String(body.city || me.city || '').trim();
+      if (!cityName) return json(res, 200, { ok: true, city: null });
+      const { data: c } = await db.from('cities').select('*').eq('name', cityName).maybeSingle();
+      if (!c) return json(res, 200, { ok: true, city: null });
+      let member = null;
+      if (c.group_id && me.telegram_id) {
+        try {
+          const r = await tg('getChatMember', { chat_id: c.group_id, user_id: me.telegram_id });
+          if (r && r.ok && r.result) {
+            member = !['left', 'kicked'].includes(r.result.status);
+          }
+        } catch (e) {}
+      }
+      return json(res, 200, { ok: true, city: {
+        name: c.name, link: c.group_link, description: c.description, member
+      } });
+    }
+
+    // отметить, что предложение о вступлении показано
+    if (req.url === '/api/community-seen') {
+      await db.from('users').update({ community_seen: String(body.city || '').slice(0, 60) }).eq('id', me.id);
       return json(res, 200, { ok: true });
     }
 
@@ -1322,6 +1352,37 @@ http.createServer(async (req, res) => {
         return json(res, 200, { ok: true, items: Object.values(map).sort((a2, b2) => b2.count - a2.count) });
       }
 
+      // ---- города и сообщества ----
+      if (act === 'city-list') {
+        const { data } = await db.from('cities').select('*').order('sort').order('name');
+        return json(res, 200, { ok: true, items: data || [] });
+      }
+      if (act === 'city-save' && isAdminUp(me)) {
+        const row = {
+          name: String(body.name || '').trim().slice(0, 60),
+          slug: String(body.slug || '').trim().slice(0, 40) || null,
+          group_link: String(body.group_link || '').trim().slice(0, 200) || null,
+          group_id: body.group_id ? Number(body.group_id) : null,
+          description: String(body.description || '').trim().slice(0, 500) || null,
+          active: body.active !== false,
+          sort: Number(body.sort) || 100
+        };
+        if (!row.name) return json(res, 400, { error: 'no_name' });
+        if (body.id) {
+          await db.from('cities').update(row).eq('id', body.id);
+        } else {
+          const { error } = await db.from('cities').insert(row);
+          if (error) return json(res, 400, { error: error.message.includes('duplicate') ? 'duplicate' : 'db' });
+        }
+        return json(res, 200, { ok: true });
+      }
+      if (act === 'city-delete' && isAdminUp(me)) {
+        const { count } = await db.from('users').select('*', { count: 'exact', head: true }).eq('city', body.city_name);
+        if (count && count > 0) return json(res, 400, { error: 'in_use', count });
+        await db.from('cities').delete().eq('id', body.id);
+        return json(res, 200, { ok: true });
+      }
+
       // весь транспорт на проверке (staff)
       if (act === 'cars-pending-list') {
         const { data } = await db.from('cars').select('*').eq('approved', false).order('created_at', { ascending: false }).limit(50);
@@ -1510,7 +1571,7 @@ http.createServer(async (req, res) => {
       if (act === 'save-settings' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours'].forEach(k => {
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled'].forEach(k => {
           if (f[k] !== undefined) allowed[k] = f[k];
         });
         if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
@@ -1727,7 +1788,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });

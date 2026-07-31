@@ -348,6 +348,12 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .rpt{font-size:11px;color:var(--dim);}
 .rpv{flex:1;font-family:'Roboto Mono',monospace;font-weight:700;font-size:19px;color:var(--g);}
 .agree{background:var(--g);color:#06120b;border:none;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;flex-shrink:0;}
+.commbox{background:var(--bg);border:1px solid var(--line2);border-radius:13px;padding:14px 16px;margin:0 0 12px;}
+.commt{font-family:Oswald,sans-serif;font-size:17px;font-weight:600;margin-bottom:9px;}
+.commi{font-size:13px;line-height:1.5;padding-left:17px;position:relative;margin-bottom:5px;color:var(--ink);}
+.commi::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--g);}
+.commst{font-size:12.5px;color:var(--dim);}
+.commst.on{color:var(--g);font-weight:600;}
 .ra2{display:flex;gap:8px;margin-top:12px;}
 .ra2 button{flex:1;padding:13px 10px;border-radius:12px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:Inter,sans-serif;border:1px solid var(--line2);background:transparent;color:var(--ink);}
 .ra2 .acc{background:var(--g);border-color:var(--g);color:#06120b;}
@@ -706,7 +712,8 @@ async function boot(){
   const [stR,,prR]=await Promise.allSettled([
    db.from('settings').select('*').eq('id',1).maybeSingle(),
    loadUnreadRev(),
-   withTimeout(api('/api/my-private'),4000,'личные данные')
+   withTimeout(api('/api/my-private'),4000,'личные данные'),
+   loadCities()
   ]);
   if(stR.status==='fulfilled'&&stR.value&&stR.value.data)SETTINGS=stR.value.data;
   if(prR.status==='fulfilled'){
@@ -785,7 +792,13 @@ async function finishOb(){
  paintCity();
  drawRoles();count();await restore();await restoreD();setRole('passenger');window.__booted=true;
 }
-const CITIES=['Донецк','Макеевка','Харцызск','Горловка','Енакиево'];
+let CITIES=['Донецк','Макеевка','Харцызск','Горловка','Енакиево'];
+async function loadCities(){
+ try{
+  const{data}=await db.from('cities').select('name,active,sort').eq('active',true).order('sort').order('name');
+  if(data&&data.length)CITIES=data.map(c=>c.name);
+ }catch(e){}
+}
 function cityGate(){
  document.getElementById('rsw').style.display='none';
  document.getElementById('nav').innerHTML='';
@@ -800,6 +813,7 @@ async function setCity(c){
  const{error}=await Q(db.from('users').update({city:c}).eq('id',me.id),'Не удалось сохранить город');
  if(error)return;
  me.city=c;closeSh();T('Город сохранён: '+c);
+ setTimeout(()=>communityOffer(c),400);
  paintCity();
  drawRoles();count();
  await restore();await restoreD();setRole('passenger');
@@ -1326,6 +1340,7 @@ async function markRevSeen(){unreadRev=0;}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
  return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
+ ${SETTINGS.community_enabled?'<div class="mi" onclick="communitySheet()"><span>Группа города</span><span class="c">›</span></div>':''}
  <div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div></div>`;
 }
 function disputeRev(rid,about,text){
@@ -1341,7 +1356,56 @@ async function sendDispute(rid){
  await api('/api/complaint',{reason:'Спор по отзыву: '+window._drGet(),comment:document.getElementById('dc').value.trim(),review_id:rid,kind:'review'});
  closeSh();T('Жалоба на отзыв отправлена модерации');
 }
-async function supportSheet(){
+async function communityOffer(city,force){
+ if(!SETTINGS.community_enabled)return;
+ if(!force&&me.community_seen===city)return;
+ const r=await api('/api/community',{city});
+ const c=r&&r.city;
+ if(!c||!c.link)return;
+ if(!force&&c.member){me.community_seen=city;api('/api/community-seen',{city});return;}
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Группа ${esc(city)}</h3>
+ <div class="s">Официальная группа Bombily в вашем городе — новости, объявления и общение.</div>
+ <div class="commbox">
+  <div class="commt">Bombily | ${esc(city)}</div>
+  <div class="commi">Новости города</div>
+  <div class="commi">Акции и скидки</div>
+  <div class="commi">Обновления сервиса</div>
+  <div class="commi">Дорожная обстановка</div>
+  <div class="commi">Объявления и общение</div>
+ </div>
+ ${c.description?`<div class="note" style="margin:0 0 12px">${esc(c.description)}</div>`:''}
+ <div class="sa"><button class="c" onclick="skipCommunity('${esc(city)}')">Позже</button><button class="o" onclick="joinCommunity('${esc(city)}','${esc(c.link)}')">Вступить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+function joinCommunity(city,link){
+ me.community_seen=city;api('/api/community-seen',{city}).catch(()=>{});
+ closeSh();
+ try{ if(tg&&tg.openTelegramLink)tg.openTelegramLink(link); else window.open(link,'_blank'); }
+ catch(e){ window.open(link,'_blank'); }
+}
+function skipCommunity(city){
+ me.community_seen=city;api('/api/community-seen',{city}).catch(()=>{});
+ closeSh();
+}
+async function communitySheet(){
+ const r=await api('/api/community',{});
+ const c=r&&r.city;
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ if(!c||!c.link){
+  m.innerHTML=`<div class="sheet"><h3>Группа города</h3><div class="s">Для города ${esc(me.city)} группа пока не создана.</div><div class="sa"><button class="o" onclick="closeSh()">Понятно</button></div></div>`;
+ }else{
+  m.innerHTML=`<div class="sheet"><h3>Группа города</h3>
+  <div class="commbox">
+   <div class="commt">Bombily | ${esc(c.name)}</div>
+   <div class="commst ${c.member?'on':''}">${c.member===null?'статус неизвестен':(c.member?'вы в группе':'вы не подписаны')}</div>
+  </div>
+  ${c.description?`<div class="note" style="margin:0 0 12px">${esc(c.description)}</div>`:''}
+  <div class="sa"><button class="c" onclick="closeSh()">Закрыть</button><button class="o" onclick="joinCommunity('${esc(c.name)}','${esc(c.link)}')">Открыть группу</button></div></div>`;
+ }
+ document.getElementById('device').appendChild(m);
+}
+function supportSheet(){
  window._supPhoto=null;
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet"><h3>Связь с администрацией</h3><div class="s">Опишите вопрос или проблему. Можно приложить фото — например, чек или скриншот. Ответ придёт в бота.</div>
@@ -2488,18 +2552,87 @@ async function finLog(c){
  <div style="height:20px"></div>`;
 }
 async function aFin(m){
- const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат']];
+ const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат'],['city','Города']];
  if(isOwner())seg.push(['log','🔒 Журнал']);
  m.innerHTML=`<div class="head"><h2>Финансы</h2><span class="m">${SETTINGS.paid_mode?'платно':'бесплатно'}</span></div>
  <div class="seg">${seg.map(s=>`<div class="${finTab===s[0]?'on':''}" onclick="finTab='${s[0]}';aFin(document.getElementById('main'))">${s[1]}</div>`).join('')}</div>
  <div id="fincont"><div class="empty">Загрузка…</div></div>`;
  const c=document.getElementById('fincont');
+ if(finTab==='city')return finCities(c);
  if(finTab==='log')return finLog(c);
  if(finTab==='sub')finSub(c);
  else if(finTab==='promo')finPromo(c);
  else if(finTab==='ref')finRef(c);
  else if(finTab==='bal')finBal(c);
  else if(finTab==='back')finBack(c);
+}
+async function finCities(c){
+ c.innerHTML='<div class="empty">Загрузка…</div>';
+ const r=await api('/api/admin',{action:'city-list'});
+ if(r.error){c.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
+ const items=r.items||[];
+ const on=!!SETTINGS.community_enabled;
+ c.innerHTML=`
+ <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Группы городов</div><div class="obhint">${on
+   ? 'Людям предлагают вступить в группу своего города, в профиле виден раздел «Группа города».'
+   : 'Выключено. Ссылки и настройки сохранены — включите, когда группы будут готовы.'}</div></div><div class="tg ${on?'on':''}" onclick="togCommunity()"><b></b></div></div>
+ <div class="note" style="margin:0 14px 12px">Города приложения и их группы. Выключенный город исчезает из выбора, но у тех, кто уже его выбрал, остаётся.</div>
+ <div style="padding:0 14px 10px"><button class="rolebtn" onclick="cityEdit()">+ добавить город</button></div>
+ ${items.length?items.map(x=>`<div class="card" style="flex-direction:column;align-items:stretch;gap:8px">
+   <div style="display:flex;align-items:center;gap:10px">
+    <div style="flex:1;min-width:0">
+     <div class="nm">${esc(x.name)} ${x.active?'':'<span class="badge red">выключен</span>'}</div>
+     <div class="sub">${x.group_link?'сообщество подключено':'группа не указана'}${x.group_id?' · проверка подписки работает':''}</div>
+    </div>
+    <button class="rolebtn" onclick='cityEdit(${JSON.stringify(x).replace(/'/g,"&#39;")})'>изменить</button>
+   </div>
+  </div>`).join(''):'<div class="empty">Городов нет</div>'}
+ <div style="height:16px"></div>`;
+}
+async function togCommunity(){
+ const v=!SETTINGS.community_enabled;
+ const r=await api('/api/admin',{action:'settings-update',fields:{community_enabled:v}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ if(r.settings)SETTINGS=r.settings; else SETTINGS.community_enabled=v;
+ T(v?'Группы включены':'Группы выключены');
+ aFin(document.getElementById('main'));
+}
+function cityEdit(x){
+ x=x||{};
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>${x.id?'Город':'Новый город'}</h3>
+ <div class="s">Ссылка нужна, чтобы предлагать вступить. ID группы — чтобы видеть, подписан человек или нет; для этого добавьте бота в группу администратором.</div>
+ <div class="fr"><label>Название</label><input id="ci_name" value="${esc(x.name)}" placeholder="Енакиево"></div>
+ <div class="fr"><label>Ссылка на группу</label><input id="ci_link" value="${esc(x.group_link)}" placeholder="https://t.me/..."></div>
+ <div class="fr"><label>ID группы · не обязательно</label><input id="ci_gid" value="${x.group_id||''}" placeholder="-1001234567890" inputmode="numeric"></div>
+ <div class="fr"><label>Описание · не обязательно</label><input id="ci_desc" value="${esc(x.description)}" placeholder="О чём эта группа"></div>
+ <div class="fr"><label>Порядок в списке</label><input id="ci_sort" value="${x.sort||100}" inputmode="numeric"></div>
+ <div class="obar" style="margin:0 0 12px"><div><div class="l">Показывать в приложении</div></div><div class="tg ${x.active===false?'':'on'}" id="ci_act" onclick="this.classList.toggle('on')"><b></b></div></div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="citySave(${x.id||0})">Сохранить</button></div>
+ ${x.id?`<div style="text-align:center;padding-top:6px"><button class="rolebtn" style="color:var(--red)" onclick="cityDel(${x.id},'${esc(x.name)}')">удалить город</button></div>`:''}
+ </div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function citySave(id){
+ const g=k=>(document.getElementById('ci_'+k).value||'').trim();
+ const name=g('name');
+ if(!name)return T('Впишите название');
+ const r=await api('/api/admin',{action:'city-save',id:id||null,name,
+  group_link:g('link'),group_id:g('gid')||null,description:g('desc'),
+  sort:parseInt(g('sort'))||100,
+  active:document.getElementById('ci_act').classList.contains('on')});
+ if(r.error)return T(r.error==='duplicate'?'Такой город уже есть':r.error==='forbidden'?'Нет прав':'Ошибка');
+ document.getElementById('sh2').remove();T('Сохранено');
+ await loadCities();aFin(document.getElementById('main'));
+}
+async function cityDel(id,name){
+ const r=await api('/api/admin',{action:'city-delete',id,city_name:name});
+ if(r.error){
+  if(r.error==='in_use')return T('В этом городе есть люди — выключите его вместо удаления');
+  return T('Ошибка');
+ }
+ document.getElementById('sh2').remove();T('Город удалён');
+ await loadCities();aFin(document.getElementById('main'));
 }
 function idleBlock(){
  const cur=(SETTINGS.idle_hours===undefined||SETTINGS.idle_hours===null)?5:Number(SETTINGS.idle_hours);
