@@ -811,7 +811,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v43-edit-application',
+    ok: true, service: 'bombily-backend', version: 'v44-edit-vehicle',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -1359,7 +1359,13 @@ http.createServer(async (req, res) => {
       if (act === 'car-approve') {
         const { data: c } = await db.from('cars').select('*').eq('id', body.car_id).maybeSingle();
         if (!c) return json(res, 404, { error: 'no_car' });
-        await db.from('cars').update({ approved: true }).eq('id', c.id);
+        // администратор мог поправить марку и номер
+        const upd2 = { approved: true };
+        if (body.brand) { upd2.brand = String(body.brand).slice(0, 60); c.brand = upd2.brand; }
+        if (body.plate) { upd2.plate = String(body.plate).toUpperCase().slice(0, 15); c.plate = upd2.plate; }
+        await db.from('cars').update(upd2).eq('id', c.id);
+        // если этот транспорт уже рабочий — обновим и в профиле
+        if (c.is_active) await db.from('users').update({ car: c.brand, plate: c.plate }).eq('id', c.user_id);
         // если у водителя нет активной — сделаем эту активной
         const { data: act2 } = await db.from('cars').select('id').eq('user_id', c.user_id).eq('is_active', true).limit(1);
         if (!act2 || !act2.length) {
