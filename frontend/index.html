@@ -2576,7 +2576,17 @@ async function finCities(c){
  <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Группы городов</div><div class="obhint">${on
    ? 'Людям предлагают вступить в группу своего города, в профиле виден раздел «Группа города».'
    : 'Выключено. Ссылки и настройки сохранены — включите, когда группы будут готовы.'}</div></div><div class="tg ${on?'on':''}" onclick="togCommunity()"><b></b></div></div>
- <div class="note" style="margin:0 14px 12px">Города приложения и их группы. Выключенный город исчезает из выбора, но у тех, кто уже его выбрал, остаётся.</div>
+ ${on?`
+ <div class="sec">Бот в группе</div>
+ <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Убирать заказы из чата</div><div class="obhint">${SETTINGS.group_moderate
+   ? 'Сообщения вроде «кто свободен» удаляются, бот отвечает ссылкой на приложение.'
+   : 'Выключено. Люди смогут договариваться о поездках прямо в чате, минуя приложение.'}</div></div><div class="tg ${SETTINGS.group_moderate?'on':''}" onclick="togGroup('group_moderate')"><b></b></div></div>
+ <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Чистить «вступил / вышел»</div><div class="obhint">Служебные сообщения о входе и выходе удаляются сразу.</div></div><div class="tg ${SETTINGS.group_clean_service!==false?'on':''}" onclick="togGroup('group_clean_service')"><b></b></div></div>
+ <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Приветствовать новичков</div><div class="obhint">Короткое приветствие с кнопкой на бота, само исчезает через две минуты.</div></div><div class="tg ${SETTINGS.group_welcome?'on':''}" onclick="togGroup('group_welcome')"><b></b></div></div>
+ <div class="note" style="margin:10px 14px 14px">Работает только в группах, чей ID указан ниже. В чужие группы бот не вмешивается. Администраторов группы не трогает.</div>
+ `:''}
+ <div class="sec">Города</div>
+ <div class="note" style="margin:0 14px 12px">Выключенный город исчезает из выбора, но у тех, кто уже его выбрал, остаётся.</div>
  <div style="padding:0 14px 10px"><button class="rolebtn" onclick="cityEdit()">+ добавить город</button></div>
  ${items.length?items.map(x=>`<div class="card" style="flex-direction:column;align-items:stretch;gap:8px">
    <div style="display:flex;align-items:center;gap:10px">
@@ -2588,6 +2598,14 @@ async function finCities(c){
    </div>
   </div>`).join(''):'<div class="empty">Городов нет</div>'}
  <div style="height:16px"></div>`;
+}
+async function togGroup(field){
+ const v=!(field==='group_clean_service'?SETTINGS[field]!==false:SETTINGS[field]);
+ const r=await api('/api/admin',{action:'settings-update',fields:{[field]:v}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ if(r.settings)SETTINGS=r.settings; else SETTINGS[field]=v;
+ T(v?'Включено':'Выключено');
+ aFin(document.getElementById('main'));
 }
 async function togCommunity(){
  const v=!SETTINGS.community_enabled;

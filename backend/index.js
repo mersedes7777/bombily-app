@@ -6,6 +6,7 @@ const TOKEN   = process.env.BOT_TOKEN;
 const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
+const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -138,6 +139,10 @@ async function onUpdate(u) {
 
   const m = u.message;
   if (!m) return;
+  if (m.chat && (m.chat.type === 'group' || m.chat.type === 'supergroup')) {
+    try { await onGroupMessage(m); } catch (e) { console.error('group', e.message); }
+    return;
+  }
   const hasPhoto = !!(m.photo && m.photo.length);
   if (!m.text && !hasPhoto) return;           // стикеры, голосовые и прочее пропускаем
   const chat = m.chat.id;
@@ -682,6 +687,109 @@ async function shiftLoop() {
   setTimeout(shiftLoop, 60 * 1000);
 }
 
+
+/* ================= работа в городских группах ================= */
+
+// явные попытки заказать
+const ORDER_PHRASES = [
+  'кто свободен','кто свободный','есть свободные','кто на линии','есть кто на линии',
+  'нужна машина','нужно такси','нужен водитель','нужен бомбила','ищу машину','ищу водителя',
+  'кто отвезет','кто отвезёт','кто подвезет','кто подвезёт','кто довезет','кто довезёт',
+  'кто может отвезти','кто может подвезти','есть водитель','есть машина',
+  'заберите с','забрать с','подкиньте','подбросьте','кто заберет','кто заберёт',
+  'такси надо','такси нужно','надо такси','нужно доставить','кто доставит'
+];
+const ASK_WORDS  = ['нужн','надо','ищу','кто ','кому','помогите','срочно','подскажите','требуется'];
+const TRIP_WORDS = ['такси','машин','водител','бомбил','подвез','отвез','довез','забра','доставит','поездк'];
+// разговор о прошлом или о ценах трогать не надо
+const PAST_WORDS = ['вчера','ехал','ездил','приехал','подорожал','подешевел','цены','стоило','было','раньше','обсужд','спасибо'];
+
+function looksLikeOrder(text) {
+  const t = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  if (t.length > 220) return false;
+  const norm = t.replace(/ё/g, 'е');
+  for (const p of ORDER_PHRASES) if (norm.includes(p.replace(/ё/g, 'е'))) return true;
+  const hasAsk  = ASK_WORDS.some(w => norm.includes(w));
+  const hasTrip = TRIP_WORDS.some(w => norm.includes(w));
+  const hasPast = PAST_WORDS.some(w => norm.includes(w));
+  if (hasAsk && hasTrip && !hasPast) return true;
+  // объявление чужого перевозчика: поездка + телефон
+  const phone = /(\+?\d[\d\-\s()]{8,}\d)/.test(norm);
+  if (hasTrip && phone && !hasPast) return true;
+  return false;
+}
+
+const groupReplyAt = new Map();   // когда последний раз отвечали в чате
+
+async function delLater(chatId, messageId, sec) {
+  setTimeout(() => { tg('deleteMessage', { chat_id: chatId, message_id: messageId }).catch(() => {}); }, sec * 1000);
+}
+
+async function groupSettings() {
+  try {
+    const { data } = await db.from('settings').select('group_moderate,group_clean_service,group_welcome').eq('id', 1).maybeSingle();
+    return data || {};
+  } catch (e) { return {}; }
+}
+
+// группа наша, если её id прописан у какого-то города
+async function cityByGroup(chatId) {
+  try {
+    const { data } = await db.from('cities').select('name,group_link').eq('group_id', chatId).maybeSingle();
+    return data || null;
+  } catch (e) { return null; }
+}
+
+async function onGroupMessage(m) {
+  const chatId = m.chat.id;
+  const city = await cityByGroup(chatId);
+  if (!city) return;                       // чужая группа — не вмешиваемся
+  const st = await groupSettings();
+
+  // служебные «вступил / вышел»
+  if (m.new_chat_members || m.left_chat_member || m.new_chat_title || m.new_chat_photo) {
+    if (st.group_clean_service !== false) {
+      await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
+    }
+    if (m.new_chat_members && st.group_welcome) {
+      const names = m.new_chat_members.filter(u => !u.is_bot).map(u => u.first_name || 'Гость');
+      if (names.length) {
+        const r = await send(chatId,
+          `👋 ${names.join(', ')}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте в боте — так быстрее и безопаснее.`,
+          { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', url: `https://t.me/${BOT_USERNAME}` }]] } });
+        if (r && r.result) delLater(chatId, r.result.message_id, 120);
+      }
+    }
+    return;
+  }
+
+  if (!st.group_moderate) return;
+  const text = String(m.text || m.caption || '');
+  if (!text) return;
+  if (m.from && m.from.is_bot) return;
+
+  // администраторов группы не трогаем
+  try {
+    const cm = await tg('getChatMember', { chat_id: chatId, user_id: m.from.id });
+    if (cm && cm.ok && ['creator', 'administrator'].includes(cm.result.status)) return;
+  } catch (e) {}
+
+  if (!looksLikeOrder(text)) return;
+
+  await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
+
+  // не частим с ответами: не чаще раза в минуту на группу
+  const last = groupReplyAt.get(chatId) || 0;
+  if (Date.now() - last < 60 * 1000) return;
+  groupReplyAt.set(chatId, Date.now());
+
+  const name = m.from && m.from.first_name ? m.from.first_name : '';
+  const r = await send(chatId,
+    `🚖 ${name ? name + ', з' : 'З'}аказы такси — в боте Bombily, а не в чате.\n\nТам заявку сразу видят все свободные водители, и вы выбираете цену. Ваш номер и адрес не видит никто, кроме водителя, который взял заказ.`,
+    { reply_markup: { inline_keyboard: [[{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] } });
+  if (r && r.result) delLater(chatId, r.result.message_id, 90);
+}
+
 /* ---------- проверка подписи Telegram initData ---------- */
 function verifyInitData(initData) {
   try {
@@ -820,7 +928,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v47-community-toggle',
+    ok: true, service: 'bombily-backend', version: 'v48-group-id',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -1362,7 +1470,7 @@ http.createServer(async (req, res) => {
           name: String(body.name || '').trim().slice(0, 60),
           slug: String(body.slug || '').trim().slice(0, 40) || null,
           group_link: String(body.group_link || '').trim().slice(0, 200) || null,
-          group_id: body.group_id ? Number(body.group_id) : null,
+          group_id: body.group_id ? -Math.abs(Number(body.group_id)) : null,  // у групп ID всегда отрицательный
           description: String(body.description || '').trim().slice(0, 500) || null,
           active: body.active !== false,
           sort: Number(body.sort) || 100
@@ -1571,7 +1679,7 @@ http.createServer(async (req, res) => {
       if (act === 'save-settings' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled'].forEach(k => {
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome'].forEach(k => {
           if (f[k] !== undefined) allowed[k] = f[k];
         });
         if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
@@ -1788,7 +1896,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
