@@ -811,7 +811,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v40-reply-button',
+    ok: true, service: 'bombily-backend', version: 'v41-car-docs',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -932,9 +932,10 @@ http.createServer(async (req, res) => {
       const plate = String(body.plate || '').trim().toUpperCase().slice(0, 15);
       const kind = body.kind === 'moto' ? 'moto' : 'car';
       if (!brand || !plate) return json(res, 400, { error: 'bad_input' });
+      if (!body.photo || !body.doc_pts) return json(res, 400, { error: 'need_docs' });
       const { count } = await db.from('cars').select('*', { count: 'exact', head: true }).eq('user_id', me.id);
       if ((count || 0) >= 5) return json(res, 400, { error: 'too_many' });
-      const ins = await db.from('cars').insert({ user_id: me.id, brand, plate, kind, photo: body.photo || null, approved: false });
+      const ins = await db.from('cars').insert({ user_id: me.id, brand, plate, kind, photo: body.photo, doc_pts: body.doc_pts, approved: false });
       if (ins.error) return json(res, 400, { error: ins.error.message });
       try {
         await notifyStaff(`${kind === 'moto' ? '🏍' : '🚙'} <b>Новый транспорт на проверку</b>\n${me.name}\n${brand} · ${plate}${kind === 'moto' ? '\n(мотоцикл — только доставка)' : ''}`,
@@ -1308,15 +1309,15 @@ http.createServer(async (req, res) => {
         }
         const out = [];
         for (const c of data || []) {
-          let url = null;
-          if (c.photo) {
-            const p = docPath(c.photo);
-            if (p) {
-              const { data: s } = await db.storage.from('docs').createSignedUrl(p, 3600);
-              if (s && s.signedUrl) url = s.signedUrl;
-            }
-          }
-          out.push({ ...c, photo_url: url, owner: owners[c.user_id] || null });
+          const signed = async v => {
+            const p = docPath(v);
+            if (!p) return null;
+            const { data: s } = await db.storage.from('docs').createSignedUrl(p, 3600);
+            return s && s.signedUrl ? s.signedUrl : null;
+          };
+          out.push({ ...c, photo_url: c.photo ? await signed(c.photo) : null,
+                          pts_url: c.doc_pts ? await signed(c.doc_pts) : null,
+                          owner: owners[c.user_id] || null });
         }
         return json(res, 200, { ok: true, items: out });
       }
@@ -1326,15 +1327,14 @@ http.createServer(async (req, res) => {
         const { data } = await db.from('cars').select('*').eq('user_id', tid).order('created_at');
         const out = [];
         for (const c of data || []) {
-          let url = null;
-          if (c.photo) {
-            const p = docPath(c.photo);
-            if (p) {
-              const { data: s } = await db.storage.from('docs').createSignedUrl(p, 3600);
-              if (s && s.signedUrl) url = s.signedUrl;
-            }
-          }
-          out.push({ ...c, photo_url: url });
+          const signed = async v => {
+            const p = docPath(v);
+            if (!p) return null;
+            const { data: s } = await db.storage.from('docs').createSignedUrl(p, 3600);
+            return s && s.signedUrl ? s.signedUrl : null;
+          };
+          out.push({ ...c, photo_url: c.photo ? await signed(c.photo) : null,
+                          pts_url: c.doc_pts ? await signed(c.doc_pts) : null });
         }
         return json(res, 200, { ok: true, items: out });
       }

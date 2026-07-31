@@ -565,6 +565,15 @@ function hideBoot(){
   setTimeout(()=>{b.style.display='none';},380);
  },wait);
 }
+// защита от двойных нажатий: пока идёт отправка, повтор игнорируется
+const _busy={};
+async function once(key,fn){
+ if(_busy[key]){T('Отправляем, подождите…');return;}
+ _busy[key]=true;
+ try{ await fn(); }
+ catch(e){ T('Не получилось, попробуйте ещё раз'); }
+ finally{ setTimeout(()=>{_busy[key]=false;},800); }
+}
 function showErr(msg){const e=document.getElementById('err');document.getElementById('errt').textContent=msg;e.style.display='block';}
 function hideErr(){document.getElementById('err').style.display='none';}
 function netMsg(e){
@@ -1048,7 +1057,8 @@ async function delPlace(i){
  me.places=r.places;
  T('Удалено');document.getElementById('host').innerHTML=formHTML(targetDrv);
 }
-async function send(did){
+function send(did){ return once('ride',()=>_send(did)); }
+async function _send(did){
  if(active)return T('У вас уже есть активная заявка');
  const f=document.getElementById('from').value.trim();
  const t=document.getElementById('to').value.trim();
@@ -1309,7 +1319,7 @@ async function markRevSeen(){unreadRev=0;}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
  return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
- <div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div><div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div></div>`;
+ <div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div></div>`;
 }
 function disputeRev(rid,about,text){
  let reason='Отзыв не соответствует действительности';
@@ -1349,7 +1359,8 @@ function pickSupPhoto(){
  };
  i.click();
 }
-async function sendSupport(){
+function sendSupport(){ return once('support',()=>_sendSupport()); }
+async function _sendSupport(){
  const t=(document.getElementById('supmsg').value||'').trim();
  if(!t&&!window._supPhoto)return T('Напишите сообщение или приложите фото');
  const r=await api('/api/support-send',{text:t,photo:window._supPhoto||null});
@@ -1454,7 +1465,8 @@ function pick(kind){
  };
  inp.click();
 }
-async function sendApp(){
+function sendApp(){ return once('sendApp',()=>_sendApp()); }
+async function _sendApp(){
  const p=document.getElementById('ap').value.trim();if(!p)return T('Введите телефон');
  const fio=(document.getElementById('afio').value||'').trim();
  if(fio.split(/\s+/).filter(Boolean).length<2)return T('Впишите фамилию и имя полностью');
@@ -1986,10 +1998,10 @@ async function delCar(id){
  T('Машина удалена');loadCars();
 }
 let newCarKind='car';
-function openAddCar(){newCarKind='car';window._carPhoto=null;window._ncBrand='';window._ncPlate='';addCarSheet();}
+function openAddCar(){newCarKind='car';window._carPhoto=null;window._carPts=null;window._ncBrand='';window._ncPlate='';addCarSheet();}
 function addCarSheet(){
  const m=document.createElement('div');m.className='mask';m.id='sh2';
- m.innerHTML=`<div class="sheet"><h3>Добавить транспорт</h3><div class="s">Пока администрация не проверит, работать на нём нельзя. Фото помогает проверить быстрее.</div>
+ m.innerHTML=`<div class="sheet"><h3>Добавить транспорт</h3><div class="s">Нужны фото транспорта с номером и техпаспорт на него. Пока администрация не проверит, работать на нём нельзя.</div>
  <div class="tabsw" style="margin-bottom:12px">
   <div class="${newCarKind==='car'?'on':''}" onclick="setCarKind('car')">🚗 Машина</div>
   <div class="${newCarKind==='moto'?'on':''}" onclick="setCarKind('moto')">🏍 Мотоцикл</div>
@@ -1997,7 +2009,8 @@ function addCarSheet(){
  ${newCarKind==='moto'?'<div class="note" style="margin:0 0 12px">Когда выберете мотоцикл рабочим, вам будут приходить <b>только доставки</b>. Переключиться обратно на машину можно в любой момент.</div>':''}
  <div class="fr"><label>Марка и модель</label><input id="nc_brand" placeholder="${newCarKind==='moto'?'Honda CB 400':'Lada Vesta'}" value="${esc(window._ncBrand||'')}"></div>
  <div class="fr"><label>Гос. номер</label><input id="nc_plate" placeholder="А123ВС" style="text-transform:uppercase" value="${esc(window._ncPlate||'')}"></div>
- <div class="up" id="ncu" onclick="pickCarPhoto()"><div class="ic" id="nci">${newCarKind==='moto'?'🏍':'🚗'}</div><div class="tx">Фото транспорта<small>чтобы был виден номер</small></div><span class="st" id="ncs">${window._carPhoto?'готово ✓':'загрузить'}</span></div>
+ <div class="up" id="ncu" onclick="pickCarDoc('photo')"><div class="ic">${newCarKind==='moto'?'🏍':'🚗'}</div><div class="tx">Фото ${newCarKind==='moto'?'мотоцикла':'машины'} спереди<small>обязательно виден госномер</small></div><span class="st" id="ncs">${window._carPhoto?'готово ✓':'загрузить'}</span></div>
+ <div class="up" onclick="pickCarDoc('pts')"><div class="ic">📄</div><div class="tx">Техпаспорт<small>ПТС или СТС на этот транспорт</small></div><span class="st" id="ncs2">${window._carPts?'готово ✓':'загрузить'}</span></div>
  <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="saveCar()">Отправить</button></div></div>`;
  document.getElementById('device').appendChild(m);
 }
@@ -2008,30 +2021,34 @@ function setCarKind(k){
  const old=document.getElementById('sh2');if(old)old.remove();
  addCarSheet();
 }
-function pickCarPhoto(){
+function pickCarDoc(which){
  const i=document.createElement('input');i.type='file';i.accept='image/*';
  i.onchange=async()=>{
   const f=i.files[0];if(!f)return;
-  const st=document.getElementById('ncs');if(st)st.textContent='загрузка…';
+  const stId=which==='pts'?'ncs2':'ncs';
+  const st=document.getElementById(stId);if(st)st.textContent='загрузка…';
   try{
-   const small=await shrink(f,1200);
-   const path=`${me.id}/car_${Date.now()}.jpg`;
+   const small=await shrink(f,1400);
+   const path=`${me.id}/${which==='pts'?'carpts':'car'}_${Date.now()}.jpg`;
    const{error}=await db.storage.from('docs').upload(path,small,{upsert:true,contentType:'image/jpeg'});
-   if(error){if(st)st.textContent='ошибка';T('Не загрузилось: '+error.message);return;}
-   window._carPhoto=path;
+   if(error){if(st)st.textContent='ошибка';T('Не загрузилось');return;}
+   if(which==='pts')window._carPts=path; else window._carPhoto=path;
    if(st){st.textContent='готово ✓';st.style.color='var(--g)';}
   }catch(e){if(st)st.textContent='ошибка';T('Не загрузилось');}
  };
  i.click();
 }
-async function saveCar(){
+function saveCar(){ return once('saveCar',()=>_saveCar()); }
+async function _saveCar(){
  const brand=(document.getElementById('nc_brand').value||'').trim();
  const plate=(document.getElementById('nc_plate').value||'').trim().toUpperCase();
  if(!brand)return T('Впишите марку');
  if(!plate)return T('Впишите госномер');
- const r=await api('/api/car-add',{brand,plate,kind:newCarKind,photo:window._carPhoto||null});
+ if(!window._carPhoto)return T('Загрузите фото транспорта с номером');
+ if(!window._carPts)return T('Загрузите фото техпаспорта');
+ const r=await api('/api/car-add',{brand,plate,kind:newCarKind,photo:window._carPhoto,doc_pts:window._carPts});
  if(r.error)return T(r.error==='too_many'?'Больше 5 машин нельзя':'Не удалось отправить');
- document.getElementById('sh2').remove();T('Отправлено на проверку');loadCars();
+ document.getElementById('sh2').remove();window._carPhoto=null;window._carPts=null;T('Отправлено на проверку');loadCars();
 }
 async function togIntercity(){
  const v=!me.intercity;
@@ -2557,7 +2574,8 @@ function setPromoUser(id,name){
  if(el)el.textContent='🔒 '+name;
  const sh=document.getElementById('sh3');if(sh)sh.remove();
 }
-async function saveNewPromo(){
+function saveNewPromo(){ return once('promo',()=>_saveNewPromo()); }
+async function _saveNewPromo(){
  let code=(document.getElementById('np_code').value||'').trim().toUpperCase();
  if(!code)code='BMB'+Math.random().toString(36).slice(2,6).toUpperCase();
  const val=parseInt(document.getElementById('np_val').value)||0;
@@ -2629,7 +2647,10 @@ async function loadPendingCars(){
  <div style="padding:0 0 24px">${items.map(c=>`<div class="req">
   <div class="rt">${c.kind==='moto'?'🏍 ':'🚗 '}${esc(c.brand)} · <span class="plate">${esc(c.plate)}</span></div>
   <div class="rm">от ${esc(c.owner?c.owner.name:'—')}${c.owner?' <span class="idtag">#'+String(c.owner.telegram_id||'').slice(-4)+'</span>':''}${c.kind==='moto'?' · мотоцикл, только доставка':''}</div>
-  ${c.photo_url?`<a href="${c.photo_url}" target="_blank"><img src="${c.photo_url}" style="width:100%;max-height:170px;object-fit:cover;border-radius:11px;margin-top:10px"></a>`:'<div class="rm" style="margin-top:8px;color:var(--am)">фото не приложено</div>'}
+  <div style="display:flex;gap:8px;margin-top:10px">
+   ${c.photo_url?`<a href="${c.photo_url}" target="_blank" style="flex:1"><img src="${c.photo_url}" style="width:100%;height:110px;object-fit:cover;border-radius:11px"><div class="cap">транспорт</div></a>`:'<div style="flex:1" class="rm">фото нет</div>'}
+   ${c.pts_url?`<a href="${c.pts_url}" target="_blank" style="flex:1"><img src="${c.pts_url}" style="width:100%;height:110px;object-fit:cover;border-radius:11px"><div class="cap">техпаспорт</div></a>`:'<div style="flex:1" class="rm">техпаспорта нет</div>'}
+  </div>
   <div class="appcontact">
    ${c.owner&&c.owner.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(c.owner.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}
    <button class="acbtn wr" onclick="writeUser('${c.user_id}','${esc(c.owner?c.owner.name:'')}')">💬 В бота</button>
@@ -2830,7 +2851,8 @@ function grantDriver(id,name,car,plate){
  <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="doGrantDriver('${id}')">Выдать права</button></div></div>`;
  document.getElementById('device').appendChild(m);
 }
-async function doGrantDriver(id){
+function doGrantDriver(id){ return once('grantDrv',()=>_doGrantDriver(id)); }
+async function _doGrantDriver(id){
  const car=(document.getElementById('gd_car').value||'').trim();
  const plate=(document.getElementById('gd_plate').value||'').trim();
  if(!car||!plate)return T('Впишите марку и номер');
@@ -2856,6 +2878,7 @@ async function loadUserCars(uid){
  if(!items.length){box.innerHTML='<div class="sub" style="padding:4px 0 8px">машин нет</div>';return;}
  box.innerHTML=items.map(c=>`<div class="carrow ${c.is_active?'act':''}">
   ${c.photo_url?`<a href="${c.photo_url}" target="_blank"><img src="${c.photo_url}" style="width:52px;height:40px;object-fit:cover;border-radius:8px"></a>`:''}
+  ${c.pts_url?`<a href="${c.pts_url}" target="_blank"><img src="${c.pts_url}" style="width:52px;height:40px;object-fit:cover;border-radius:8px"></a>`:''}
   <div style="flex:1;min-width:0">
    <div style="font-size:14px;font-weight:600">${c.kind==='moto'?'🏍 ':''}${esc(c.brand)}</div>
    <div style="font-size:11.5px;color:var(--dim);margin-top:3px"><span class="plate">${esc(c.plate)}</span>${c.is_active?' <span style="color:var(--g)">· рабочая</span>':''}${!c.approved?' <span style="color:var(--am)">· ждёт проверки</span>':''}</div>
