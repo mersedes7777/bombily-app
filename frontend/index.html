@@ -2193,7 +2193,13 @@ async function aApps(m){
   ${a.tg_username?`<a class="acbtn tg" href="https://t.me/${esc(a.tg_username)}" target="_blank">✈️ Telegram</a>`:'<span class="acbtn dim">нет ника</span>'}
   <button class="acbtn wr" onclick="writeUser('${a.id}','${esc(a.full_name)||esc(a.name)}')">💬 В бота</button>
  </div>
- <div class="fr" style="margin-top:10px"><label>Марка машины</label><input id="ac${a.id}" placeholder="Lada Vesta"></div><div class="fr"><label>Гос. номер</label><input id="ap${a.id}" placeholder="А123ВС"></div><div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>
+ <div class="sec" style="padding-left:0;padding-bottom:4px">Проверьте по документам и поправьте</div>
+ <div class="fr"><label>Имя · его видят пассажиры</label><input id="an${a.id}" value="${esc(a.name)}"></div>
+ <div class="fr"><label>ФИО по документам</label><input id="af${a.id}" value="" placeholder="загружается…"></div>
+ <div class="fr"><label>Телефон</label><input id="apn${a.id}" value="" placeholder="загружается…" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
+ <div class="fr"><label>${a.vehicle_type==='moto'?'Марка мотоцикла':'Марка машины'}</label><input id="ac${a.id}" value="${esc(a.car)}" placeholder="Lada Vesta"></div>
+ <div class="fr"><label>Гос. номер</label><input id="ap${a.id}" value="${esc(a.plate)}" placeholder="А123ВС" style="text-transform:uppercase"></div>
+ <div class="ra"><button class="acc" onclick="okDrv('${a.id}')">Одобрить</button><button class="skip" onclick="noDrv('${a.id}')">Отклонить</button></div></div>`).join(''):'<div class="empty"><b>Новых заявок нет</b>Здесь появятся желающие стать водителями.</div>'}</div>
  <div id="pendcars"></div>`;
  loadAppPhones((apps||[]).map(x=>x.id));
  loadAvatars((apps||[]).map(x=>x.id));
@@ -2201,11 +2207,17 @@ async function aApps(m){
  loadPendingCars();
 }
 async function okDrv(id){
- const c=document.getElementById('ac'+id).value.trim(),p=document.getElementById('ap'+id).value.trim();
- if(!c||!p)return T('Впишите марку и номер');
- const r=await api('/api/admin',{action:'driver-status',target_id:id,status:'approved',car:c,plate:p});
- if(r.error)return T('Ошибка: '+r.error);
- T('Водитель одобрен');drawA();
+ return once('okDrv'+id, async()=>{
+  const g=k=>{const e=document.getElementById(k+id);return e?e.value.trim():'';};
+  const c=g('ac'), p=g('ap').toUpperCase(), n=g('an'), f=g('af'), ph=g('apn');
+  if(!c||!p)return T('Впишите марку и номер');
+  if(!n)return T('Впишите имя');
+  if(ph&&!phoneValid(ph))return T('Проверьте телефон');
+  const r=await api('/api/admin',{action:'driver-status',target_id:id,status:'approved',
+   car:c,plate:p,name:n,full_name:f||null,phone:ph?phoneFmt(ph):null});
+  if(r.error)return T('Ошибка: '+r.error);
+  T('Водитель одобрен');drawA();
+ });
 }
 async function noDrv(id){const r=await api('/api/admin',{action:'driver-status',target_id:id,status:'none'});if(r.error)return T('Ошибка');T('Отклонено');drawA();}
 async function aCmp(m){
@@ -2690,10 +2702,15 @@ async function loadAppPhones(ids){
   if(el)el.textContent=ph;
   const cb=document.getElementById('acall'+id);
   if(cb){cb.href='tel:'+ph;cb.style.display='';}
+  const inp=document.getElementById('apn'+id);
+  if(inp&&!inp.value)inp.value=ph;
  });
  Object.entries(r.names||{}).forEach(([id,nm])=>{
+  if(!nm)return;
   const el=document.getElementById('afio'+id);
-  if(el&&nm)el.textContent=nm;
+  if(el)el.textContent=nm;
+  const fi=document.getElementById('af'+id);
+  if(fi&&!fi.value)fi.value=nm;
  });
 }
 async function aPpl(m){

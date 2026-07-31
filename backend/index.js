@@ -811,7 +811,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v42-car-license',
+    ok: true, service: 'bombily-backend', version: 'v43-edit-application',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -1179,6 +1179,18 @@ http.createServer(async (req, res) => {
       if (act === 'driver-status') {
         if (!isAdminUp(me)) return json(res, 403, { error: 'forbidden' });
         const upd = { driver_status: body.status };
+        // администратор мог поправить данные заявки
+        if (body.name) upd.name = String(body.name).slice(0, 60);
+        if (body.full_name !== undefined && body.full_name !== null) {
+          await db.from('contacts').upsert({ user_id: tid, full_name: String(body.full_name).slice(0, 120), updated_at: new Date().toISOString() });
+        }
+        if (body.phone) {
+          const pdg = String(body.phone).replace(/\D/g, '');
+          if (pdg.length === 11) {
+            await db.from('contacts').upsert({ user_id: tid, phone: String(body.phone).slice(0, 30), updated_at: new Date().toISOString() });
+            upd.has_phone = true;
+          }
+        }
         if (body.car !== undefined) upd.car = body.car;
         if (body.plate !== undefined) upd.plate = body.plate;
         if (body.status === 'approved') {
