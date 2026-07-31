@@ -1723,6 +1723,7 @@ async function shiftSheet(){
  m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Выйти на линию</h3><div class="s">На сколько выходите? По истечении времени смена закроется сама и придёт итог. Максимум 10 часов подряд.</div>
  ${cars.length>1?`<div class="sec" style="padding-left:0">На чём работаете</div><div id="shveh">${cars.map(c=>`<div class="carrow ${c.is_active?'act':''}" onclick="pickShiftVeh('${c.id}')"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${c.kind==='moto'?'🏍 ':'🚗 '}${esc(c.brand)}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px"><span class="plate">${esc(c.plate)}</span>${c.kind==='moto'?' · только доставка':''}</div></div>${c.is_active?'<span style="color:var(--g);font-size:12px;font-weight:600">выбрано</span>':''}</div>`).join('')}</div>`:''}
  <div id="shl"></div>
+ <div class="plan ${hrs===0?'on':''}" onclick="window._sh(0)"><div class="pd"><div class="pdt">Без ограничения</div><div class="pds">пока сам не выйду с линии</div></div></div>
  <div class="fr"><label>Или до конкретного времени</label>
   <div class="tsel">
    <select id="sh_h"><option value="">час</option></select>
@@ -1770,14 +1771,15 @@ async function startShift(){
   if(diff>10){T('Смена не может быть длиннее 10 часов');return;}
   if(diff<0.5){T('Слишком короткая смена');return;}
  }else{
-  end=new Date(Date.now()+window._shGet()*3600000);
+  const hh2=window._shGet();
+  end=hh2===0?null:new Date(Date.now()+hh2*3600000);
  }
  const{error:stE}=await Q(db.from('users').update({status:'online',last_active:new Date().toISOString()}).eq('id',me.id),'Не удалось выйти на линию');
  if(stE)return;
  me.status='online';
- const{data,error}=await Q(db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString(),planned_end:end.toISOString()}).select().single(),'Не удалось открыть смену');
+ const{data,error}=await Q(db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString(),planned_end:end?end.toISOString():null}).select().single(),'Не удалось открыть смену');
  if(!error)curShift=data;
- closeSh();T('Смена до '+end.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}));
+ closeSh();T(end?('Смена до '+end.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})):'Вы на линии');
  drawD();count();
 }
 async function shiftDone(mins,from,to){
@@ -2499,13 +2501,31 @@ async function aFin(m){
  else if(finTab==='bal')finBal(c);
  else if(finTab==='back')finBack(c);
 }
+function idleBlock(){
+ const cur=(SETTINGS.idle_hours===undefined||SETTINGS.idle_hours===null)?5:Number(SETTINGS.idle_hours);
+ const opts=[[0,'Не снимать'],[3,'3 часа'],[5,'5 часов'],[8,'8 часов'],[12,'12 часов']];
+ return `<div class="sec">Простой водителя</div>
+ <div class="note" style="margin:0 14px 10px">${cur===0
+   ? 'Водители остаются на линии, пока сами не выйдут. Подходит, когда людей мало и заходят они редко.'
+   : `Если водитель не открывал приложение ${cur} ч, придёт предупреждение, а ещё через 20 минут он уйдёт с линии — чтобы пассажиры не звали тех, кто уже не работает.`}</div>
+ <div class="seg">${opts.map(o=>`<div class="${cur===o[0]?'on':''}" onclick="setIdle(${o[0]})">${o[1]}</div>`).join('')}</div>`;
+}
+async function setIdle(h){
+ const r=await api('/api/admin',{action:'settings-update',fields:{idle_hours:h}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ if(r.settings)SETTINGS=r.settings; else SETTINGS.idle_hours=h;
+ T(h===0?'Автоснятие выключено':'Снимаем после '+h+' ч простоя');
+ aFin(document.getElementById('main'));
+}
 function finSub(c){
  c.innerHTML=`<div class="shift" style="margin-top:6px;border-color:${SETTINGS.paid_mode?'var(--am)':'var(--line2)'};background:${SETTINGS.paid_mode?'rgba(242,167,59,.08)':'var(--surf)'}"><div class="t"><b>${SETTINGS.paid_mode?'Платный режим включён':'Сейчас всё бесплатно'}</b><span>${SETTINGS.paid_mode?'без подписки на линию нельзя':'подписки не списываются'}</span></div><div class="tg ${SETTINGS.paid_mode?'on':''}" onclick="togglePaid()"><b></b></div></div>
  <div class="sec">Тарифы (₽) · чем больше срок — тем дешевле день</div>
  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;padding:0 14px">
   ${[['1',SETTINGS.price_1],['3',SETTINGS.price_3],['7',SETTINGS.price_7],['30',SETTINGS.price_30]].map(t=>`<div class="fr" style="margin:0"><label>${t[0]} дн</label><input id="pr_${t[0]}" value="${t[1]}" inputmode="numeric" style="font-family:'Roboto Mono',monospace"></div>`).join('')}
  </div>
- <div class="sv" style="padding-top:10px"><button class="btn ghost" onclick="savePrices()">Сохранить тарифы</button></div>`;
+ <div class="sv" style="padding-top:10px"><button class="btn ghost" onclick="savePrices()">Сохранить тарифы</button></div>
+ ${idleBlock()}
+ <div style="height:16px"></div>`;
 }
 async function finBal(c){
  const{data:drv}=await db.from('users').select('*').in('role',['driver','both']).order('name');

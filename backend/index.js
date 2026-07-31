@@ -585,15 +585,23 @@ async function expireLoop() {
 /* ---------- неактивные водители: предупреждение и снятие с линии ---------- */
 async function idleLoop() {
   try {
-    const warnCut = new Date(Date.now() - 180 * 60 * 1000).toISOString();  // 3 часа
-    const offCut  = new Date(Date.now() - 200 * 60 * 1000).toISOString();  // ещё 20 минут
+    // сколько часов простоя терпим — настраивается в панели, 0 = не снимать
+    let idleH = 5;
+    try {
+      const { data: st } = await db.from('settings').select('idle_hours').eq('id', 1).maybeSingle();
+      if (st && st.idle_hours !== null && st.idle_hours !== undefined) idleH = Number(st.idle_hours);
+    } catch (e) {}
+    if (idleH && idleH > 0) {
+    const warnMin = idleH * 60;
+    const warnCut = new Date(Date.now() - warnMin * 60 * 1000).toISOString();
+    const offCut  = new Date(Date.now() - (warnMin + 20) * 60 * 1000).toISOString();
 
     // предупреждение
     const { data: warn } = await db.from('users').select('*')
       .eq('status', 'online').eq('idle_warned', false).lt('last_active', warnCut);
     for (const u of warn || []) {
       if (u.telegram_id) await send(u.telegram_id,
-        `⚠️ <b>Вы всё ещё на линии?</b>\nПриложение не открывалось больше 3 часов. Если не отметитесь в течение 15 минут, мы автоматически снимем вас с линии и закроем смену — чтобы пассажиры не звали вас впустую.`,
+        `⚠️ <b>Вы всё ещё на линии?</b>\nПриложение не открывалось больше ${idleH} ч. Если не отметитесь в течение 20 минут, мы автоматически снимем вас с линии и закроем смену — чтобы пассажиры не звали вас впустую.`,
         { reply_markup: { inline_keyboard: [[wa('Я на линии', 'driver')]] } });
       await db.from('users').update({ idle_warned: true }).eq('id', u.id);
     }
@@ -612,6 +620,7 @@ async function idleLoop() {
       if (u.telegram_id) await send(u.telegram_id,
         `🌙 <b>Вы сняты с линии</b>\nПриложение долго не открывалось, смена закрыта автоматически. Когда снова выйдете на линию — заявки начнут приходить.`,
         { reply_markup: { inline_keyboard: [[wa('Выйти на линию', 'driver')]] } });
+    }
     }
   } catch (e) { console.error('idle', e.message); }
   setTimeout(idleLoop, 5 * 60 * 1000);
@@ -811,7 +820,7 @@ function json(res, code, obj) {
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v44-edit-vehicle',
+    ok: true, service: 'bombily-backend', version: 'v45-idle-setting',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
   });
 
@@ -1501,7 +1510,7 @@ http.createServer(async (req, res) => {
       if (act === 'save-settings' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus'].forEach(k => {
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours'].forEach(k => {
           if (f[k] !== undefined) allowed[k] = f[k];
         });
         if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
@@ -1718,7 +1727,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
