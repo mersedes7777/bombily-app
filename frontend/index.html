@@ -2623,7 +2623,7 @@ async function aFin(m){
  else if(finTab==='bal')finBal(c);
  else if(finTab==='back')finBack(c);
 }
-let bcAud='all',bcCity='all';
+let bcAud='all',bcCity='all',bcCities=null;
 const AUD=[['all','Всем'],['drivers','Водителям'],['passengers','Пассажирам'],['never','Кто ни разу не заказывал'],['ordered','Кто уже заказывал']];
 async function finMail(c){
  c.innerHTML='<div class="empty">Загрузка…</div>';
@@ -2665,12 +2665,19 @@ function mailSheet(){
  <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="mailConfirm()">Отправить</button></div></div>`;
  document.getElementById('device').appendChild(m);
  drawAud();bcCount();
+ if(!bcCities){
+  api('/api/admin',{action:'city-list'}).then(r=>{
+   if(r&&r.items)bcCities=r.items.map(x=>x.name);
+   drawAud();
+  }).catch(()=>{});
+ }
 }
 function drawAud(){
  const a=document.getElementById('bcaud');
  if(a)a.innerHTML=AUD.map(x=>`<div class="audrow ${bcAud===x[0]?'on':''}" onclick="bcAud='${x[0]}';drawAud();bcCount()">${x[1]}</div>`).join('');
  const c=document.getElementById('bccity');
- if(c)c.innerHTML=[['all','Все города']].concat(CITIES.map(x=>[x,x])).map(x=>`<div class="${bcCity===x[0]?'on':''}" onclick="bcCity='${x[0]}';drawAud();bcCount()">${x[1]}</div>`).join('');
+ const src2=(bcCities&&bcCities.length)?bcCities:CITIES;
+ if(c)c.innerHTML=[['all','Все города']].concat(src2.map(x=>[x,x])).map(x=>`<div class="${bcCity===x[0]?'on':''}" onclick="bcCity='${x[0]}';drawAud();bcCount()">${x[1]}</div>`).join('');
 }
 let bcTimer=null;
 function bcCount(){
