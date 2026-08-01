@@ -2546,7 +2546,9 @@ const ACT_RU={
  'promo-create':'создал промокод','promo-delete':'удалил промокод','settings-update':'изменил настройки',
  'support-answer':'ответил в поддержку','support-hide':'скрыл обращение','send-msg':'написал пользователю',
  'winback-set':'обработал возврат','complaint-resolve':'закрыл жалобу','car-approve':'одобрил транспорт',
- 'car-remove':'удалил транспорт','car-add-admin':'добавил транспорт'
+ 'car-remove':'удалил транспорт','car-add-admin':'добавил транспорт',
+ 'broadcast-send':'отправил рассылку','city-save':'изменил город','city-delete':'удалил город',
+ 'pin-now':'обновил закреп вручную','audit-clear':'очистил журнал','set-role':'изменил права доступа'
 };
 let logActor=null;
 async function clearLog(){
@@ -2596,6 +2598,11 @@ async function finLog(c){
      if(d.text)parts.push('«'+String(d.text).slice(0,60)+'»');
      if(d.note)parts.push(d.note);
      if(d.fields)parts.push(Object.keys(d.fields).join(', '));
+     if(d.audience){
+      const au={all:'всем',drivers:'водителям',passengers:'пассажирам',never:'кто не заказывал',ordered:'кто заказывал'};
+      parts.push(au[d.audience]||d.audience);
+     }
+     if(d.city&&d.city!=='all')parts.push('город '+d.city);
      det=parts.join(' · ');
     }
    }catch(e){}

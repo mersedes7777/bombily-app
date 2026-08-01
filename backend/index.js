@@ -1657,7 +1657,8 @@ http.createServer(async (req, res) => {
       const readOnly = new Set(['promo-list','support-list','support-count','winback-list','cars-of-user',
         'cars-pending','cars-pending-list','doc-urls','user-phone','apps-phones','admin-counts','stats',
         'drivers-stats','days-stats','user-search','avatars','avatar-fetch',
-        'audit-list','audit-actors']);
+        'audit-list','audit-actors','activity','broadcast-count','broadcast-list',
+        'city-list','group-check']);
       if (!readOnly.has(act)) {
         const clean = {};
         Object.keys(body || {}).forEach(k => {
