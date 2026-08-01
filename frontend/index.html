@@ -3127,7 +3127,7 @@ async function aPpl(m){
     ||nrm(u.car).includes(q)
     ||nrm(u.plate).includes(q)
     ||(qd.length>=3&&String(u.telegram_id||'').includes(qd))
-    ||(pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd)));
+    ||(qd.length>=3&&pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd)));
  }
  if(pplAct==='ordered')pool=pool.filter(u=>ACT[u.id]&&ACT[u.id].made>0);
  if(pplAct==='never')  pool=pool.filter(u=>!ACT[u.id]||!ACT[u.id].made);
