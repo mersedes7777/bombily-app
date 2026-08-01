@@ -311,6 +311,8 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .idtag{font-family:'Roboto Mono',monospace;font-size:10.5px;color:var(--dim);background:var(--bg);border:1px solid var(--line2);border-radius:6px;padding:1px 5px;font-weight:500;vertical-align:middle;}
 .unote{font-size:11px;color:var(--am);margin-top:3px;line-height:1.4;}
 .uact{font-size:11px;margin-top:3px;line-height:1.4;}
+.audrow{padding:11px 13px;border:1px solid var(--line2);border-radius:11px;margin-bottom:7px;font-size:13.5px;cursor:pointer;color:var(--dim);}
+.audrow.on{border-color:var(--g);background:var(--gs);color:var(--g);font-weight:600;}
 .minifilter{display:flex;gap:16px;padding:2px 18px 8px;flex-wrap:wrap;}
 .minifilter span{font-size:12.5px;color:var(--dim);cursor:pointer;padding-bottom:3px;border-bottom:2px solid transparent;}
 .minifilter span.on{color:var(--g);border-bottom-color:var(--g);font-weight:600;}
@@ -2605,13 +2607,14 @@ async function finLog(c){
  <div style="height:20px"></div>`;
 }
 async function aFin(m){
- const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат'],['city','Города']];
+ const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат'],['city','Города'],['mail','Рассылка']];
  if(isOwner())seg.push(['log','🔒 Журнал']);
  m.innerHTML=`<div class="head"><h2>Финансы</h2><span class="m">${SETTINGS.paid_mode?'платно':'бесплатно'}</span></div>
  <div class="minifilter">${[['','все'],['ordered','заказывали'],['never','ни разу'],['repeat','повторно']].map(f=>`<span class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</span>`).join('')}</div>
  <div class="seg">${seg.map(s=>`<div class="${finTab===s[0]?'on':''}" onclick="finTab='${s[0]}';aFin(document.getElementById('main'))">${s[1]}</div>`).join('')}</div>
  <div id="fincont"><div class="empty">Загрузка…</div></div>`;
  const c=document.getElementById('fincont');
+ if(finTab==='mail')return finMail(c);
  if(finTab==='city')return finCities(c);
  if(finTab==='log')return finLog(c);
  if(finTab==='sub')finSub(c);
@@ -2619,6 +2622,90 @@ async function aFin(m){
  else if(finTab==='ref')finRef(c);
  else if(finTab==='bal')finBal(c);
  else if(finTab==='back')finBack(c);
+}
+let bcAud='all',bcCity='all';
+const AUD=[['all','Всем'],['drivers','Водителям'],['passengers','Пассажирам'],['never','Кто ни разу не заказывал'],['ordered','Кто уже заказывал']];
+async function finMail(c){
+ c.innerHTML='<div class="empty">Загрузка…</div>';
+ const r=await api('/api/admin',{action:'broadcast-list'});
+ const items=(r&&r.items)||[];
+ c.innerHTML=`
+ <div class="note" style="margin:0 14px 12px">Сообщение придёт людям в бота. Отправляется по одному, около двадцати в секунду — сотня разойдётся за пять секунд.</div>
+ <div style="padding:0 14px 14px"><button class="btn" onclick="mailSheet()">Написать сообщение</button></div>
+ <div class="sec">Отправленные</div>
+ ${items.length?items.map(b=>{
+   const a2=(AUD.find(x=>x[0]===b.audience)||['','—'])[1];
+   const when=new Date(b.created_at).toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+   const run=b.status!=='done';
+   return `<div class="card" style="flex-direction:column;align-items:stretch;gap:6px">
+    <div style="display:flex;gap:10px;align-items:center">
+     <div style="flex:1;min-width:0"><div class="nm" style="font-size:13.5px">${esc(a2)}${b.city&&b.city!=='all'?' · '+esc(b.city):''}</div>
+     <div class="sub">${when} · ${esc(b.created_by_name)}</div></div>
+     <div style="text-align:right"><div class="price" style="font-size:16px">${b.sent}</div><div class="sub" style="font-size:10px">${run?'идёт…':'из '+b.total}</div></div>
+    </div>
+    <div class="sub" style="color:var(--ink);font-size:12.5px">«${esc(String(b.text).slice(0,110))}${String(b.text).length>110?'…':''}»</div>
+    ${(b.blocked||b.failed)?`<div class="sub" style="font-size:11px;color:var(--am)">${b.blocked?b.blocked+' заблокировали бота':''}${b.failed?(b.blocked?' · ':'')+b.failed+' не доставлено':''}</div>`:''}
+   </div>`;
+  }).join(''):'<div class="empty">Рассылок ещё не было</div>'}
+ <div style="height:16px"></div>`;
+}
+function mailSheet(){
+ bcAud='all';bcCity='all';
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Сообщение людям</h3>
+ <div class="s">Придёт в бота. Пишите коротко и по делу — общие рассылки быстро надоедают.</div>
+ <div class="sec" style="padding-left:0;padding-bottom:4px">Кому</div>
+ <div id="bcaud"></div>
+ <div class="sec" style="padding-left:0;padding-bottom:4px">Город</div>
+ <div class="seg" id="bccity"></div>
+ <textarea class="ta" id="bctext" placeholder="Текст сообщения" style="min-height:120px" oninput="bcCount()"></textarea>
+ <div class="fr"><label>Кнопка · не обязательно</label><input id="bcbt" placeholder="Открыть Бомбилы"></div>
+ <div class="fr"><label>Ссылка для кнопки</label><input id="bcbu" placeholder="https://t.me/bombily_bot"></div>
+ <div class="note" id="bcinfo" style="margin:0 0 12px">Получателей: считаем…</div>
+ <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="mailConfirm()">Отправить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ drawAud();bcCount();
+}
+function drawAud(){
+ const a=document.getElementById('bcaud');
+ if(a)a.innerHTML=AUD.map(x=>`<div class="audrow ${bcAud===x[0]?'on':''}" onclick="bcAud='${x[0]}';drawAud();bcCount()">${x[1]}</div>`).join('');
+ const c=document.getElementById('bccity');
+ if(c)c.innerHTML=[['all','Все города']].concat(CITIES.map(x=>[x,x])).map(x=>`<div class="${bcCity===x[0]?'on':''}" onclick="bcCity='${x[0]}';drawAud();bcCount()">${x[1]}</div>`).join('');
+}
+let bcTimer=null;
+function bcCount(){
+ if(bcTimer)clearTimeout(bcTimer);
+ bcTimer=setTimeout(async()=>{
+  const el=document.getElementById('bcinfo');if(!el)return;
+  const r=await api('/api/admin',{action:'broadcast-count',audience:bcAud,city:bcCity});
+  const n=r&&r.count!==undefined?r.count:0;
+  const t=(document.getElementById('bctext')?.value||'').trim();
+  el.innerHTML=`Получателей: <b>${n}</b>${n?` · уйдёт примерно за ${Math.max(1,Math.round(n*0.07))} сек`:''}${t.length?` · символов ${t.length}`:''}`;
+ },300);
+}
+function mailConfirm(){
+ const t=(document.getElementById('bctext').value||'').trim();
+ if(t.length<5)return T('Напишите текст');
+ const bt=(document.getElementById('bcbt').value||'').trim();
+ const bu=(document.getElementById('bcbu').value||'').trim();
+ if(bt&&!bu)return T('Впишите ссылку для кнопки');
+ const aud=(AUD.find(x=>x[0]===bcAud)||['','—'])[1];
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet"><h3>Отправить?</h3><div class="s">Кому: <b>${aud}</b>${bcCity!=='all'?', город '+esc(bcCity):''}.<br><br>Отменить отправку после запуска нельзя.</div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Назад</button><button class="o" onclick="mailSend()">Отправить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function mailSend(){
+ return once('bcsend', async()=>{
+  const t=(document.getElementById('bctext').value||'').trim();
+  const bt=(document.getElementById('bcbt').value||'').trim();
+  const bu=(document.getElementById('bcbu').value||'').trim();
+  const r=await api('/api/admin',{action:'broadcast-send',text:t,audience:bcAud,city:bcCity,btn_text:bt||null,btn_url:bu||null});
+  const sh2=document.getElementById('sh2');if(sh2)sh2.remove();
+  if(r.error)return T(r.error==='short'?'Слишком короткий текст':r.error==='forbidden'?'Нет прав':'Ошибка');
+  closeSh();T('Рассылка пошла');
+  setTimeout(()=>aFin(document.getElementById('main')),1200);
+ });
 }
 async function finCities(c){
  c.innerHTML='<div class="empty">Загрузка…</div>';

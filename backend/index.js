@@ -155,6 +155,11 @@ async function onUpdate(u) {
   // отмена режима ответа
   if (text === '/cancel') { await clearStaffReply(chat); return send(chat, 'Отменено.'); }
 
+  if (text === '/stop') {
+    await db.from('users').update({ no_broadcast: true }).eq('telegram_id', chat);
+    return send(chat, 'Больше не будем присылать общие сообщения. Уведомления по вашим заказам продолжат приходить.\n\nВернуть рассылку — /start');
+  }
+
   // сотрудник нажал «Ответить» и теперь пишет ответ
   const pending = await getStaffReply(chat);
   if (pending && pending.target_tg && !text.startsWith('/')) {
@@ -196,6 +201,7 @@ async function onUpdate(u) {
 
   if (text.startsWith('/start')) {
     await clearWait(chat);
+    db.from('users').update({ no_broadcast: false }).eq('telegram_id', chat).then(() => {}, () => {});
     // реферальная ссылка: /start ref_CODE
     const parts = text.split(/\s+/);
     const param = parts[1] || '';
@@ -1043,6 +1049,71 @@ async function pinLoop() {
   setTimeout(pinLoop, mins * 60 * 1000);
 }
 
+
+/* ================= рассылка ================= */
+
+// кому пойдёт сообщение
+async function audienceQuery(audience, city) {
+  let q = db.from('users').select('id,telegram_id,name').not('telegram_id', 'is', null).eq('no_broadcast', false);
+  if (city && city !== 'all') q = q.eq('city', city);
+  if (audience === 'drivers') q = q.eq('driver_status', 'approved');
+  if (audience === 'passengers') q = q.not('driver_status', 'eq', 'approved');
+  const { data } = await q.limit(5000);
+  let list = data || [];
+
+  // «ни разу не заказывал» и «заказывал» считаем по заявкам
+  if (audience === 'never' || audience === 'ordered') {
+    const { data: rides } = await db.from('rides').select('passenger_id').limit(20000);
+    const made = new Set((rides || []).map(r => r.passenger_id).filter(Boolean));
+    list = list.filter(u => audience === 'never' ? !made.has(u.id) : made.has(u.id));
+  }
+  return list;
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function runBroadcast(id) {
+  try {
+    const { data: b } = await db.from('broadcasts').select('*').eq('id', id).maybeSingle();
+    if (!b || b.status === 'done') return;
+    await db.from('broadcasts').update({ status: 'running' }).eq('id', id);
+
+    const list = await audienceQuery(b.audience, b.city);
+    await db.from('broadcasts').update({ total: list.length }).eq('id', id);
+
+    const kb = b.btn_text && b.btn_url
+      ? { reply_markup: { inline_keyboard: [[{ text: b.btn_text, url: b.btn_url }]] } }
+      : {};
+
+    let sent = 0, failed = 0, blocked = 0;
+    for (const u of list) {
+      const r = await tg('sendMessage', {
+        chat_id: u.telegram_id, text: b.text, parse_mode: 'HTML',
+        disable_web_page_preview: true, ...kb
+      });
+      if (r && r.ok) sent++;
+      else {
+        const d = String(r && r.description || '');
+        if (/blocked|deactivated|chat not found|user is deactivated/i.test(d)) {
+          blocked++;
+          await db.from('users').update({ no_broadcast: true }).eq('id', u.id);
+        } else failed++;
+      }
+      // бережём лимиты телеграма
+      await sleep(60);
+      if ((sent + failed + blocked) % 20 === 0) {
+        await db.from('broadcasts').update({ sent, failed, blocked }).eq('id', id);
+      }
+    }
+    await db.from('broadcasts').update({
+      sent, failed, blocked, status: 'done', finished_at: new Date().toISOString()
+    }).eq('id', id);
+  } catch (e) {
+    console.error('broadcast', e.message);
+    await db.from('broadcasts').update({ status: 'done', finished_at: new Date().toISOString() }).eq('id', id);
+  }
+}
+
 /* ---------- проверка подписи Telegram initData ---------- */
 function verifyInitData(initData) {
   try {
@@ -1798,6 +1869,29 @@ http.createServer(async (req, res) => {
           funnel: { total: total || 0, ordered, arrived, repeat, loyal },
           users: byUser
         });
+      }
+
+      // ---- рассылка ----
+      if (act === 'broadcast-count') {
+        const list = await audienceQuery(body.audience, body.city);
+        return json(res, 200, { ok: true, count: list.length });
+      }
+      if (act === 'broadcast-send' && isAdminUp(me)) {
+        const text = String(body.text || '').trim();
+        if (text.length < 5) return json(res, 400, { error: 'short' });
+        if (text.length > 3000) return json(res, 400, { error: 'long' });
+        const { data: ins } = await db.from('broadcasts').insert({
+          text, audience: body.audience || 'all', city: body.city || 'all',
+          btn_text: body.btn_text || null, btn_url: body.btn_url || null,
+          created_by: me.id, created_by_name: me.name, status: 'queued'
+        }).select().single();
+        if (!ins) return json(res, 500, { error: 'db' });
+        runBroadcast(ins.id);          // не ждём — уходит в фон
+        return json(res, 200, { ok: true, id: ins.id });
+      }
+      if (act === 'broadcast-list') {
+        const { data } = await db.from('broadcasts').select('*').order('created_at', { ascending: false }).limit(20);
+        return json(res, 200, { ok: true, items: data || [] });
       }
 
       // ---- города и сообщества ----
