@@ -720,6 +720,11 @@ function looksLikeOrder(text) {
 }
 
 const groupReplyAt = new Map();   // когда последний раз отвечали в чате
+const groupLog = [];              // последние события из групп — для диагностики
+function glog(msg) {
+  groupLog.unshift(new Date().toLocaleTimeString('ru') + ' — ' + msg);
+  if (groupLog.length > 12) groupLog.pop();
+}
 
 async function delLater(chatId, messageId, sec) {
   setTimeout(() => { tg('deleteMessage', { chat_id: chatId, message_id: messageId }).catch(() => {}); }, sec * 1000);
@@ -742,8 +747,12 @@ async function cityByGroup(chatId) {
 
 async function onGroupMessage(m) {
   const chatId = m.chat.id;
+  const preview = String(m.text || m.caption || '').slice(0, 40) || '(без текста)';
   const city = await cityByGroup(chatId);
-  if (!city) return;                       // чужая группа — не вмешиваемся
+  if (!city) {
+    glog(`чат ${chatId}: города с таким ID нет · «${preview}»`);
+    return;                                // чужая группа — не вмешиваемся
+  }
   const st = await groupSettings();
 
   // служебные «вступил / вышел»
@@ -763,7 +772,7 @@ async function onGroupMessage(m) {
     return;
   }
 
-  if (!st.group_moderate) return;
+  if (!st.group_moderate) { glog(`${city.name}: приходят сообщения, но «убирать заказы» выключено`); return; }
   const text = String(m.text || m.caption || '');
   if (!text) return;
   if (m.from && m.from.is_bot) return;
@@ -771,12 +780,17 @@ async function onGroupMessage(m) {
   // администраторов группы не трогаем
   try {
     const cm = await tg('getChatMember', { chat_id: chatId, user_id: m.from.id });
-    if (cm && cm.ok && ['creator', 'administrator'].includes(cm.result.status)) return;
+    if (cm && cm.ok && ['creator', 'administrator'].includes(cm.result.status)) {
+      glog(`${city.name}: писал администратор — пропускаем · «${preview}»`);
+      return;
+    }
   } catch (e) {}
 
-  if (!looksLikeOrder(text)) return;
+  if (!looksLikeOrder(text)) { glog(`${city.name}: не похоже на заказ · «${preview}»`); return; }
 
-  await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
+  const del = await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id });
+  if (del && del.ok) glog(`${city.name}: УДАЛЕНО · «${preview}»`);
+  else glog(`${city.name}: удалить не вышло (${del && del.description ? del.description : 'нет прав?'}) · «${preview}»`);
 
   // не частим с ответами: не чаще раза в минуту на группу
   const last = groupReplyAt.get(chatId) || 0;
@@ -929,7 +943,8 @@ http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET') return json(res, 200, {
     ok: true, service: 'bombily-backend', version: 'v48-group-id',
-    notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок'
+    notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок',
+    group_log: groupLog.length ? groupLog : 'из групп сообщений не приходило'
   });
 
   const body = await readBody(req);
