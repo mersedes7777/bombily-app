@@ -3107,19 +3107,25 @@ async function loadAppPhones(ids){
  });
 }
 async function aPpl(m){
- const{data:us}=await db.from('users').select('*').order('created_at',{ascending:false}).limit(300);
+ const{data:us}=await db.from('users').select('*').order('created_at',{ascending:false}).limit(2000);
  const all=us||[];
  const isStaffR=u=>u.staff_role&&u.staff_role!=='none';
 
- // сначала сужаем общий список поиском и активностью
+ // приводим к общему виду: регистр, ё, лишние и неразрывные пробелы
+ const nrm=s=>String(s==null?'':s).toLowerCase().replace(/ё/g,'е')
+   .replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
+
  let pool=all;
  if(pplQuery){
+  const q=nrm(pplQuery);
   const qd=pplQuery.replace(/\D/g,'');
-  const ql=pplQuery.toLowerCase();
-  pool=pool.filter(u=>String(u.name||'').toLowerCase().includes(ql)
+  pool=pool.filter(u=>nrm(u.name).includes(q)
+    ||nrm(u.full_name).includes(q)
+    ||nrm(u.admin_note).includes(q)
+    ||nrm(u.car).includes(q)
+    ||nrm(u.plate).includes(q)
     ||(qd.length>=3&&String(u.telegram_id||'').includes(qd))
-    ||(pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd))
-    ||String(u.admin_note||'').toLowerCase().includes(ql));
+    ||(pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd)));
  }
  if(pplAct==='ordered')pool=pool.filter(u=>ACT[u.id]&&ACT[u.id].made>0);
  if(pplAct==='never')  pool=pool.filter(u=>!ACT[u.id]||!ACT[u.id].made);
@@ -3155,7 +3161,7 @@ async function aPpl(m){
    return `<div class="ai"><div class="ava" id="av${u.id}">${av?`<img src="${av}" alt="">`:(esc(u.name)[0]||'?')}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''} <span class="idtag">#${tag}</span></div><div style="font-size:11.5px;color:var(--dim)">${ph?esc(ph):(u.has_phone?'телефон загружается…':'без телефона')}${u.car?' · '+esc(u.car):''}${reg?' · с '+reg:''}</div>${u.admin_note?`<div class="unote">✎ ${esc(u.admin_note)}</div>`:''}<div class="uact">${actLine(u.id)}</div></div>${on}${bn}${bd}${u.tg_username?`<a class="tgmini" href="https://t.me/${esc(u.tg_username)}" target="_blank" onclick="event.stopPropagation()" title="Написать в Telegram">✈️</a>`:'<span class="tgmini off" title="Нет ника">✈️</span>'}<button class="rolebtn" onclick="userCard('${u.id}')">открыть</button></div>`;
  }).join('')}</div>`;
  if(!Object.keys(ACT).length)loadActivity().then(()=>aPpl(document.getElementById('main')));
- loadPplPhones(list.map(u=>u.id).slice(0,60));
+ loadPplPhones(list.map(u=>u.id).slice(0,200));
  loadAvatars(list.map(u=>u.id).slice(0,20));
 }
 function writeUser(uid,name){
