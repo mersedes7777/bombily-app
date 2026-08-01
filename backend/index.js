@@ -1689,7 +1689,7 @@ http.createServer(async (req, res) => {
         'drivers-stats','days-stats','user-search','avatars','avatar-fetch',
         'audit-list','audit-actors','activity','broadcast-count','broadcast-list',
         'city-list','group-check']);
-      const customLog = new Set(['edit-user', 'adjust-balance', 'driver-status', 'ban']);
+      const customLog = new Set(['edit-user', 'adjust-balance', 'driver-status', 'ban', 'car-edit']);
       if (!readOnly.has(act) && !customLog.has(act)) {
         const clean = {};
         Object.keys(body || {}).forEach(k => {
@@ -2022,6 +2022,21 @@ http.createServer(async (req, res) => {
                           lic_url: c.doc_license ? await signed(c.doc_license) : null });
         }
         return json(res, 200, { ok: true, items: out });
+      }
+
+      // изменить марку и номер транспорта (staff)
+      if (act === 'car-edit') {
+        const { data: c } = await db.from('cars').select('*').eq('id', body.car_id).maybeSingle();
+        if (!c) return json(res, 404, { error: 'no_car' });
+        const brand = String(body.brand || '').trim().slice(0, 60);
+        const plate = String(body.plate || '').trim().toUpperCase().slice(0, 15);
+        if (!brand || !plate) return json(res, 400, { error: 'bad_input' });
+        await db.from('cars').update({ brand, plate }).eq('id', c.id);
+        // если это рабочий транспорт — обновим и то, что видят пассажиры
+        if (c.is_active) await db.from('users').update({ car: brand, plate }).eq('id', c.user_id);
+        await audit(me, 'car-edit', c.user_id, null,
+          `транспорт: ${c.brand} ${c.plate} → ${brand} ${plate}`);
+        return json(res, 200, { ok: true });
       }
 
       if (act === 'car-approve') {
