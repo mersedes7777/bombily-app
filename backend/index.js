@@ -941,6 +941,50 @@ function json(res, code, obj) {
 /* ---------- защищённый API ---------- */
 http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
+  if (req.method === 'GET' && req.url.includes('group')) {
+    // подробная проверка настройки групп
+    const out = { ok: true, шаги: [] };
+    try {
+      const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+      if (!st) out.шаги.push('❌ настройки не читаются');
+      else if (st.group_moderate === undefined)
+        out.шаги.push('❌ db-40-group.sql НЕ выполнен — колонок нет');
+      else {
+        out.шаги.push('✅ db-40-group.sql выполнен');
+        out.шаги.push((st.community_enabled ? '✅' : '❌') + ' тумблер «Группы городов»: ' + (st.community_enabled ? 'включён' : 'ВЫКЛЮЧЕН'));
+        out.шаги.push((st.group_moderate ? '✅' : '❌') + ' тумблер «Убирать заказы из чата»: ' + (st.group_moderate ? 'включён' : 'ВЫКЛЮЧЕН'));
+      }
+    } catch (e) { out.шаги.push('❌ настройки: ' + e.message); }
+
+    try {
+      const { data: cs } = await db.from('cities').select('name,group_id,group_link,active');
+      const withId = (cs || []).filter(c => c.group_id);
+      if (!withId.length) out.шаги.push('❌ ни у одного города не указан ID группы');
+      for (const c of withId) {
+        out.шаги.push(`— город ${c.name}, ID ${c.group_id}${c.active ? '' : ' (город выключен!)'}`);
+        try {
+          const me2 = await tg('getMe');
+          const botId = me2 && me2.result ? me2.result.id : null;
+          const chat = await tg('getChat', { chat_id: c.group_id });
+          if (!chat || !chat.ok) { out.шаги.push(`   ❌ бот не видит эту группу: ${chat && chat.description ? chat.description : 'нет ответа'}`); continue; }
+          out.шаги.push(`   ✅ группа найдена: ${chat.result.title}`);
+          if (botId) {
+            const cm = await tg('getChatMember', { chat_id: c.group_id, user_id: botId });
+            if (!cm || !cm.ok) { out.шаги.push('   ❌ бота нет в группе'); continue; }
+            const s = cm.result.status;
+            out.шаги.push(s === 'administrator' ? '   ✅ бот администратор' : `   ❌ бот НЕ администратор (${s})`);
+            if (s === 'administrator') {
+              out.шаги.push((cm.result.can_delete_messages ? '   ✅' : '   ❌') + ' право удалять сообщения: ' + (cm.result.can_delete_messages ? 'есть' : 'НЕТ'));
+            }
+          }
+        } catch (e) { out.шаги.push('   ❌ ' + e.message); }
+      }
+    } catch (e) { out.шаги.push('❌ города: ' + e.message); }
+
+    out.последние_события = groupLog.length ? groupLog : 'из групп сообщений не приходило — скорее всего не выключен Group Privacy у @BotFather, либо бот не переподключён после этого';
+    return json(res, 200, out);
+  }
+
   if (req.method === 'GET') return json(res, 200, {
     ok: true, service: 'bombily-backend', version: 'v48-group-id',
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок',
