@@ -2573,18 +2573,18 @@ async function finCities(c){
  const items=r.items||[];
  const on=!!SETTINGS.community_enabled;
  c.innerHTML=`
- <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Группы городов</div><div class="obhint">${on
-   ? 'Людям предлагают вступить в группу своего города, в профиле виден раздел «Группа города».'
-   : 'Выключено. Ссылки и настройки сохранены — включите, когда группы будут готовы.'}</div></div><div class="tg ${on?'on':''}" onclick="togCommunity()"><b></b></div></div>
- ${on?`
+ <div class="sec">Приглашение в группу</div>
+ <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Предлагать вступить</div><div class="obhint">${on
+   ? 'После выбора города человеку показывают карточку группы, в профиле виден раздел «Группа города».'
+   : 'Выключено. Людей не зовут в группу и раздел в профиле скрыт — удобно, пока группа пустая. Модерация чата при этом работает.'}</div></div><div class="tg ${on?'on':''}" onclick="togCommunity()"><b></b></div></div>
+
  <div class="sec">Бот в группе</div>
  <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Убирать заказы из чата</div><div class="obhint">${SETTINGS.group_moderate
    ? 'Сообщения вроде «кто свободен» удаляются, бот отвечает ссылкой на приложение.'
    : 'Выключено. Люди смогут договариваться о поездках прямо в чате, минуя приложение.'}</div></div><div class="tg ${SETTINGS.group_moderate?'on':''}" onclick="togGroup('group_moderate')"><b></b></div></div>
  <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Чистить «вступил / вышел»</div><div class="obhint">Служебные сообщения о входе и выходе удаляются сразу.</div></div><div class="tg ${SETTINGS.group_clean_service!==false?'on':''}" onclick="togGroup('group_clean_service')"><b></b></div></div>
  <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Приветствовать новичков</div><div class="obhint">Короткое приветствие с кнопкой на бота, само исчезает через две минуты.</div></div><div class="tg ${SETTINGS.group_welcome?'on':''}" onclick="togGroup('group_welcome')"><b></b></div></div>
- <div class="note" style="margin:10px 14px 14px">Работает только в группах, чей ID указан ниже. В чужие группы бот не вмешивается. Администраторов группы не трогает.</div>
- `:''}
+ <div class="note" style="margin:10px 14px 14px">Работает независимо от приглашений — только в группах, чей ID указан ниже. В чужие группы бот не вмешивается, администраторов не трогает.</div>
  <div class="sec">Города</div>
  <div class="note" style="margin:0 14px 12px">Выключенный город исчезает из выбора, но у тех, кто уже его выбрал, остаётся.</div>
  <div style="padding:0 14px 10px"><button class="rolebtn" onclick="cityEdit()">+ добавить город</button></div>
