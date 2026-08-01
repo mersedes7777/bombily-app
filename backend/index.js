@@ -904,6 +904,145 @@ async function onGroupMessage(m) {
   if (r && r.result) delLater(chatId, r.result.message_id, 90);
 }
 
+
+/* ================= живой закреп в группе ================= */
+
+// местное время (Донбасс, UTC+3)
+function localHour() {
+  return new Date(Date.now() + 3 * 3600 * 1000).getUTCHours();
+}
+function localTimeStr() {
+  const d = new Date(Date.now() + 3 * 3600 * 1000);
+  return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+}
+function dayStartISO() {
+  const d = new Date(Date.now() + 3 * 3600 * 1000);
+  d.setUTCHours(0, 0, 0, 0);
+  return new Date(d.getTime() - 3 * 3600 * 1000).toISOString();
+}
+
+// склонения
+function plural(n, forms) {
+  const n10 = n % 10, n100 = n % 100;
+  if (n10 === 1 && n100 !== 11) return forms[0];
+  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return forms[1];
+  return forms[2];
+}
+
+// пороги: ниже них строку не показываем, чтобы не выглядеть пусто
+const PIN_MIN = { intercity: 2, rides: 5, waitRides: 10 };
+
+async function cityStats(city) {
+  const out = { online: 0, delivery: 0, intercity: 0, ridesToday: 0, wait: null };
+  const [{ count: online }, { count: deliv }, { count: inter }, { count: rides }] = await Promise.all([
+    db.from('users').select('*', { count: 'exact', head: true })
+      .eq('city', city).eq('status', 'online').in('role', ['driver', 'both']),
+    db.from('users').select('*', { count: 'exact', head: true })
+      .eq('city', city).eq('status', 'online').eq('delivery', true),
+    db.from('users').select('*', { count: 'exact', head: true })
+      .eq('city', city).eq('status', 'online').eq('intercity', true),
+    db.from('rides').select('*', { count: 'exact', head: true })
+      .eq('city', city).eq('status', 'completed').gte('created_at', dayStartISO())
+  ]);
+  out.online = online || 0; out.delivery = deliv || 0;
+  out.intercity = inter || 0; out.ridesToday = rides || 0;
+
+  // среднее ожидание: от заявки до подтверждения, за неделю
+  try {
+    const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
+    const { data: rs } = await db.from('rides').select('created_at,confirmed_at')
+      .eq('city', city).not('confirmed_at', 'is', null).gte('created_at', weekAgo).limit(300);
+    const arr = (rs || []).map(r => (new Date(r.confirmed_at) - new Date(r.created_at)) / 60000)
+      .filter(v => v > 0 && v < 120);
+    if (arr.length >= PIN_MIN.waitRides) {
+      out.wait = Math.max(1, Math.round(arr.reduce((a, b) => a + b, 0) / arr.length));
+    }
+  } catch (e) {}   // колонки может не быть — тогда просто не показываем ожидание
+  return out;
+}
+
+function pinText(city, s) {
+  const head = `🚖 <b>Bombily | ${city}</b>`;
+  const foot = `\n\n👇 Заказы принимаются только в боте`;
+  const h = localHour();
+
+  // ночь: цифры прячем, «0 водителей» в три часа выглядит как поломка
+  if (h >= 1 && h < 6) {
+    return `${head}\n\n🌙 Ночью водители выходят по заявке.\n\nОставьте заказ в боте — он придёт всем, кто работает ночью, даже если сейчас никого нет на линии.${foot}`;
+  }
+
+  // никого на линии: вместо нулей — чем мы полезны
+  if (!s.online) {
+    return `${head}\n\nВызов машины в два касания — без диспетчера и наценок.\n\n• Цену обсуждаете сами с водителем\n• Свои водители, с правами и техпаспортом\n• Доставка посылок и межгород${foot}`;
+  }
+
+  const lines = [`🟢 <b>На линии:</b> ${s.online} ${plural(s.online, ['водитель', 'водителя', 'водителей'])}`];
+  if (s.delivery > 0) lines.push(`📦 Доставка: ${s.delivery} ${plural(s.delivery, ['курьер', 'курьера', 'курьеров'])}`);
+  if (s.intercity >= PIN_MIN.intercity) lines.push(`🛣 Межгород: ${s.intercity} ${plural(s.intercity, ['водитель', 'водителя', 'водителей'])}`);
+  if (s.wait) lines.push(`⏱ Ожидание: ~${s.wait} ${plural(s.wait, ['минута', 'минуты', 'минут'])}`);
+  if (s.ridesToday >= PIN_MIN.rides) lines.push(`\n🚖 Сегодня выполнено: ${s.ridesToday} ${plural(s.ridesToday, ['поездка', 'поездки', 'поездок'])}`);
+
+  const tail = s.ridesToday >= PIN_MIN.rides ? '' : '\n\nЦену обсуждаете сами, наценок нет.';
+  return `${head}\n\n${lines.join('\n')}${tail}${foot}\n<i>обновлено в ${localTimeStr()}</i>`;
+}
+
+async function updatePin(city) {
+  const kb = { inline_keyboard: [[{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] };
+  const s = await cityStats(city.name);
+  const text = pinText(city.name, s);
+
+  const { data: pin } = await db.from('group_pins').select('*').eq('city_name', city.name).maybeSingle();
+
+  // текст не изменился — ничего не трогаем
+  if (pin && pin.message_id && pin.last_text === text) return;
+
+  if (pin && pin.message_id) {
+    const r = await tg('editMessageText', {
+      chat_id: city.group_id, message_id: pin.message_id,
+      text, parse_mode: 'HTML', reply_markup: kb
+    });
+    if (r && r.ok) {
+      await db.from('group_pins').update({ last_text: text, updated_at: new Date().toISOString() })
+        .eq('city_name', city.name);
+      return;
+    }
+    // сообщение не найдено или удалено — создадим заново
+    if (r && r.description && /not found|message to edit|MESSAGE_ID_INVALID/i.test(r.description)) {
+      await db.from('group_pins').delete().eq('city_name', city.name);
+    } else {
+      return;  // прочая ошибка — не плодим сообщения
+    }
+  }
+
+  const sent = await tg('sendMessage', {
+    chat_id: city.group_id, text, parse_mode: 'HTML',
+    reply_markup: kb, disable_notification: true
+  });
+  if (!sent || !sent.ok) { glog(`${city.name}: закреп не отправился — ${sent && sent.description ? sent.description : 'нет ответа'}`); return; }
+  const mid = sent.result.message_id;
+  await tg('pinChatMessage', { chat_id: city.group_id, message_id: mid, disable_notification: true });
+  await db.from('group_pins').upsert({
+    city_name: city.name, chat_id: city.group_id, message_id: mid,
+    last_text: text, updated_at: new Date().toISOString()
+  });
+  glog(`${city.name}: закреп создан`);
+}
+
+async function pinLoop() {
+  let mins = 5;
+  try {
+    const { data: st } = await db.from('settings').select('pin_enabled,pin_minutes').eq('id', 1).maybeSingle();
+    if (st && st.pin_minutes) mins = Math.max(2, Number(st.pin_minutes));
+    if (st && st.pin_enabled) {
+      const { data: cities } = await db.from('cities').select('name,group_id').not('group_id', 'is', null);
+      for (const c of cities || []) {
+        try { await updatePin(c); } catch (e) { glog(`${c.name}: закреп — ${e.message}`); }
+      }
+    }
+  } catch (e) { console.error('pinLoop', e.message); }
+  setTimeout(pinLoop, mins * 60 * 1000);
+}
+
 /* ---------- проверка подписи Telegram initData ---------- */
 function verifyInitData(initData) {
   try {
@@ -1619,6 +1758,17 @@ http.createServer(async (req, res) => {
         return json(res, 200, { ok: true, items: Object.values(map).sort((a2, b2) => b2.count - a2.count) });
       }
 
+      // обновить закреп немедленно
+      if (act === 'pin-now') {
+        const { data: cities } = await db.from('cities').select('name,group_id').not('group_id', 'is', null);
+        if (!cities || !cities.length) return json(res, 400, { error: 'no_groups' });
+        let done = 0;
+        for (const c of cities) {
+          try { await updatePin(c); done++; } catch (e) {}
+        }
+        return json(res, 200, { ok: true, done });
+      }
+
       // ---- города и сообщества ----
       if (act === 'city-list') {
         const { data } = await db.from('cities').select('*').order('sort').order('name');
@@ -1838,7 +1988,7 @@ http.createServer(async (req, res) => {
       if (act === 'save-settings' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome'].forEach(k => {
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes'].forEach(k => {
           if (f[k] !== undefined) allowed[k] = f[k];
         });
         if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
@@ -2055,7 +2205,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
@@ -2123,3 +2273,4 @@ expireLoop();
 idleLoop();
 winbackLoop();
 shiftLoop();
+pinLoop();

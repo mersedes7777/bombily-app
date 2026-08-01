@@ -1160,7 +1160,7 @@ function startCd(created){
  upd();cdTick=setInterval(upd,1000);
 }
 async function accept(oid,did,price){
- await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null}).eq('id',active.id);
+ await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null,confirmed_at:new Date().toISOString()}).eq('id',active.id);
  active.status='confirmed';active.driver_id=did;subRide(active.id);watchCompletion();watchUnread(active.id);
  await db.from('offers').update({status:'selected'}).eq('id',oid);
  await db.from('offers').update({status:'declined'}).eq('ride_id',active.id).neq('id',oid);
@@ -2585,6 +2585,16 @@ async function finCities(c){
  <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Чистить «вступил / вышел»</div><div class="obhint">Служебные сообщения о входе и выходе удаляются сразу.</div></div><div class="tg ${SETTINGS.group_clean_service!==false?'on':''}" onclick="togGroup('group_clean_service')"><b></b></div></div>
  <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Приветствовать новичков</div><div class="obhint">Короткое приветствие с кнопкой на бота, само исчезает через две минуты.</div></div><div class="tg ${SETTINGS.group_welcome?'on':''}" onclick="togGroup('group_welcome')"><b></b></div></div>
  <div class="note" style="margin:10px 14px 14px">Работает независимо от приглашений — только в группах, чей ID указан ниже. В чужие группы бот не вмешивается, администраторов не трогает.</div>
+
+ <div class="sec">Живой закреп</div>
+ <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Закреп со статистикой</div><div class="obhint">${SETTINGS.pin_enabled
+   ? 'Бот держит в группе одно закреплённое сообщение и молча его переписывает. Пока водителей мало, цифры не показываются.'
+   : 'Выключено. Включите — бот создаст закреп и будет обновлять его сам, без новых уведомлений в чате.'}</div></div><div class="tg ${SETTINGS.pin_enabled?'on':''}" onclick="togGroup('pin_enabled')"><b></b></div></div>
+ ${SETTINGS.pin_enabled?`
+ <div class="sec" style="padding-bottom:4px">Как часто обновлять</div>
+ <div class="seg">${[3,5,10,15].map(v=>`<div class="${(SETTINGS.pin_minutes||5)===v?'on':''}" onclick="setPinMin(${v})">${v} мин</div>`).join('')}</div>
+ <div style="padding:8px 14px 0"><button class="rolebtn" onclick="pinNow()">обновить закреп сейчас</button></div>
+ `:''}
  <div class="sec">Города</div>
  <div class="note" style="margin:0 14px 12px">Выключенный город исчезает из выбора, но у тех, кто уже его выбрал, остаётся.</div>
  <div style="padding:0 14px 10px"><button class="rolebtn" onclick="cityEdit()">+ добавить город</button></div>
@@ -2598,6 +2608,17 @@ async function finCities(c){
    </div>
   </div>`).join(''):'<div class="empty">Городов нет</div>'}
  <div style="height:16px"></div>`;
+}
+async function setPinMin(v){
+ const r=await api('/api/admin',{action:'settings-update',fields:{pin_minutes:v}});
+ if(r.error)return T('Ошибка');
+ if(r.settings)SETTINGS=r.settings; else SETTINGS.pin_minutes=v;
+ T('Обновление раз в '+v+' мин');aFin(document.getElementById('main'));
+}
+async function pinNow(){
+ const r=await api('/api/admin',{action:'pin-now'});
+ if(r.error)return T(r.error==='no_groups'?'Ни у одного города не указан ID группы':'Ошибка');
+ T('Закреп обновлён');
 }
 async function togGroup(field){
  const v=!(field==='group_clean_service'?SETTINGS[field]!==false:SETTINGS[field]);
