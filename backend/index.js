@@ -1769,6 +1769,37 @@ http.createServer(async (req, res) => {
         return json(res, 200, { ok: true, done });
       }
 
+      // ---- активность людей ----
+      if (act === 'activity') {
+        // все заявки: кто создавал, чем кончилось
+        const { data: rides } = await db.from('rides')
+          .select('passenger_id,driver_id,status,created_at').limit(20000);
+        const byUser = {};
+        const touch = id => (byUser[id] = byUser[id] || { made: 0, done: 0, last: null, drives: 0 });
+        for (const r of rides || []) {
+          if (r.passenger_id) {
+            const u = touch(r.passenger_id);
+            u.made++;
+            if (r.status === 'completed') u.done++;
+            if (!u.last || r.created_at > u.last) u.last = r.created_at;
+          }
+          if (r.driver_id && r.status === 'completed') touch(r.driver_id).drives++;
+        }
+
+        const { count: total } = await db.from('users').select('*', { count: 'exact', head: true });
+        const ids = Object.keys(byUser);
+        const ordered = ids.filter(i => byUser[i].made > 0).length;
+        const arrived = ids.filter(i => byUser[i].done > 0).length;
+        const repeat  = ids.filter(i => byUser[i].made > 1).length;
+        const loyal   = ids.filter(i => byUser[i].done > 2).length;
+
+        return json(res, 200, {
+          ok: true,
+          funnel: { total: total || 0, ordered, arrived, repeat, loyal },
+          users: byUser
+        });
+      }
+
       // ---- города и сообщества ----
       if (act === 'city-list') {
         const { data } = await db.from('cities').select('*').order('sort').order('name');

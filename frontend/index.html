@@ -310,6 +310,13 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .search input::placeholder{color:var(--dim);}
 .idtag{font-family:'Roboto Mono',monospace;font-size:10.5px;color:var(--dim);background:var(--bg);border:1px solid var(--line2);border-radius:6px;padding:1px 5px;font-weight:500;vertical-align:middle;}
 .unote{font-size:11px;color:var(--am);margin-top:3px;line-height:1.4;}
+.uact{font-size:11px;margin-top:3px;line-height:1.4;}
+.fnl{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
+.fnt{width:118px;flex-shrink:0;font-size:12px;color:var(--dim);}
+.fnb{flex:1;height:10px;background:var(--bg);border-radius:5px;overflow:hidden;}
+.fnb i{display:block;height:100%;border-radius:5px;}
+.fnv{width:64px;text-align:right;font-family:'Roboto Mono',monospace;font-size:13px;font-weight:600;flex-shrink:0;}
+.fnv span{display:block;font-size:10px;color:var(--dim);font-weight:500;}
 .mbadge{display:inline-block;min-width:19px;height:19px;line-height:19px;padding:0 5px;border-radius:10px;background:var(--red);color:#fff;font-size:11px;font-weight:700;font-style:normal;vertical-align:middle;margin-left:4px;}
 .modes{display:flex;gap:8px;padding:0 14px;margin:-4px 0 14px;}
 .mode{
@@ -1693,6 +1700,19 @@ function drawMyOffs(){
  }).join('')}</div>`;
 }
 let avatarQueue=[],avatarBusy=false;
+function actLine(id){
+ const a=ACT[id];
+ if(!a||!a.made){
+  return a&&a.drives?`<span class="okpr">возит: ${a.drives} ${plural(a.drives,['поездка','поездки','поездок'])}</span>`:'<span style="color:var(--dim)">ни разу не заказывал</span>';
+ }
+ const d=a.last?new Date(a.last).toLocaleDateString('ru',{day:'2-digit',month:'2-digit'}):'';
+ const drv=a.drives?` · возит ${a.drives}`:'';
+ return `<span style="color:var(--g)">${a.made} ${plural(a.made,['заказ','заказа','заказов'])}</span>${a.done?', доехал '+a.done:''}${d?' · '+d:''}${drv}`;
+}
+async function loadActivity(){
+ const r=await api('/api/admin',{action:'activity'});
+ if(r&&!r.error){ACT=r.users||{};ACTfun=r.funnel||null;}
+}
 async function loadAvatars(ids){
  const need=ids.filter(id=>!(id in pplAvatars));
  if(!need.length)return;
@@ -2331,6 +2351,9 @@ async function loadAdminCounts(){
 }
 let pplFilter='all';
 let pplQuery='';
+let pplAct='';
+let ACT={};
+let ACTfun=null;
 let pplPhones={};
 let pplAvatars={};
 let pplTimer=null;
@@ -2380,6 +2403,31 @@ function rangeBar(){
   <div class="${statVeh==='car'?'on':''}" onclick="statVeh='car';aStat(document.getElementById('main'))">🚗 Машины</div>
   <div class="${statVeh==='moto'?'on':''}" onclick="statVeh='moto';aStat(document.getElementById('main'))">🏍 Мото</div>
  </div>`:''}`;
+}
+async function drawFunnel(){
+ const box=document.getElementById('funnel');
+ if(!box)return;
+ if(!ACTfun){await loadActivity();}
+ const f=ACTfun;
+ if(!f){box.innerHTML='';return;}
+ const pct=(a,b)=>b?Math.round(a/b*100):0;
+ const rows=[
+  ['Зарегистрировались',f.total,100,'var(--dim)'],
+  ['Создали заявку',f.ordered,pct(f.ordered,f.total),'var(--g)'],
+  ['Доехали хоть раз',f.arrived,pct(f.arrived,f.total),'var(--g)'],
+  ['Заказали повторно',f.repeat,pct(f.repeat,f.total),'var(--am)'],
+  ['Стали постоянными',f.loyal,pct(f.loyal,f.total),'var(--am)']
+ ];
+ const never=f.total-f.ordered;
+ box.innerHTML=`<div class="sec">Путь пользователя</div>
+ <div style="padding:0 16px 6px">
+  ${rows.map(r=>`<div class="fnl">
+   <div class="fnt">${r[0]}</div>
+   <div class="fnb"><i style="width:${Math.max(2,r[2])}%;background:${r[3]}"></i></div>
+   <div class="fnv">${r[1]}<span>${r[2]}%</span></div>
+  </div>`).join('')}
+ </div>
+ ${never>0?`<div class="note" style="margin:6px 14px 14px">${never} ${plural(never,['человек зашёл','человека зашли','человек зашли'])} и ни разу не заказали. Посмотрите их во вкладке «Люди» → «Ни разу» — возможно, они заходили, когда на линии никого не было.</div>`:''}`;
 }
 async function aStatDrivers(m){
  m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
@@ -2442,6 +2490,7 @@ async function aStat(m){
  const cityList=Object.entries(s.cities||{}).sort((x,y)=>y[1]-x[1]);
  m.innerHTML=`<div class="head"><h2>Отчёт</h2><span class="m">всего ${s.rides.all} заявок</span></div>
  ${rangeBar()}
+ <div id="funnel"></div>
  <div class="sec">Главное сегодня</div>
  <div class="agrid" style="padding:0 14px">
   <div class="ac"><div class="n g">${s.rides.today}</div><div class="l">заявок сегодня</div></div>
@@ -2481,6 +2530,7 @@ async function aStat(m){
   <div class="ac"><div class="n">${s.rides.week}</div><div class="l">заявок за 7 дней</div></div>
  </div>
 
+ ${(()=>{setTimeout(drawFunnel,0);return '';})()}
  <div class="sec">По городам · 7 дней</div>
  ${cityList.length?cityList.map(([c,n])=>`<div class="card"><div style="flex:1"><div class="nm" style="font-size:14px">${esc(c)}</div></div><div class="price">${n}</div></div>`).join(''):'<div class="empty">Пока нет заявок</div>'}
  <div style="height:20px"></div>`;
@@ -2555,6 +2605,7 @@ async function aFin(m){
  const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат'],['city','Города']];
  if(isOwner())seg.push(['log','🔒 Журнал']);
  m.innerHTML=`<div class="head"><h2>Финансы</h2><span class="m">${SETTINGS.paid_mode?'платно':'бесплатно'}</span></div>
+ <div class="seg" style="padding-bottom:0">${[['','Все'],['ordered','Заказывали'],['never','Ни разу'],['repeat','Повторно']].map(f=>`<div class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</div>`).join('')}</div>
  <div class="seg">${seg.map(s=>`<div class="${finTab===s[0]?'on':''}" onclick="finTab='${s[0]}';aFin(document.getElementById('main'))">${s[1]}</div>`).join('')}</div>
  <div id="fincont"><div class="empty">Загрузка…</div></div>`;
  const c=document.getElementById('fincont');
@@ -2945,9 +2996,13 @@ async function aPpl(m){
     ||String(u.admin_note||'').toLowerCase().includes(ql);
   Object.keys(groups).forEach(k=>{groups[k]=groups[k].filter(match);});
  }
+ if(pplAct==='ordered')Object.keys(groups).forEach(k=>{groups[k]=groups[k].filter(u=>ACT[u.id]&&ACT[u.id].made>0);});
+ if(pplAct==='never')Object.keys(groups).forEach(k=>{groups[k]=groups[k].filter(u=>!ACT[u.id]||!ACT[u.id].made);});
+ if(pplAct==='repeat')Object.keys(groups).forEach(k=>{groups[k]=groups[k].filter(u=>ACT[u.id]&&ACT[u.id].made>1);});
  const seg=[['all','Все',all.length],['admin','Админы',groups.admin.length],['mod','Модеры',groups.mod.length],['driver','Водители',groups.driver.length],['pass','Пассажиры',groups.pass.length]];
  m.innerHTML=`<div class="head"><h2>Пользователи</h2><span class="m">${list.length}</span></div>
  <div class="search" style="margin:0 14px 10px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="pplq" placeholder="Имя, телефон или ID" value="${esc(pplQuery)}" oninput="pplSearch(this.value)"></div>
+ <div class="seg" style="padding-bottom:0">${[['','Все'],['ordered','Заказывали'],['never','Ни разу'],['repeat','Повторно']].map(f=>`<div class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</div>`).join('')}</div>
  <div class="seg">${seg.map(s=>`<div class="${pplFilter===s[0]?'on':''}" onclick="pplFilter='${s[0]}';aPpl(document.getElementById('main'))">${s[1]}<span style="opacity:.55;font-weight:500"> ${s[2]}</span></div>`).join('')}</div>
  <div style="padding:6px 0 24px">${list.map(u=>{
    const mine=u.id===me.id;
@@ -2958,8 +3013,9 @@ async function aPpl(m){
    const tag=String(u.telegram_id||'').slice(-4);
    const ph=pplPhones[u.id];
    const av=pplAvatars[u.id];
-   return `<div class="ai"><div class="ava" id="av${u.id}">${av?`<img src="${av}" alt="">`:(esc(u.name)[0]||'?')}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''} <span class="idtag">#${tag}</span></div><div style="font-size:11.5px;color:var(--dim)">${ph?esc(ph):(u.has_phone?'телефон загружается…':'без телефона')}${u.car?' · '+esc(u.car):''}${reg?' · с '+reg:''}</div>${u.admin_note?`<div class="unote">✎ ${esc(u.admin_note)}</div>`:''}</div>${on}${bn}${bd}${u.tg_username?`<a class="tgmini" href="https://t.me/${esc(u.tg_username)}" target="_blank" onclick="event.stopPropagation()" title="Написать в Telegram">✈️</a>`:'<span class="tgmini off" title="Нет ника">✈️</span>'}<button class="rolebtn" onclick="userCard('${u.id}')">открыть</button></div>`;
+   return `<div class="ai"><div class="ava" id="av${u.id}">${av?`<img src="${av}" alt="">`:(esc(u.name)[0]||'?')}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''} <span class="idtag">#${tag}</span></div><div style="font-size:11.5px;color:var(--dim)">${ph?esc(ph):(u.has_phone?'телефон загружается…':'без телефона')}${u.car?' · '+esc(u.car):''}${reg?' · с '+reg:''}</div>${u.admin_note?`<div class="unote">✎ ${esc(u.admin_note)}</div>`:''}<div class="uact">${actLine(u.id)}</div></div>${on}${bn}${bd}${u.tg_username?`<a class="tgmini" href="https://t.me/${esc(u.tg_username)}" target="_blank" onclick="event.stopPropagation()" title="Написать в Telegram">✈️</a>`:'<span class="tgmini off" title="Нет ника">✈️</span>'}<button class="rolebtn" onclick="userCard('${u.id}')">открыть</button></div>`;
  }).join('')}</div>`;
+ if(!Object.keys(ACT).length)loadActivity().then(()=>aPpl(document.getElementById('main')));
  loadPplPhones(list.map(u=>u.id).slice(0,60));
  loadAvatars(list.map(u=>u.id).slice(0,20));
 }
