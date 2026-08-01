@@ -2550,6 +2550,15 @@ const ACT_RU={
  'broadcast-send':'отправил рассылку','city-save':'изменил город','city-delete':'удалил город',
  'pin-now':'обновил закреп вручную','audit-clear':'очистил журнал','set-role':'изменил права доступа'
 };
+const FIELD_RU={name:'имя',full_name:'ФИО',admin_note:'пометка',phone:'телефон',age:'возраст',
+ spot:'место стоянки',rating:'рейтинг',role:'роль',driver_status:'статус водителя',balance:'баланс',
+ car:'машина',plate:'госномер',city:'город',is_banned:'блокировка',staff_role:'права',
+ delivery:'доставка',intercity:'межгород',sub_until:'подписка',paid_mode:'платный режим',
+ price_1:'тариф 1 день',price_3:'тариф 3 дня',price_7:'тариф 7 дней',price_30:'тариф 30 дней',
+ ref_enabled:'рефералка',ref_bonus:'бонус за друга',idle_hours:'простой водителя',
+ community_enabled:'приглашения в группу',group_moderate:'модерация чата',
+ group_clean_service:'чистка служебных',group_welcome:'приветствие новичков',
+ pin_enabled:'живой закреп',pin_minutes:'частота закрепа'};
 let logActor=null;
 async function clearLog(){
  const m=document.createElement('div');m.className='mask';m.id='sh2';
@@ -2586,6 +2595,10 @@ async function finLog(c){
    const when=t.toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
    const what=ACT_RU[l.action]||('действие: '+String(l.action||'').replace(/-/g,' '));
    let det='';
+   // новый формат: готовый текст с переносами
+   if(l.details&&l.details.indexOf('{')!==0){
+    det=l.details;
+   }else{
    try{
     const d=l.details?JSON.parse(l.details):null;
     if(d){
@@ -2603,12 +2616,19 @@ async function finLog(c){
       parts.push(au[d.audience]||d.audience);
      }
      if(d.city&&d.city!=='all')parts.push('город '+d.city);
+     if(d.fields&&typeof d.fields==='object'){
+      parts.length=0;
+      Object.entries(d.fields).forEach(([k,v])=>{
+       parts.push((FIELD_RU[k]||k)+': '+(v===true?'включено':v===false?'выключено':v));
+      });
+     }
      det=parts.join(' · ');
     }
    }catch(e){}
+   }
    return `<div class="logrow">
     <div class="lgt">${when}</div>
-    <div class="lgb"><b>${esc(l.actor_name)}</b> <span class="lgr">${roleRu[l.actor_role]||l.actor_role||''}</span><br>${what}${l.target_name?' → <b>'+esc(l.target_name)+'</b>':''}${det?`<div class="lgd">${esc(det)}</div>`:''}</div>
+    <div class="lgb"><b>${esc(l.actor_name)}</b> <span class="lgr">${roleRu[l.actor_role]||l.actor_role||''}</span><br>${what}${l.target_name?' → <b>'+esc(l.target_name)+'</b>':''}${det?`<div class="lgd">${esc(det).replace(/\n/g,'<br>')}</div>`:''}</div>
    </div>`;
   }).join(''):'<div class="empty"><b>Пока пусто</b>Здесь появится всё, что сделают администраторы и модераторы: начисления, баны, промокоды, изменения настроек.</div>'}
  <div style="height:20px"></div>`;

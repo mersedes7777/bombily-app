@@ -1233,6 +1233,36 @@ const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role)
 const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
 
 const notifyErrors = {};
+
+// человеческие названия полей для журнала
+const FIELD_RU = {
+  name: 'имя', full_name: 'ФИО', admin_note: 'пометка', phone: 'телефон', age: 'возраст',
+  spot: 'место стоянки', rating: 'рейтинг', role: 'роль', driver_status: 'статус водителя',
+  balance: 'баланс', car: 'машина', plate: 'госномер', city: 'город', is_banned: 'блокировка',
+  staff_role: 'права', delivery: 'доставка', intercity: 'межгород', sub_until: 'подписка'
+};
+const VAL_RU = {
+  passenger: 'пассажир', driver: 'водитель', both: 'водитель и пассажир',
+  approved: 'одобрен', pending: 'на проверке', none: 'нет', rejected: 'отклонён',
+  owner: 'владелец', admin: 'админ', moderator: 'модератор',
+  true: 'да', false: 'нет', null: 'пусто', '': 'пусто'
+};
+const showVal = v => {
+  if (v === null || v === undefined || v === '') return 'пусто';
+  const k = String(v);
+  return VAL_RU[k] !== undefined ? VAL_RU[k] : k;
+};
+
+async function audit(me, action, tid, targetName, details) {
+  try {
+    await db.from('audit_log').insert({
+      actor_id: me.id, actor_name: me.name, actor_role: me.staff_role || 'staff',
+      action, target_id: tid || null, target_name: targetName || null,
+      details: details ? String(details).slice(0, 1000) : null
+    });
+  } catch (e) {}
+}
+
 const rateMap = new Map();
 setInterval(() => { const t = Date.now(); for (const [k, v] of rateMap) if (t - v.t > 300000) rateMap.delete(k); }, 300000);
 
@@ -1659,7 +1689,8 @@ http.createServer(async (req, res) => {
         'drivers-stats','days-stats','user-search','avatars','avatar-fetch',
         'audit-list','audit-actors','activity','broadcast-count','broadcast-list',
         'city-list','group-check']);
-      if (!readOnly.has(act)) {
+      const customLog = new Set(['edit-user', 'adjust-balance', 'driver-status', 'ban']);
+      if (!readOnly.has(act) && !customLog.has(act)) {
         const clean = {};
         Object.keys(body || {}).forEach(k => {
           if (k === 'initData' || k === 'action' || k === 'photo') return;
@@ -1676,6 +1707,8 @@ http.createServer(async (req, res) => {
       }
 
       if (act === 'adjust-balance' && isAdminUp(me)) {
+        await audit(me, 'adjust-balance', tid, targetUser ? targetUser.name : null,
+          `${Number(body.amount) > 0 ? 'начислил +' : 'списал '}${body.amount} ₽${body.note ? ' · ' + body.note : ''}`);
         const { data: u } = await db.from('users').select('balance,name').eq('id', tid).single();
         await db.from('users').update({ balance: (Number(u.balance) || 0) + Number(body.amount) }).eq('id', tid);
         await db.from('payments').insert({ user_id: tid, user_name: u.name, amount: Number(body.amount), kind: 'adjust', note: body.note || 'админ' });
@@ -1683,6 +1716,8 @@ http.createServer(async (req, res) => {
       }
       if (act === 'ban') {
         if (!isAdminUp(me)) return json(res, 403, { error: 'forbidden' });
+        await audit(me, 'ban', tid, targetUser ? targetUser.name : null,
+          body.value ? 'заблокировал' : 'разблокировал');
         await db.from('users').update({ is_banned: !!body.value, status: 'offline' }).eq('id', tid);
         return json(res, 200, { ok: true });
       }
@@ -1695,6 +1730,10 @@ http.createServer(async (req, res) => {
       }
       if (act === 'driver-status') {
         if (!isAdminUp(me)) return json(res, 403, { error: 'forbidden' });
+        await audit(me, 'driver-status', tid, targetUser ? targetUser.name : null,
+          body.status === 'approved'
+            ? `одобрил водителем${body.car ? ' · ' + body.car + (body.plate ? ' ' + body.plate : '') : ''}`
+            : (body.revoke ? 'снял права водителя' : 'отклонил заявку'));
         const upd = { driver_status: body.status };
         // администратор мог поправить данные заявки
         if (body.name) upd.name = String(body.name).slice(0, 60);
@@ -1753,6 +1792,22 @@ http.createServer(async (req, res) => {
       }
       if (act === 'edit-user' && isAdminUp(me)) {
         const f = body.fields || {};
+        // сравниваем со старыми значениями, чтобы записать только изменённое
+        const changes = [];
+        try {
+          const { data: oldU } = await db.from('users').select('*').eq('id', tid).maybeSingle();
+          const { data: oldC } = await db.from('contacts').select('phone,full_name').eq('user_id', tid).maybeSingle();
+          for (const k of Object.keys(f)) {
+            const was = (k === 'phone' || k === 'full_name')
+              ? (oldC ? oldC[k] : null)
+              : (oldU ? oldU[k] : null);
+            const now = f[k];
+            if (String(was === null || was === undefined ? '' : was) === String(now === null || now === undefined ? '' : now)) continue;
+            changes.push(`${FIELD_RU[k] || k}: ${showVal(was)} → ${showVal(now)}`);
+          }
+        } catch (e) {}
+        await audit(me, 'edit-user', tid, targetUser ? targetUser.name : null,
+          changes.length ? changes.join('\n') : 'ничего не изменилось');
         const allowed = {};
         ['name','age','spot','rating','role','driver_status','balance','admin_note'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         if (Object.keys(allowed).length) await db.from('users').update(allowed).eq('id', tid);
