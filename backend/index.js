@@ -739,9 +739,30 @@ const WHO_RE  = /(кто|кто то|кто нибудь|ктонибудь|ко
 const WORK_RE = /(свободен|свободн|работает|работаеш|работаете|таксует|таксуеш|таксуете|таксу|на линии|на смене|катает|катаеш|возит|за рулем|в рейсе)/;
 
 // разговор о прошлом, о ценах, благодарности — не трогаем
-const PAST_RE = /(вчера|позавчера|на днях|ехал|ездил|ездили|приехал|доехал|отвез меня|подорожал|подешевел|цены|стоило|стоил|было|раньше|спасибо|благодар|обсужд|как думаете|мнение|видел|слышал|говорят|расскажит|напомин|история)/;
+const PAST_RE = /(вчера|позавчера|на днях|(^| )ехал|(^| )ездил|ездили|приехал|доехал|отвез меня|подорожал|подешевел|цены|стоило|стоил|было|раньше|спасибо|благодар|обсужд|как думаете|мнение|видел|слышал|говорят|расскажит|напомин|история)/;
 // вопрос не про поездку: «кто работает в аптеке»
 const OTHER_RE = /(магазин|аптек|поликлин|больниц|мэри|администрац|школ|садик|банк|почт|парикмахер|шиномонтаж|сто |мастер|ремонт|электрик|сантехник|кафе|столов|рынок|базар|салон|нотариус|мфц)/;
+
+// ответы водителей: «приму», «беру», «отвезу», «пиши в лс»
+const REPLY_SOLO = ['приму','примите','приняли','беру','возьму','я возьму','я приму','взял',
+  'отвезу','подвезу','довезу','заберу','закину','подкину','подброшу','отвезем','подвезем',
+  'я свободен','свободен я','я на линии','я работаю','я таксую','работаю','таксую','катаю',
+  'могу отвезти','могу подвезти','могу забрать','могу','подъеду','выезжаю','еду','уже еду',
+  'на месте','буду через 5','буду через 10','где вы','куда ехать','откуда забирать','адрес',
+  'сколько','сколько заплатите','за сколько','триста','двести','500','300','200'];
+const REPLY_PHRASES = ['пиши в лс','пишите в лс','напиши в лс','в личку','пиши в личку',
+  'скину номер','мой номер','звони','звоните','набери','наберите','буду через',
+  'подъеду через','я подъеду','уже выехал','выехал','на подходе','я рядом','возьму заказ',
+  'куда надо','откуда и куда','адрес скинь','скинь адрес','сколько километров'];
+
+function looksLikeDriverReply(text) {
+  const t = norm(text);
+  if (!t) return false;
+  if (PAST_RE.test(t)) return false;
+  if (t.length <= 42 && REPLY_SOLO.includes(t)) return true;
+  for (const p of REPLY_PHRASES) if (t.includes(p)) return true;
+  return false;
+}
 
 function looksLikeOrder(text) {
   const t = norm(text);
@@ -809,8 +830,17 @@ async function onGroupMessage(m) {
   }
   const st = await groupSettings();
 
-  // служебные «вступил / вышел»
-  if (m.new_chat_members || m.left_chat_member || m.new_chat_title || m.new_chat_photo) {
+  // любые служебные сообщения телеграма
+  const SERVICE_FIELDS = ['new_chat_members','left_chat_member','new_chat_title','new_chat_photo',
+    'delete_chat_photo','group_chat_created','supergroup_chat_created','channel_chat_created',
+    'pinned_message','message_auto_delete_timer_changed','migrate_to_chat_id','migrate_from_chat_id',
+    'video_chat_started','video_chat_ended','video_chat_scheduled','video_chat_participants_invited',
+    'forum_topic_created','forum_topic_edited','forum_topic_closed','forum_topic_reopened',
+    'general_forum_topic_hidden','general_forum_topic_unhidden','write_access_allowed',
+    'users_shared','chat_shared','boost_added','proximity_alert_triggered',
+    'giveaway_created','giveaway_completed','successful_payment'];
+  const isService = SERVICE_FIELDS.some(f => m[f] !== undefined);
+  if (isService) {
     if (st.group_clean_service !== false) {
       await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
     }
@@ -840,7 +870,9 @@ async function onGroupMessage(m) {
     }
   } catch (e) {}
 
-  if (!looksLikeOrder(text)) { glog(`${city.name}: не похоже на заказ · «${preview}»`); return; }
+  const isOrder = looksLikeOrder(text);
+  const isReply = !isOrder && looksLikeDriverReply(text);
+  if (!isOrder && !isReply) { glog(`${city.name}: не похоже на заказ · «${preview}»`); return; }
 
   const del = await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id });
   if (del && del.ok) glog(`${city.name}: УДАЛЕНО · «${preview}»`);
@@ -852,9 +884,10 @@ async function onGroupMessage(m) {
   groupReplyAt.set(chatId, Date.now());
 
   const name = m.from && m.from.first_name ? m.from.first_name : '';
-  const r = await send(chatId,
-    `🚖 ${name ? name + ', з' : 'З'}аказы такси — в боте Bombily, а не в чате.\n\nТам заявку сразу видят все свободные водители, и вы выбираете цену. Ваш номер и адрес не видит никто, кроме водителя, который взял заказ.`,
-    { reply_markup: { inline_keyboard: [[{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] } });
+  const txtOrder = `🚖 ${name ? name + ', з' : 'З'}аказы такси — в боте Bombily, а не в чате.\n\nТам заявку сразу видят все свободные водители, и вы выбираете цену. Ваш номер и адрес не видит никто, кроме того, кто взял заказ.`;
+  const txtReply = `🚗 ${name ? name + ', з' : 'З'}аказы принимаются только в боте Bombily.\n\nТам видно все свободные заявки, а поездка засчитается в ваш рейтинг. Договариваться в чате нельзя.`;
+  const r = await send(chatId, isReply ? txtReply : txtOrder,
+    { reply_markup: { inline_keyboard: [[{ text: isReply ? '🚗 Смотреть заявки' : '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] } });
   if (r && r.result) delLater(chatId, r.result.message_id, 90);
 }
 
