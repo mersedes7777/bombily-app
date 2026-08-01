@@ -311,6 +311,9 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .idtag{font-family:'Roboto Mono',monospace;font-size:10.5px;color:var(--dim);background:var(--bg);border:1px solid var(--line2);border-radius:6px;padding:1px 5px;font-weight:500;vertical-align:middle;}
 .unote{font-size:11px;color:var(--am);margin-top:3px;line-height:1.4;}
 .uact{font-size:11px;margin-top:3px;line-height:1.4;}
+.minifilter{display:flex;gap:16px;padding:2px 18px 8px;flex-wrap:wrap;}
+.minifilter span{font-size:12.5px;color:var(--dim);cursor:pointer;padding-bottom:3px;border-bottom:2px solid transparent;}
+.minifilter span.on{color:var(--g);border-bottom-color:var(--g);font-weight:600;}
 .fnl{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
 .fnt{width:118px;flex-shrink:0;font-size:12px;color:var(--dim);}
 .fnb{flex:1;height:10px;background:var(--bg);border-radius:5px;overflow:hidden;}
@@ -2605,7 +2608,7 @@ async function aFin(m){
  const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат'],['city','Города']];
  if(isOwner())seg.push(['log','🔒 Журнал']);
  m.innerHTML=`<div class="head"><h2>Финансы</h2><span class="m">${SETTINGS.paid_mode?'платно':'бесплатно'}</span></div>
- <div class="seg" style="padding-bottom:0">${[['','Все'],['ordered','Заказывали'],['never','Ни разу'],['repeat','Повторно']].map(f=>`<div class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</div>`).join('')}</div>
+ <div class="minifilter">${[['','все'],['ordered','заказывали'],['never','ни разу'],['repeat','повторно']].map(f=>`<span class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</span>`).join('')}</div>
  <div class="seg">${seg.map(s=>`<div class="${finTab===s[0]?'on':''}" onclick="finTab='${s[0]}';aFin(document.getElementById('main'))">${s[1]}</div>`).join('')}</div>
  <div id="fincont"><div class="empty">Загрузка…</div></div>`;
  const c=document.getElementById('fincont');
@@ -2975,34 +2978,38 @@ async function aPpl(m){
  const{data:us}=await db.from('users').select('*').order('created_at',{ascending:false}).limit(300);
  const all=us||[];
  const isStaffR=u=>u.staff_role&&u.staff_role!=='none';
+
+ // сначала сужаем общий список поиском и активностью
+ let pool=all;
+ if(pplQuery){
+  const qd=pplQuery.replace(/\D/g,'');
+  const ql=pplQuery.toLowerCase();
+  pool=pool.filter(u=>String(u.name||'').toLowerCase().includes(ql)
+    ||(qd.length>=3&&String(u.telegram_id||'').includes(qd))
+    ||(pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd))
+    ||String(u.admin_note||'').toLowerCase().includes(ql));
+ }
+ if(pplAct==='ordered')pool=pool.filter(u=>ACT[u.id]&&ACT[u.id].made>0);
+ if(pplAct==='never')  pool=pool.filter(u=>!ACT[u.id]||!ACT[u.id].made);
+ if(pplAct==='repeat') pool=pool.filter(u=>ACT[u.id]&&ACT[u.id].made>1);
+
+ // и только потом делим по ролям
  const groups={
-  admin:all.filter(u=>['owner','admin'].includes(u.staff_role)),
-  mod:all.filter(u=>u.staff_role==='moderator'),
-  driver:all.filter(u=>['driver','both'].includes(u.role)&&!isStaffR(u)),
-  pass:all.filter(u=>!['driver','both'].includes(u.role)&&!isStaffR(u))
+  admin:pool.filter(u=>['owner','admin'].includes(u.staff_role)),
+  mod:pool.filter(u=>u.staff_role==='moderator'),
+  driver:pool.filter(u=>['driver','both'].includes(u.role)&&!isStaffR(u)),
+  pass:pool.filter(u=>!['driver','both'].includes(u.role)&&!isStaffR(u))
  };
  let list;
  if(pplFilter==='admin')list=groups.admin;
  else if(pplFilter==='mod')list=groups.mod;
  else if(pplFilter==='driver')list=groups.driver;
  else if(pplFilter==='pass')list=groups.pass;
- else list=all;
- if(pplQuery){
-  const qd=pplQuery.replace(/\D/g,'');
-  const ql=pplQuery.toLowerCase();
-  const match=u=>String(u.name||'').toLowerCase().includes(ql)
-    ||(qd.length>=3&&String(u.telegram_id||'').includes(qd))
-    ||(pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd))
-    ||String(u.admin_note||'').toLowerCase().includes(ql);
-  Object.keys(groups).forEach(k=>{groups[k]=groups[k].filter(match);});
- }
- if(pplAct==='ordered')Object.keys(groups).forEach(k=>{groups[k]=groups[k].filter(u=>ACT[u.id]&&ACT[u.id].made>0);});
- if(pplAct==='never')Object.keys(groups).forEach(k=>{groups[k]=groups[k].filter(u=>!ACT[u.id]||!ACT[u.id].made);});
- if(pplAct==='repeat')Object.keys(groups).forEach(k=>{groups[k]=groups[k].filter(u=>ACT[u.id]&&ACT[u.id].made>1);});
- const seg=[['all','Все',all.length],['admin','Админы',groups.admin.length],['mod','Модеры',groups.mod.length],['driver','Водители',groups.driver.length],['pass','Пассажиры',groups.pass.length]];
+ else list=pool;
+ const seg=[['all','Все',pool.length],['admin','Админы',groups.admin.length],['mod','Модеры',groups.mod.length],['driver','Водители',groups.driver.length],['pass','Пассажиры',groups.pass.length]];
  m.innerHTML=`<div class="head"><h2>Пользователи</h2><span class="m">${list.length}</span></div>
  <div class="search" style="margin:0 14px 10px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="pplq" placeholder="Имя, телефон или ID" value="${esc(pplQuery)}" oninput="pplSearch(this.value)"></div>
- <div class="seg" style="padding-bottom:0">${[['','Все'],['ordered','Заказывали'],['never','Ни разу'],['repeat','Повторно']].map(f=>`<div class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</div>`).join('')}</div>
+ <div class="minifilter">${[['','все'],['ordered','заказывали'],['never','ни разу'],['repeat','повторно']].map(f=>`<span class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</span>`).join('')}</div>
  <div class="seg">${seg.map(s=>`<div class="${pplFilter===s[0]?'on':''}" onclick="pplFilter='${s[0]}';aPpl(document.getElementById('main'))">${s[1]}<span style="opacity:.55;font-weight:500"> ${s[2]}</span></div>`).join('')}</div>
  <div style="padding:6px 0 24px">${list.map(u=>{
    const mine=u.id===me.id;
