@@ -2555,7 +2555,7 @@ const ACT_RU={
  'promo-create':'создал промокод','promo-delete':'удалил промокод','settings-update':'изменил настройки',
  'support-answer':'ответил в поддержку','support-hide':'скрыл обращение','send-msg':'написал пользователю',
  'winback-set':'обработал возврат','complaint-resolve':'закрыл жалобу','car-approve':'одобрил транспорт',
- 'car-remove':'удалил транспорт','car-add-admin':'добавил транспорт',
+ 'car-remove':'удалил транспорт','car-add-admin':'добавил транспорт','car-edit':'изменил транспорт',
  'broadcast-send':'отправил рассылку','city-save':'изменил город','city-delete':'удалил город',
  'pin-now':'обновил закреп вручную','audit-clear':'очистил журнал','set-role':'изменил права доступа'
 };
@@ -3324,8 +3324,25 @@ async function loadUserCars(uid){
    <div style="font-size:11.5px;color:var(--dim);margin-top:3px"><span class="plate">${esc(c.plate)}</span>${c.is_active?' <span style="color:var(--g)">· рабочая</span>':''}${!c.approved?' <span style="color:var(--am)">· ждёт проверки</span>':''}</div>
   </div>
   ${!c.approved?`<button class="rolebtn" style="color:var(--g)" onclick="approveCar('${c.id}','${uid}')">одобрить</button>`:''}
+  <button class="rolebtn" onclick="carEdit('${c.id}','${uid}','${esc(c.brand)}','${esc(c.plate)}')">изменить</button>
   <button class="rolebtn" style="color:var(--red)" onclick="removeCar('${c.id}','${uid}')">удалить</button>
  </div>`).join('');
+}
+function carEdit(cid,uid,brand,plate){
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet"><h3>Изменить транспорт</h3><div class="s">Если это рабочая машина водителя, марка и номер сразу обновятся у пассажиров.</div>
+ <div class="fr"><label>Марка и модель</label><input id="ce_brand" value="${esc(brand)}"></div>
+ <div class="fr"><label>Гос. номер</label><input id="ce_plate" value="${esc(plate)}" style="text-transform:uppercase"></div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="doCarEdit('${cid}','${uid}')">Сохранить</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function doCarEdit(cid,uid){
+ const brand=(document.getElementById('ce_brand').value||'').trim();
+ const plate=(document.getElementById('ce_plate').value||'').trim().toUpperCase();
+ if(!brand||!plate)return T('Впишите марку и номер');
+ const r=await api('/api/admin',{action:'car-edit',car_id:cid,brand,plate});
+ if(r.error)return T('Ошибка');
+ document.getElementById('sh2').remove();T('Изменено');loadUserCars(uid);
 }
 async function approveCar(cid,uid){
  const r=await api('/api/admin',{action:'car-approve',car_id:cid});
