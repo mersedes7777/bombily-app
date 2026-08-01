@@ -308,6 +308,7 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .search svg{width:17px;height:17px;flex:0 0 17px;stroke:var(--dim);fill:none;stroke-width:2;}
 .search input{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--ink);font-family:Inter,sans-serif;font-size:14.5px;}
 .search input::placeholder{color:var(--dim);}
+.sclr{color:var(--dim);font-size:15px;cursor:pointer;padding:0 2px;flex-shrink:0;}
 .idtag{font-family:'Roboto Mono',monospace;font-size:10.5px;color:var(--dim);background:var(--bg);border:1px solid var(--line2);border-radius:6px;padding:1px 5px;font-weight:500;vertical-align:middle;}
 .unote{font-size:11px;color:var(--am);margin-top:3px;line-height:1.4;}
 .uact{font-size:11px;margin-top:3px;line-height:1.4;}
@@ -2365,7 +2366,17 @@ let pplTimer=null;
 function pplSearch(v){
  pplQuery=v;
  if(pplTimer)clearTimeout(pplTimer);
- pplTimer=setTimeout(()=>aPpl(document.getElementById('main')),250);
+ // перерисовываем только список — иначе поле теряет фокус и клавиатура закрывается
+ pplTimer=setTimeout(()=>{
+  const inp=document.getElementById('pplq');
+  const pos=inp?inp.selectionStart:null;
+  aPpl(document.getElementById('main'));
+  const inp2=document.getElementById('pplq');
+  if(inp2){
+   inp2.focus();
+   if(pos!==null){try{inp2.setSelectionRange(pos,pos);}catch(e){}}
+  }
+ },300);
 }
 let finTab='sub';
 let statFrom='',statTo='',statView='total',statDrv=null,statVeh='all';
@@ -3128,8 +3139,8 @@ async function aPpl(m){
  else if(pplFilter==='pass')list=groups.pass;
  else list=pool;
  const seg=[['all','Все',pool.length],['admin','Админы',groups.admin.length],['mod','Модеры',groups.mod.length],['driver','Водители',groups.driver.length],['pass','Пассажиры',groups.pass.length]];
- m.innerHTML=`<div class="head"><h2>Пользователи</h2><span class="m">${list.length}</span></div>
- <div class="search" style="margin:0 14px 10px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="pplq" placeholder="Имя, телефон или ID" value="${esc(pplQuery)}" oninput="pplSearch(this.value)"></div>
+ m.innerHTML=`<div class="head"><h2>Пользователи</h2><span class="m">${pplQuery?'найдено '+list.length:list.length}</span></div>
+ <div class="search" style="margin:0 14px 10px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="pplq" placeholder="Поиск: имя, телефон или ID" value="${esc(pplQuery)}" oninput="pplSearch(this.value)" autocomplete="off">${pplQuery?`<span class="sclr" onclick="pplQuery='';aPpl(document.getElementById('main'))">✕</span>`:''}</div>
  <div class="minifilter">${[['','все'],['ordered','заказывали'],['never','ни разу'],['repeat','повторно']].map(f=>`<span class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</span>`).join('')}</div>
  <div class="seg">${seg.map(s=>`<div class="${pplFilter===s[0]?'on':''}" onclick="pplFilter='${s[0]}';aPpl(document.getElementById('main'))">${s[1]}<span style="opacity:.55;font-weight:500"> ${s[2]}</span></div>`).join('')}</div>
  <div style="padding:6px 0 24px">${list.map(u=>{
