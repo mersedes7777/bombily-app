@@ -7,6 +7,7 @@ const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
+const VERSION = 'v61-ride-stats';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -1283,7 +1284,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return json(res, 200, {});
   if (req.method === 'GET' && req.url.includes('group')) {
     // подробная проверка настройки групп
-    const out = { ok: true, шаги: [] };
+    const out = { ok: true, версия: VERSION, шаги: [] };
     try {
       const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
       if (!st) out.шаги.push('❌ настройки не читаются');
@@ -1326,7 +1327,7 @@ http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: 'v48-group-id',
+    ok: true, service: 'bombily-backend', version: VERSION,
     notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок',
     group_log: groupLog.length ? groupLog : 'из групп сообщений не приходило'
   });
