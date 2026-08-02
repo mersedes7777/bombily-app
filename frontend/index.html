@@ -317,7 +317,17 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .minifilter{display:flex;gap:16px;padding:2px 18px 8px;flex-wrap:wrap;}
 .minifilter span{font-size:12.5px;color:var(--dim);cursor:pointer;padding-bottom:3px;border-bottom:2px solid transparent;}
 .minifilter span.on{color:var(--g);border-bottom-color:var(--g);font-weight:600;}
-.fate{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);}
+.rideitem{border:1px solid var(--line2);border-radius:12px;padding:11px 13px;margin-bottom:9px;}
+.rihead{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:600;margin-bottom:7px;}
+.rit{color:var(--dim);font-weight:400;font-family:'Roboto Mono',monospace;font-size:11px;}
+.riroute{font-size:13.5px;line-height:1.4;margin-bottom:8px;}
+.riline{display:flex;gap:7px;align-items:center;font-size:12.5px;margin-bottom:3px;}
+.rikey{color:var(--dim);width:58px;flex-shrink:0;}
+.rival{color:var(--g);cursor:pointer;}
+.rival.dim{color:var(--dim);cursor:default;}
+.rifoot{font-size:11.5px;color:var(--dim);margin-top:6px;padding-top:6px;border-top:1px solid var(--line);}
+.rifoot b{color:var(--am);font-family:'Roboto Mono',monospace;}
+.fate{cursor:pointer;display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);}
 .fate:last-child{border-bottom:none;}
 .fi{width:26px;text-align:center;font-size:16px;flex-shrink:0;}
 .fl2{font-size:13.5px;font-weight:500;}
@@ -2459,6 +2469,90 @@ async function drawFunnel(){
  </div>
  ${never>0?`<div class="note" style="margin:6px 14px 14px">${never} ${plural(never,['человек зашёл','человека зашли','человек зашли'])} и ни разу не заказали. Посмотрите их во вкладке «Люди» → «Ни разу» — возможно, они заходили, когда на линии никого не было.</div>`:''}`;
 }
+const FATE_RU={done:['✅','Доехал','var(--g)'],going:['🚗','Едет сейчас','var(--g)'],
+ waiting:['⏳','Ищет машину','var(--am)'],no_offers:['🔇','Никто не откликнулся','var(--red)'],
+ not_picked:['🤷','Не выбрал водителя','var(--am)'],cancel_passenger:['❌','Отменил пассажир','var(--red)'],
+ cancel_driver:['↩️','Отказался водитель','var(--red)'],other:['•','Прочее','var(--dim)']};
+async function ridesList(fate,title){
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>${esc(title)}</h3><div class="empty">Загрузка…</div></div>`;
+ document.getElementById('device').appendChild(m);
+ const r=await api('/api/admin',{action:'rides-list',from:statFrom,to:statTo,city:statCity,fate});
+ const items=(r&&r.items)||[];
+ const sh=m.querySelector('.sheet');
+ sh.innerHTML=`<h3>${esc(title)}</h3><div class="s">${statFrom} — ${statTo}${r.shown?' · найдено '+r.shown:''}</div>
+ ${items.length?items.map(x=>{
+   const f=FATE_RU[x.fate]||FATE_RU.other;
+   const t=new Date(x.created_at);
+   const when=t.toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+   const wait=x.confirmed_at?Math.round((new Date(x.confirmed_at)-t)/60000):null;
+   return `<div class="rideitem">
+    <div class="rihead"><span style="color:${f[2]}">${f[0]} ${f[1]}</span><span class="rit">${when}</span></div>
+    <div class="riroute">${x.kind==='delivery'?'📦 ':''}${x.to_city?'🛣 ':''}${esc(x.from_address)} → ${esc(x.to_address)}${x.to_city?' ('+esc(x.to_city)+')':''}</div>
+    <div class="riline">
+     <span class="rikey">Заказал:</span>
+     ${x.passenger?`<span class="rival" onclick="closeSh();userCard('${x.passenger.id}')">${esc(x.passenger.name)} <span class="idtag">#${x.passenger.tag}</span></span>`:'<span class="rival dim">—</span>'}
+    </div>
+    <div class="riline">
+     <span class="rikey">Повёз:</span>
+     ${x.driver?`<span class="rival" onclick="closeSh();userCard('${x.driver.id}')">${esc(x.driver.name)} <span class="idtag">#${x.driver.tag}</span>${x.driver.car?' · '+esc(x.driver.car):''}</span>`:'<span class="rival dim">никто</span>'}
+    </div>
+    <div class="rifoot">
+     ${x.price?`<b>${x.price} ₽</b>`:''}${x.passenger_price?` <span class="dim">просил ${x.passenger_price} ₽</span>`:''}
+     ${x.offers?` · ${x.offers} ${plural(x.offers,['предложение','предложения','предложений'])}`:' · без предложений'}
+     ${wait!==null?` · ждал ${wait} мин`:''}
+     ${x.city?` · ${esc(x.city)}`:''}
+    </div>
+   </div>`;
+  }).join(''):'<div class="empty">Заявок нет</div>'}
+ <div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div>`;
+}
+const RST={completed:['✅','доехал','var(--g)'],confirmed:['🚗','в пути','var(--g)'],
+ in_progress:['🚗','в пути','var(--g)'],created:['⏳','без ответа','var(--am)']};
+function rstatus(r){
+ const st=String(r.status||'');
+ if(RST[st]){
+  if(st==='created')return r.offers?['🤷','не выбрал из '+r.offers,'var(--am)']:['🔇','никто не откликнулся','var(--red)'];
+  return RST[st];
+ }
+ if(st.includes('driver'))return ['↩️','водитель отказался','var(--red)'];
+ if(st.includes('cancelled'))return ['❌','пассажир отменил','var(--red)'];
+ return ['•',st,'var(--dim)'];
+}
+async function ridesList(only){
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML='<div class="sheet" style="max-height:90vh;overflow-y:auto"><h3>Заявки</h3><div class="empty">Загрузка…</div></div>';
+ document.getElementById('device').appendChild(m);
+ const r=await api('/api/admin',{action:'rides-list',from:statFrom,to:statTo,city:statCity,only});
+ const items=(r&&r.items)||[];
+ const sheet=m.querySelector('.sheet');
+ sheet.innerHTML=`<h3>${only==='lost'?'Потерянные заявки':'Заявки'}</h3>
+ <div class="s">${statFrom} — ${statTo}${statCity!=='all'?' · '+esc(statCity):''} · найдено ${items.length}</div>
+ ${items.length?items.map(r2=>{
+   const[ic,txt,col]=rstatus(r2);
+   const d=new Date(r2.created_at);
+   const when=d.toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+   const pn=r2.passenger?esc(r2.passenger.name):'—';
+   const pt=r2.passenger?String(r2.passenger.telegram_id||'').slice(-4):'';
+   const dn=r2.driver?esc(r2.driver.name):null;
+   const dt=r2.driver?String(r2.driver.telegram_id||'').slice(-4):'';
+   let wait='';
+   if(r2.confirmed_at){
+    const w=Math.round((new Date(r2.confirmed_at)-d)/60000);
+    if(w>=0&&w<180)wait=` · ждал ${w} мин`;
+   }
+   return `<div class="riderow">
+    <div class="rr1"><span style="color:${col}">${ic} ${txt}</span><span class="rrt">${when}</span></div>
+    <div class="rr2">${r2.kind==='delivery'?'📦 ':''}${r2.to_city?'🛣 ':''}${esc(r2.from_address)} → ${esc(r2.to_address)}${r2.to_city?' ('+esc(r2.to_city)+')':''}</div>
+    <div class="rr3">
+     <span onclick="closeSh();userCard('${r2.passenger?r2.passenger.id:''}')" class="rrp">👤 ${pn}${pt?' <span class="idtag">#'+pt+'</span>':''}</span>
+     ${dn?`<span onclick="closeSh();userCard('${r2.driver.id}')" class="rrp">🚗 ${dn}${dt?' <span class="idtag">#'+dt+'</span>':''}</span>`:'<span style="color:var(--dim)">водителя не было</span>'}
+    </div>
+    <div class="rr4">${r2.price?`<b>${r2.price} ₽</b>`:''}${r2.passenger_price?` · просил ${r2.passenger_price} ₽`:''}${r2.offers?` · предложений ${r2.offers}`:''}${wait}</div>
+   </div>`;
+  }).join(''):'<div class="empty">Заявок нет</div>'}
+ <div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div>`;
+}
 async function aStatRides(m){
  m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
  const s=await api('/api/admin',{action:'rides-stats',from:statFrom,to:statTo,city:statCity});
@@ -2466,9 +2560,9 @@ async function aStatRides(m){
  const p=n=>s.total?Math.round(n/s.total*100):0;
  const lost=s.noOffers+s.hadOffersNotTaken+s.cancelPassenger+s.cancelDriver;
 
- const row=(icon,label,n,color,hint)=>n?`<div class="fate">
+ const row=(icon,label,n,color,hint,fate)=>n?`<div class="fate" onclick="ridesList('${fate}','${label}')">
    <div class="fi">${icon}</div>
-   <div style="flex:1;min-width:0"><div class="fl2">${label}</div><div class="fh">${hint}</div></div>
+   <div style="flex:1;min-width:0"><div class="fl2">${label} <span class="go">›</span></div><div class="fh">${hint}</div></div>
    <div class="fv" style="color:${color}">${n}<span>${p(n)}%</span></div>
   </div>`:'';
 
@@ -2489,17 +2583,24 @@ async function aStatRides(m){
 
  <div class="sec">Что стало с заявками</div>
  <div style="padding:0 14px">
-  ${row('✅','Доехали',s.completed,'var(--g)','заказ выполнен полностью')}
-  ${row('🚗','Едут сейчас',s.inProgress,'var(--g)','водитель принял, поездка идёт')}
-  ${row('⏳','Ищут машину',s.waitingNow,'var(--am)','заявка свежая, ждёт предложений')}
-  ${row('🔇','Никто не откликнулся',s.noOffers,'var(--red)','ни одного предложения от водителей')}
-  ${row('🤷','Не выбрал водителя',s.hadOffersNotTaken,'var(--am)','предложения были, пассажир не принял')}
-  ${row('❌','Отменил пассажир',s.cancelPassenger,'var(--red)','передумал или уехал иначе')}
-  ${row('↩️','Отказался водитель',s.cancelDriver,'var(--red)','принял заказ и отменил')}
-  ${row('•','Прочее',s.other,'var(--dim)','нестандартный статус')}
+  ${row('✅','Доехали',s.completed,'var(--g)','заказ выполнен полностью','done')}
+  ${row('🚗','Едут сейчас',s.inProgress,'var(--g)','водитель принял, поездка идёт','going')}
+  ${row('⏳','Ищут машину',s.waitingNow,'var(--am)','заявка свежая, ждёт предложений','waiting')}
+  ${row('🔇','Никто не откликнулся',s.noOffers,'var(--red)','ни одного предложения от водителей','no_offers')}
+  ${row('🤷','Не выбрал водителя',s.hadOffersNotTaken,'var(--am)','предложения были, пассажир не принял','not_picked')}
+  ${row('❌','Отменил пассажир',s.cancelPassenger,'var(--red)','передумал или уехал иначе','cancel_passenger')}
+  ${row('↩️','Отказался водитель',s.cancelDriver,'var(--red)','принял заказ и отменил','cancel_driver')}
+  ${row('•','Прочее',s.other,'var(--dim)','нестандартный статус','other')}
  </div>
 
  ${s.noOffers?`<div class="note" style="margin:10px 14px;border-color:rgba(226,88,90,.3);background:rgba(226,88,90,.07);color:#e8a0a1">${s.noOffers} ${plural(s.noOffers,['заявка осталась','заявки остались','заявок остались'])} без единого предложения. Это люди, которые захотели уехать и не смогли — самая дорогая потеря.</div>`:''}
+ <div class="note" style="margin:6px 14px 0">«Потеряно» — заявки, по которым поездки не случилось: никто не откликнулся, пассажир не выбрал водителя или заказ отменили.</div>
+ <div style="padding:10px 14px 0;display:flex;gap:8px;flex-wrap:wrap">
+  <button class="rolebtn" onclick="ridesList('all')">все заявки списком</button>
+  <button class="rolebtn" style="color:var(--red)" onclick="ridesList('lost')">только потерянные</button>
+ </div>
+
+ <div style="padding:10px 14px 0"><button class="rolebtn" onclick="ridesList('all','Все заявки')">показать все заявки списком</button></div>
 
  <div class="sec">Качество работы</div>
  <div class="agrid" style="padding:0 14px">

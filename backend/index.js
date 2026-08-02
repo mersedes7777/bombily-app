@@ -7,7 +7,7 @@ const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
-const VERSION = 'v61-ride-stats';
+const VERSION = 'v62-rides-list';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -1688,7 +1688,7 @@ http.createServer(async (req, res) => {
       const readOnly = new Set(['promo-list','support-list','support-count','winback-list','cars-of-user',
         'cars-pending','cars-pending-list','doc-urls','user-phone','apps-phones','admin-counts','stats',
         'drivers-stats','days-stats','user-search','avatars','avatar-fetch',
-        'audit-list','audit-actors','activity','broadcast-count','broadcast-list','rides-stats',
+        'audit-list','audit-actors','activity','broadcast-count','broadcast-list','rides-stats','rides-list','rides-list',
         'city-list','group-check']);
       const customLog = new Set(['edit-user', 'adjust-balance', 'driver-status', 'ban', 'car-edit']);
       if (!readOnly.has(act) && !customLog.has(act)) {
@@ -2313,6 +2313,43 @@ http.createServer(async (req, res) => {
         return json(res, 200, { ok: true, days, name });
       }
 
+      // список заявок поимённо: кто заказал, кто взял, чем кончилось
+      if (act === 'rides-list') {
+        const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 29 * 864e5).toISOString();
+        const to   = body.to   ? new Date(body.to   + 'T23:59:59').toISOString() : new Date().toISOString();
+        let q = db.from('rides').select('*').gte('created_at', from).lte('created_at', to)
+          .order('created_at', { ascending: false }).limit(300);
+        if (body.city && body.city !== 'all') q = q.eq('city', body.city);
+        if (body.only === 'lost') q = q.or('status.eq.created,status.like.cancelled%');
+        if (body.only === 'done') q = q.eq('status', 'completed');
+        const { data: rides } = await q;
+        const list = rides || [];
+
+        const ids = [...new Set(list.flatMap(r => [r.passenger_id, r.driver_id]).filter(Boolean))];
+        const who = {};
+        if (ids.length) {
+          const { data: us } = await db.from('users').select('id,name,telegram_id,car,plate').in('id', ids);
+          (us || []).forEach(u => { who[u.id] = u; });
+        }
+
+        const rideIds = list.map(r => r.id);
+        const offersBy = {};
+        for (let i = 0; i < rideIds.length; i += 200) {
+          const { data: offs } = await db.from('offers').select('ride_id').in('ride_id', rideIds.slice(i, i + 200));
+          (offs || []).forEach(o => { offersBy[o.ride_id] = (offersBy[o.ride_id] || 0) + 1; });
+        }
+
+        const items = list.map(r => ({
+          id: r.id, status: r.status, price: r.price, city: r.city, kind: r.kind,
+          to_city: r.to_city, created_at: r.created_at, confirmed_at: r.confirmed_at,
+          from_address: r.from_address, to_address: r.to_address,
+          passenger_price: r.passenger_price, offers: offersBy[r.id] || 0,
+          passenger: who[r.passenger_id] || null,
+          driver: who[r.driver_id] || null
+        }));
+        return json(res, 200, { ok: true, items });
+      }
+
       // судьба заявок: что стало с каждой
       if (act === 'rides-stats') {
         const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 29 * 864e5).toISOString();
@@ -2408,6 +2445,59 @@ http.createServer(async (req, res) => {
         res2.avgOffers = res2.total ? +(res2.offersTotal / res2.total).toFixed(1) : 0;
 
         return json(res, 200, { ok: true, ...res2, from, to });
+      }
+
+      // список заявок с именами — кто заказал, кто повёз
+      if (act === 'rides-list') {
+        const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 29 * 864e5).toISOString();
+        const to   = body.to   ? new Date(body.to   + 'T23:59:59').toISOString() : new Date().toISOString();
+        let q = db.from('rides').select('*').gte('created_at', from).lte('created_at', to)
+          .order('created_at', { ascending: false }).limit(300);
+        if (body.city && body.city !== 'all') q = q.eq('city', body.city);
+        const { data: rides } = await q;
+        let list = rides || [];
+
+        // предложения по каждой заявке
+        const ids = list.map(r => r.id);
+        const offersBy = {};
+        for (let i = 0; i < ids.length; i += 200) {
+          const { data: offs } = await db.from('offers').select('ride_id').in('ride_id', ids.slice(i, i + 200));
+          (offs || []).forEach(o => { offersBy[o.ride_id] = (offersBy[o.ride_id] || 0) + 1; });
+        }
+
+        // имена участников
+        const uids = [...new Set(list.flatMap(r => [r.passenger_id, r.driver_id]).filter(Boolean))];
+        const names = {};
+        if (uids.length) {
+          const { data: us } = await db.from('users').select('id,name,telegram_id,car').in('id', uids);
+          (us || []).forEach(u => { names[u.id] = u; });
+        }
+
+        // определяем исход так же, как в сводке
+        const now = Date.now(), HANG = 30 * 60 * 1000;
+        const out = list.map(r => {
+          const st = String(r.status || '');
+          const offs = offersBy[r.id] || 0;
+          let fate = 'other';
+          if (st === 'completed') fate = 'done';
+          else if (st === 'confirmed' || st === 'in_progress') fate = 'going';
+          else if (st === 'created') {
+            if (now - new Date(r.created_at).getTime() < HANG) fate = 'waiting';
+            else fate = offs === 0 ? 'no_offers' : 'not_picked';
+          } else if (st.includes('cancelled')) {
+            fate = st.includes('driver') ? 'cancel_driver' : 'cancel_passenger';
+          }
+          const p = names[r.passenger_id], d = names[r.driver_id];
+          return {
+            id: r.id, fate, offers: offs, price: r.price, passenger_price: r.passenger_price,
+            from_address: r.from_address, to_address: r.to_address, to_city: r.to_city,
+            kind: r.kind, city: r.city, created_at: r.created_at, confirmed_at: r.confirmed_at,
+            passenger: p ? { id: p.id, name: p.name, tag: String(p.telegram_id || '').slice(-4) } : null,
+            driver: d ? { id: d.id, name: d.name, car: d.car, tag: String(d.telegram_id || '').slice(-4) } : null
+          };
+        });
+        const filtered = body.fate && body.fate !== 'all' ? out.filter(r => r.fate === body.fate) : out;
+        return json(res, 200, { ok: true, items: filtered.slice(0, 100), shown: filtered.length });
       }
 
       // подробная статистика
