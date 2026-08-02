@@ -1687,7 +1687,7 @@ http.createServer(async (req, res) => {
       const readOnly = new Set(['promo-list','support-list','support-count','winback-list','cars-of-user',
         'cars-pending','cars-pending-list','doc-urls','user-phone','apps-phones','admin-counts','stats',
         'drivers-stats','days-stats','user-search','avatars','avatar-fetch',
-        'audit-list','audit-actors','activity','broadcast-count','broadcast-list',
+        'audit-list','audit-actors','activity','broadcast-count','broadcast-list','rides-stats',
         'city-list','group-check']);
       const customLog = new Set(['edit-user', 'adjust-balance', 'driver-status', 'ban', 'car-edit']);
       if (!readOnly.has(act) && !customLog.has(act)) {
@@ -2310,6 +2310,103 @@ http.createServer(async (req, res) => {
         }
         const days = Object.values(byDay).sort((a2, b2) => b2.day.localeCompare(a2.day));
         return json(res, 200, { ok: true, days, name });
+      }
+
+      // судьба заявок: что стало с каждой
+      if (act === 'rides-stats') {
+        const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 29 * 864e5).toISOString();
+        const to   = body.to   ? new Date(body.to   + 'T23:59:59').toISOString() : new Date().toISOString();
+
+        let q = db.from('rides').select('id,status,price,city,kind,to_city,created_at,confirmed_at,driver_id,passenger_id,passenger_price')
+          .gte('created_at', from).lte('created_at', to).limit(10000);
+        if (body.city && body.city !== 'all') q = q.eq('city', body.city);
+        const { data: rides } = await q;
+        const list = rides || [];
+
+        // сколько предложений получила каждая заявка
+        const ids = list.map(r => r.id);
+        const offersBy = {};
+        for (let i = 0; i < ids.length; i += 200) {
+          const chunk = ids.slice(i, i + 200);
+          const { data: offs } = await db.from('offers').select('ride_id').in('ride_id', chunk);
+          (offs || []).forEach(o => { offersBy[o.ride_id] = (offersBy[o.ride_id] || 0) + 1; });
+        }
+
+        const now = Date.now();
+        const HANG = 30 * 60 * 1000;   // полчаса без ответа — считаем зависшей
+
+        const res2 = {
+          total: list.length,
+          // что стало с заявкой
+          completed: 0,        // доехал
+          inProgress: 0,       // едет прямо сейчас
+          waitingNow: 0,       // ищет машину сейчас
+          noOffers: 0,         // никто не откликнулся
+          hadOffersNotTaken: 0,// предложения были, пассажир не выбрал
+          cancelPassenger: 0,  // отменил пассажир
+          cancelDriver: 0,     // отказался водитель
+          other: 0,
+          // деньги и качество
+          money: 0, avgCheck: 0,
+          withPrice: 0,        // указал свою цену
+          offersTotal: 0,
+          waitSum: 0, waitCnt: 0,
+          // срезы
+          byKind: { ride: 0, delivery: 0, intercity: 0 },
+          byHour: Array(24).fill(0),
+          byDay: {},
+          byCity: {}
+        };
+
+        for (const r of list) {
+          const st = String(r.status || '');
+          const offs = offersBy[r.id] || 0;
+          res2.offersTotal += offs;
+          if (r.passenger_price) res2.withPrice++;
+
+          const c = r.city || '—';
+          res2.byCity[c] = res2.byCity[c] || { total: 0, done: 0, money: 0 };
+          res2.byCity[c].total++;
+
+          if (r.kind === 'delivery') res2.byKind.delivery++;
+          else if (r.to_city) res2.byKind.intercity++;
+          else res2.byKind.ride++;
+
+          const d = new Date(new Date(r.created_at).getTime() + 3 * 3600 * 1000);
+          res2.byHour[d.getUTCHours()]++;
+          const day = d.toISOString().slice(0, 10);
+          res2.byDay[day] = res2.byDay[day] || { total: 0, done: 0, lost: 0, money: 0 };
+          res2.byDay[day].total++;
+
+          if (st === 'completed') {
+            res2.completed++;
+            res2.money += Number(r.price) || 0;
+            res2.byCity[c].done++; res2.byCity[c].money += Number(r.price) || 0;
+            res2.byDay[day].done++; res2.byDay[day].money += Number(r.price) || 0;
+            if (r.confirmed_at) {
+              const w = (new Date(r.confirmed_at) - new Date(r.created_at)) / 60000;
+              if (w > 0 && w < 180) { res2.waitSum += w; res2.waitCnt++; }
+            }
+          } else if (st === 'confirmed' || st === 'in_progress') {
+            res2.inProgress++;
+          } else if (st === 'created') {
+            if (now - new Date(r.created_at).getTime() < HANG) res2.waitingNow++;
+            else if (offs === 0) { res2.noOffers++; res2.byDay[day].lost++; }
+            else { res2.hadOffersNotTaken++; res2.byDay[day].lost++; }
+          } else if (st.includes('cancelled')) {
+            if (st.includes('driver')) res2.cancelDriver++;
+            else res2.cancelPassenger++;
+            res2.byDay[day].lost++;
+          } else {
+            res2.other++;
+          }
+        }
+
+        res2.avgCheck = res2.completed ? Math.round(res2.money / res2.completed) : 0;
+        res2.avgWait  = res2.waitCnt ? Math.round(res2.waitSum / res2.waitCnt) : null;
+        res2.avgOffers = res2.total ? +(res2.offersTotal / res2.total).toFixed(1) : 0;
+
+        return json(res, 200, { ok: true, ...res2, from, to });
       }
 
       // подробная статистика

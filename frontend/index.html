@@ -317,6 +317,17 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .minifilter{display:flex;gap:16px;padding:2px 18px 8px;flex-wrap:wrap;}
 .minifilter span{font-size:12.5px;color:var(--dim);cursor:pointer;padding-bottom:3px;border-bottom:2px solid transparent;}
 .minifilter span.on{color:var(--g);border-bottom-color:var(--g);font-weight:600;}
+.fate{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);}
+.fate:last-child{border-bottom:none;}
+.fi{width:26px;text-align:center;font-size:16px;flex-shrink:0;}
+.fl2{font-size:13.5px;font-weight:500;}
+.fh{font-size:11px;color:var(--dim);margin-top:2px;line-height:1.4;}
+.fv{font-family:'Roboto Mono',monospace;font-size:17px;font-weight:700;text-align:right;flex-shrink:0;}
+.fv span{display:block;font-size:10px;color:var(--dim);font-weight:500;font-family:Inter,sans-serif;}
+.hours{display:flex;align-items:flex-end;gap:2px;padding:0 14px;height:78px;}
+.hb{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;}
+.hb i{display:block;width:100%;background:var(--g);border-radius:2px 2px 0 0;min-height:2px;opacity:.85;}
+.hb span{font-size:8.5px;color:var(--dim);font-family:'Roboto Mono',monospace;}
 .fnl{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
 .fnt{width:118px;flex-shrink:0;font-size:12px;color:var(--dim);}
 .fnb{flex:1;height:10px;background:var(--bg);border-radius:5px;overflow:hidden;}
@@ -2377,7 +2388,7 @@ function pplSearch(v){
  });
 }
 let finTab='sub';
-let statFrom='',statTo='',statView='total',statDrv=null,statVeh='all';
+let statFrom='',statTo='',statView='total',statDrv=null,statVeh='all',statCity='all';
 function dstr(d){return d.toISOString().slice(0,10);}
 function initStatRange(){
  if(statFrom&&statTo)return;
@@ -2410,8 +2421,13 @@ function rangeBar(){
  <div class="seg">
   <div class="${statView==='total'?'on':''}" onclick="statGo('total')">Итоги</div>
   <div class="${statView==='drivers'?'on':''}" onclick="statGo('drivers')">Водители</div>
+  <div class="${statView==='rides'?'on':''}" onclick="statGo('rides')">Заявки</div>
   <div class="${statView==='days'?'on':''}" onclick="statGo('days')">По дням</div>
  </div>
+ ${statView==='rides'?`<div class="seg">
+  <div class="${statCity==='all'?'on':''}" onclick="statCity='all';aStat(document.getElementById('main'))">Все города</div>
+  ${CITIES.map(c=>`<div class="${statCity===c?'on':''}" onclick="statCity='${c}';aStat(document.getElementById('main'))">${c}</div>`).join('')}
+ </div>`:''}
  ${statView==='drivers'?`<div class="seg">
   <div class="${statVeh==='all'?'on':''}" onclick="statVeh='all';aStat(document.getElementById('main'))">Все</div>
   <div class="${statVeh==='car'?'on':''}" onclick="statVeh='car';aStat(document.getElementById('main'))">🚗 Машины</div>
@@ -2442,6 +2458,79 @@ async function drawFunnel(){
   </div>`).join('')}
  </div>
  ${never>0?`<div class="note" style="margin:6px 14px 14px">${never} ${plural(never,['человек зашёл','человека зашли','человек зашли'])} и ни разу не заказали. Посмотрите их во вкладке «Люди» → «Ни разу» — возможно, они заходили, когда на линии никого не было.</div>`:''}`;
+}
+async function aStatRides(m){
+ m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
+ const s=await api('/api/admin',{action:'rides-stats',from:statFrom,to:statTo,city:statCity});
+ if(s.error){m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Не удалось загрузить</div>`;return;}
+ const p=n=>s.total?Math.round(n/s.total*100):0;
+ const lost=s.noOffers+s.hadOffersNotTaken+s.cancelPassenger+s.cancelDriver;
+
+ const row=(icon,label,n,color,hint)=>n?`<div class="fate">
+   <div class="fi">${icon}</div>
+   <div style="flex:1;min-width:0"><div class="fl2">${label}</div><div class="fh">${hint}</div></div>
+   <div class="fv" style="color:${color}">${n}<span>${p(n)}%</span></div>
+  </div>`:'';
+
+ const days=Object.entries(s.byDay||{}).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,14);
+ const hours=s.byHour||[];
+ const maxH=Math.max(1,...hours);
+ const cities=Object.entries(s.byCity||{}).sort((a,b)=>b[1].total-a[1].total);
+
+ m.innerHTML=`<div class="head"><h2>Судьба заявок</h2><span class="m">${statFrom} — ${statTo}</span></div>
+ ${rangeBar()}
+
+ <div class="agrid" style="padding:0 14px">
+  <div class="ac"><div class="n">${s.total}</div><div class="l">всего заявок</div></div>
+  <div class="ac"><div class="n g">${s.completed}</div><div class="l">доехали · ${p(s.completed)}%</div></div>
+  <div class="ac"><div class="n" style="color:var(--red)">${lost}</div><div class="l">потеряно · ${p(lost)}%</div></div>
+  <div class="ac"><div class="n a">${s.money}</div><div class="l">оборот, ₽</div></div>
+ </div>
+
+ <div class="sec">Что стало с заявками</div>
+ <div style="padding:0 14px">
+  ${row('✅','Доехали',s.completed,'var(--g)','заказ выполнен полностью')}
+  ${row('🚗','Едут сейчас',s.inProgress,'var(--g)','водитель принял, поездка идёт')}
+  ${row('⏳','Ищут машину',s.waitingNow,'var(--am)','заявка свежая, ждёт предложений')}
+  ${row('🔇','Никто не откликнулся',s.noOffers,'var(--red)','ни одного предложения от водителей')}
+  ${row('🤷','Не выбрал водителя',s.hadOffersNotTaken,'var(--am)','предложения были, пассажир не принял')}
+  ${row('❌','Отменил пассажир',s.cancelPassenger,'var(--red)','передумал или уехал иначе')}
+  ${row('↩️','Отказался водитель',s.cancelDriver,'var(--red)','принял заказ и отменил')}
+  ${row('•','Прочее',s.other,'var(--dim)','нестандартный статус')}
+ </div>
+
+ ${s.noOffers?`<div class="note" style="margin:10px 14px;border-color:rgba(226,88,90,.3);background:rgba(226,88,90,.07);color:#e8a0a1">${s.noOffers} ${plural(s.noOffers,['заявка осталась','заявки остались','заявок остались'])} без единого предложения. Это люди, которые захотели уехать и не смогли — самая дорогая потеря.</div>`:''}
+
+ <div class="sec">Качество работы</div>
+ <div class="agrid" style="padding:0 14px">
+  <div class="ac"><div class="n">${s.avgWait!==null?s.avgWait:'—'}</div><div class="l">мин до водителя</div></div>
+  <div class="ac"><div class="n">${s.avgOffers}</div><div class="l">предложений на заявку</div></div>
+  <div class="ac"><div class="n a">${s.avgCheck}</div><div class="l">средний чек, ₽</div></div>
+  <div class="ac"><div class="n">${s.withPrice}</div><div class="l">со своей ценой</div></div>
+ </div>
+
+ <div class="sec">Виды заказов</div>
+ <div class="agrid" style="padding:0 14px">
+  <div class="ac"><div class="n">${s.byKind.ride}</div><div class="l">поездки</div></div>
+  <div class="ac"><div class="n" style="color:#5B9DF9">${s.byKind.delivery}</div><div class="l">доставка</div></div>
+  <div class="ac"><div class="n" style="color:#A98BF5">${s.byKind.intercity}</div><div class="l">межгород</div></div>
+  <div class="ac"><div class="n">${s.total?Math.round(s.completed/s.total*100):0}%</div><div class="l">доходимость</div></div>
+ </div>
+
+ <div class="sec">В какие часы заказывают</div>
+ <div class="hours">${hours.map((v,i)=>`<div class="hb" title="${i}:00 — ${v}"><i style="height:${Math.round(v/maxH*100)}%"></i><span>${i%3===0?i:''}</span></div>`).join('')}</div>
+
+ <div class="sec">По дням</div>
+ <div class="sthead"><div class="sl">дата</div><div class="sv2">всего</div><div class="sv2">доехали</div><div class="sv2">потеряно</div><div class="sv2">₽</div></div>
+ ${days.length?days.map(([d,v])=>{
+   const dt=new Date(d+'T12:00:00');
+   const lbl=dt.toLocaleDateString('ru',{day:'2-digit',month:'2-digit'})+' '+['вс','пн','вт','ср','чт','пт','сб'][dt.getDay()];
+   return `<div class="strow"><div class="sl">${lbl}</div><div class="sv2">${v.total}</div><div class="sv2" style="color:var(--g)">${v.done}</div><div class="sv2" style="color:${v.lost?'var(--red)':'inherit'}">${v.lost}</div><div class="sv2" style="color:var(--am)">${v.money}</div></div>`;
+  }).join(''):'<div class="empty">Нет данных</div>'}
+
+ ${cities.length>1?`<div class="sec">По городам</div>
+  ${cities.map(([c,v])=>`<div class="card"><div style="flex:1"><div class="nm" style="font-size:14px">${esc(c)}</div><div class="sub">${v.done} из ${v.total} доехали</div></div><div class="price">${v.money} ₽</div></div>`).join('')}`:''}
+ <div style="height:20px"></div>`;
 }
 async function aStatDrivers(m){
  m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
@@ -2495,6 +2584,7 @@ async function aStatDays(m){
 }
 async function aStat(m){
  initStatRange();
+ if(statView==='rides')return aStatRides(m);
  if(statView==='drivers')return aStatDrivers(m);
  if(statView==='days')return aStatDays(m);
  m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
