@@ -1035,11 +1035,20 @@ async function home(m){
  if(!ds||!ds.length){l.innerHTML='<div class="empty"><b>В городе '+esc(me.city)+' сейчас никого нет</b>Как только водитель выйдет на линию — он появится здесь. Если тестируете сами: у водителя должен быть выбран тот же город и включён тумблер «на линии».</div>';return;}
  l.innerHTML=ds.map(d=>drvCard(d)).join('');
 }
+function starsFor(r){
+ const v=Number(r||5);
+ let s='';
+ for(let i=1;i<=5;i++){
+  s+=`<span class="st ${v>=i-0.25?'f':(v>=i-0.75?'h':'')}">★</span>`;
+ }
+ return s;
+}
 function drvCard(d){
  const on=favs().includes(d.id);
- return `<div class="dcard"><div class="ava" onclick="pickDriver('${d.id}')">${esc(d.name)[0]||'?'}</div>
+ return `<div class="dcard"><div class="ava" onclick="pickDriver('${d.id}')">${d.avatar?`<img src="${esc(d.avatar)}" alt="">`:(esc(d.name)[0]||'?')}</div>
  <div class="info" onclick="pickDriver('${d.id}')">
   <div class="nmx">${esc(d.name)}</div>
+  <div class="row stars">${starsFor(d.rating)}<span class="rnum">${Number(d.rating||5).toFixed(1)}</span></div>
   <div class="row"><span class="k">${d.vehicle_type==='moto'?'🏍':'🚗'}</span><span class="car">${esc(d.car)||(d.vehicle_type==='moto'?'мотоцикл':'машина не указана')}</span>${d.city&&d.city!==me.city?`<span class="plate" style="border-color:var(--am);color:var(--am)">${esc(d.city)}</span>`:''}</div>
   <div class="row"><span class="k">📍 стоит:</span><span class="loc">${esc(d.spot)||'место не указано'}</span></div>
   ${d.vehicle_type==='moto'
@@ -1062,7 +1071,7 @@ async function favsView(m){
  const on=here.filter(d=>d.status==='online'),off=here.filter(d=>d.status!=='online');
  l.innerHTML=(on.length?`<div class="sec">На линии в ${esc(me.city)} · ${on.length}</div>`+on.map(d=>drvCard(d)).join(''):'')+
   (off.length?`<div class="sec">Сейчас оффлайн · ${off.length}</div>`+off.map(d=>drvCard(d)).join(''):'')+
-  (away.length?`<div class="sec">В других городах · ${away.length}</div>`+away.map(d=>`<div class="card" style="opacity:.5"><div class="ava">${esc(d.name)[0]||'?'}</div><div style="flex:1;min-width:0"><div class="nm">${esc(d.name)}</div><div class="sub">${esc(d.city)||'город не указан'} · ${esc(d.car)||'—'}</div></div><button class="fav on" onclick="togFav('${d.id}')">♥</button></div>`).join(''):'')+
+  (away.length?`<div class="sec">В других городах · ${away.length}</div>`+away.map(d=>`<div class="card" style="opacity:.5"><div class="ava">${d.avatar?`<img src="${esc(d.avatar)}" alt="">`:(esc(d.name)[0]||'?')}</div><div style="flex:1;min-width:0"><div class="nm">${esc(d.name)}</div><div class="sub">${esc(d.city)||'город не указан'} · ${esc(d.car)||'—'}</div></div><button class="fav on" onclick="togFav('${d.id}')">♥</button></div>`).join(''):'')+
   ((!on.length&&!off.length)?`<div class="empty"><b>В городе ${esc(me.city)} никого</b>Ваши водители работают в других городах.</div>`:'');
 }
 async function togFav(id){
@@ -1085,7 +1094,7 @@ async function pickDriver(id){
 }
 function formHTML(d){
  const ch=places().map((p,i)=>`<div class="chip" onclick="document.getElementById('to').value='${esc(p)}'">📍 ${esc(p)}<span class="x" onclick="event.stopPropagation();delPlace(${i})">✕</span></div>`).join('');
- const hdr=d?`<div class="card" style="margin:14px 14px 0"><div class="ava">${esc(d.name)[0]}</div><div style="flex:1"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':''}${d.car?'<span>· '+esc(d.car)+'</span>':''}</div></div></div>`:'';
+ const hdr=d?`<div class="card" style="margin:14px 14px 0"><div class="ava">${d.avatar?`<img src="${esc(d.avatar)}" alt="">`:esc(d.name)[0]}</div><div style="flex:1"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':''}${d.car?'<span>· '+esc(d.car)+'</span>':''}</div></div></div>`:'';
  const isDel=orderKind==='delivery';
  return `<div class="head"><h2>${isDel?(d?'Доставка водителю':'Заказать доставку'):(d?'Заявка водителю':'Заявка всем')}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="${isDel?'Откуда забрать':'Откуда — адрес или ориентир'}"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="${isDel?'Куда доставить':'Куда едем'}"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div>
  ${(!isDel&&!(d&&d.vehicle_type==='moto'))?`<div class="fr"><label>Куда едем</label><div class="tabsw"><div class="${!interCity?'on':''}" onclick="interCity=false;document.getElementById('host').innerHTML=formHTML(targetDrv)">По городу</div><div class="${interCity?'on':''}" onclick="interCity=true;document.getElementById('host').innerHTML=formHTML(targetDrv)">🛣 Межгород</div></div></div>`:''}
@@ -1173,10 +1182,11 @@ async function openRide(){
    return;
  }
  const{data:offs}=await db.from('offers').select('*').eq('ride_id',r.id).eq('status','pending');
+ setTimeout(()=>loadDrvAvatars((offs||[]).map(o=>o.driver_id)),0);
  m.innerHTML=`<div class="wait"><div class="bea"><i></i><i></i><i></i><b></b></div><h3>${r.target_driver_id?'Ждём ответ водителя':'Ищем свободных'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p>${r.passenger_price?`<div class="mypr">Ваша цена: <b>${r.passenger_price} ₽</b></div>`:''}${r.comment?`<div class="mycom">💬 ${esc(r.comment)}</div>`:''}<div class="cd" id="rcd"></div></div><div class="list">${(offs&&offs.length)?offs.map(o=>{
   const same=r.passenger_price&&Number(o.price)===Number(r.passenger_price);
   const less=r.passenger_price&&Number(o.price)<Number(r.passenger_price);
-  return `<div class="card"><div class="ava">${esc(o.driver_name)[0]||'?'}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div>${same?'<div class="okpr">согласен на вашу цену</div>':less?'<div class="okpr">дешевле вашей цены</div>':''}</div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}',${o.price})">Принять</button></div></div>`;
+  return `<div class="card"><div class="ava">${DAV[o.driver_id]?`<img src="${esc(DAV[o.driver_id])}" alt="">`:(esc(o.driver_name)[0]||'?')}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div>${same?'<div class="okpr">согласен на вашу цену</div>':less?'<div class="okpr">дешевле вашей цены</div>':''}</div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}',${o.price})">Принять</button></div></div>`;
  }).join(''):'<div class="empty">Ждём предложений по цене…</div>'}</div><div style="padding:0 18px 24px"><button class="btn dang" onclick="cancelRide()">Отменить заявку</button></div>`;
  startCd(r.created_at);
 }
@@ -1373,7 +1383,7 @@ async function openRideFrom(id){
 async function markRevSeen(){unreadRev=0;}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
- return `${act}<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
+ return `${act}<div class="ph"><div class="pa avedit" onclick="pickAvatar()">${me.avatar?`<img src="${esc(me.avatar)}" alt="">`:(esc(me.name)[0]||'?')}<span class="avcam">📷</span></div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
  ${SETTINGS.community_enabled?'<div class="mi" onclick="communitySheet()"><span>Группа города</span><span class="c">›</span></div>':''}
  <div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div></div>`;
 }
@@ -1438,6 +1448,38 @@ async function communitySheet(){
   <div class="sa"><button class="c" onclick="closeSh()">Закрыть</button><button class="o" onclick="joinCommunity('${esc(c.name)}','${esc(c.link)}')">Открыть группу</button></div></div>`;
  }
  document.getElementById('device').appendChild(m);
+}
+let DAV={};   // аватарки водителей по их предложениям
+async function loadDrvAvatars(ids){
+ const need=[...new Set(ids)].filter(id=>id&&!(id in DAV));
+ if(!need.length)return;
+ need.forEach(id=>{DAV[id]=null;});
+ try{
+  const{data}=await db.from('users').select('id,avatar').in('id',need);
+  let ch=false;
+  (data||[]).forEach(u=>{if(u.avatar){DAV[u.id]=u.avatar;ch=true;}});
+  if(ch&&role==='passenger'&&pTab==='ride')openRide();
+ }catch(e){}
+}
+function pickAvatar(){
+ const i=document.createElement('input');i.type='file';i.accept='image/*';
+ i.onchange=async()=>{
+  const f=i.files[0];if(!f)return;
+  T('Загружаем фото…');
+  try{
+   const small=await shrink(f,600);
+   const path=`${me.id}.jpg`;
+   const{error}=await db.storage.from('avatars').upload(path,small,{upsert:true,contentType:'image/jpeg'});
+   if(error){T('Не загрузилось: '+error.message);return;}
+   const url=db.storage.from('avatars').getPublicUrl(path).data.publicUrl+'?t='+Date.now();
+   const{error:e2}=await db.from('users').update({avatar:url}).eq('id',me.id);
+   if(e2){T('Не сохранилось');return;}
+   me.avatar=url;
+   T('Фото обновлено');
+   if(role==='driver')drawD();else drawP();
+  }catch(e){T('Не получилось загрузить');}
+ };
+ i.click();
 }
 function supportSheet(){
  window._supPhoto=null;
@@ -2076,7 +2118,7 @@ function dProfHTML(){
  }else if(SETTINGS.ref_enabled){
   subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Зовите своих</div><div class="scs">Бонус за каждого приглашённого водителя</div></div><button class="subbtn" onclick="refSheet()">Пригласить</button></div>`;
  }
- return `<div class="ph"><div class="pa">${esc(me.name)[0]||'?'}</div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.vehicle_type==='moto'?'<div class="pr" style="margin-top:4px;color:#5B9DF9">🏍 мотокурьер · только доставка</div>':(me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':'')}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Мой транспорт</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Весь транспорт ›</span></div></div></div>
+ return `<div class="ph"><div class="pa avedit" onclick="pickAvatar()">${me.avatar?`<img src="${esc(me.avatar)}" alt="">`:(esc(me.name)[0]||'?')}<span class="avcam">📷</span></div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.vehicle_type==='moto'?'<div class="pr" style="margin-top:4px;color:#5B9DF9">🏍 мотокурьер · только доставка</div>':(me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':'')}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Мой транспорт</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Весь транспорт ›</span></div></div></div>
  <div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
 async function shiftVehicles(){
