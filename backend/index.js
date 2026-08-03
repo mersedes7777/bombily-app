@@ -7,7 +7,7 @@ const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
-const VERSION = 'v65-sub-pin';
+const VERSION = 'v66-pin-force';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -1014,9 +1014,9 @@ async function updatePin(city, renewHours) {
   let { data: pin } = await db.from('group_pins').select('*').eq('city_name', city.name).maybeSingle();
 
   // пора показать сводку заново — удаляем старую и отправляем свежую вниз чата
-  if (pin && pin.message_id && renewHours > 0) {
+  if (pin && pin.message_id && renewHours !== 0) {
     const last = pin.renewed_at ? new Date(pin.renewed_at).getTime() : 0;
-    if (Date.now() - last > renewHours * 3600 * 1000) {
+    if (renewHours === -1 || Date.now() - last > renewHours * 3600 * 1000) {
       await tg('unpinChatMessage', { chat_id: city.group_id, message_id: pin.message_id }).catch(() => {});
       await tg('deleteMessage', { chat_id: city.group_id, message_id: pin.message_id }).catch(() => {});
       await db.from('group_pins').delete().eq('city_name', city.name);
@@ -1063,7 +1063,9 @@ async function updatePin(city, renewHours) {
 async function pinLoop() {
   let mins = 5;
   try {
-    const { data: st } = await db.from('settings').select('pin_enabled,pin_minutes,pin_renew_hours').eq('id', 1).maybeSingle();
+    // берём настройки целиком: если колонки ещё нет, запрос по имени падает
+    const { data: st, error: stErr } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (stErr) glog('закреп: не читаются настройки — ' + stErr.message);
     if (st && st.pin_minutes) mins = Math.max(2, Number(st.pin_minutes));
     const renew = st && st.pin_renew_hours ? Number(st.pin_renew_hours) : 0;
     if (st && st.pin_enabled) {
@@ -1959,11 +1961,15 @@ http.createServer(async (req, res) => {
       if (act === 'pin-now') {
         const { data: cities } = await db.from('cities').select('name,group_id').not('group_id', 'is', null);
         if (!cities || !cities.length) return json(res, 400, { error: 'no_groups' });
-        let done = 0;
+        let done = 0, errs = [];
         for (const c of cities) {
-          try { await updatePin(c, 0); done++; } catch (e) {}
+          try {
+            // -1 = пересоздать немедленно, не глядя на срок
+            await updatePin(c, -1);
+            done++;
+          } catch (e) { errs.push(c.name + ': ' + e.message); }
         }
-        return json(res, 200, { ok: true, done });
+        return json(res, 200, { ok: true, done, errs: errs.length ? errs : undefined });
       }
 
       // ---- активность людей ----
