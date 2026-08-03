@@ -7,7 +7,7 @@ const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
-const VERSION = 'v64-audience-fix';
+const VERSION = 'v65-sub-pin';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -51,7 +51,7 @@ function kbFor(u) {
       [{ text: '🚕 Заказать поездку', web_app: { url: appUrl('order', u) } }],
       [{ text: '🚗 Стать водителем', web_app: { url: appUrl('driver', u) } },
        { text: '👤 Кабинет', web_app: { url: appUrl('profile', u) } }],
-      [{ text: '💬 Связь с админом' }]
+      [{ text: '📣 Наша группа' }, { text: '💬 Связь с админом' }]
     ],
     resize_keyboard: true,
     is_persistent: true
@@ -230,6 +230,19 @@ async function onUpdate(u) {
     const s = text.slice(1).split(/[\s@]/)[0];
     return send(chat, 'Открываю приложение:', { reply_markup: { inline_keyboard: [[wa('Открыть', s, m.from)]] } });
   }
+  if (text === '📣 Наша группа' || text === '/group') {
+    const { data: u2 } = await db.from('users').select('city').eq('telegram_id', chat).maybeSingle();
+    const { data: c2 } = await db.from('cities').select('name,group_link')
+      .eq('name', u2 && u2.city ? u2.city : '').maybeSingle();
+    if (c2 && c2.group_link) {
+      return send(chat, `📣 <b>Bombily | ${c2.name}</b>
+
+Новости города, объявления и обсуждения. Там же публикуем акции и предупреждаем о непогоде.`,
+        { reply_markup: { inline_keyboard: [[{ text: 'Открыть группу', url: c2.group_link }]] } });
+    }
+    return send(chat, 'Для вашего города группа пока не создана.');
+  }
+
   if (text === '💬 Связь с админом' || text.startsWith('/support')) {
     await setWait(chat);
     return send(chat, 'Напишите сообщение или пришлите фото — всё уйдёт администрации.');
@@ -993,12 +1006,23 @@ function pinText(city, s) {
   return `${head}\n\n${lines.join('\n')}${tail}${foot}\n<i>обновлено в ${localTimeStr()}</i>`;
 }
 
-async function updatePin(city) {
+async function updatePin(city, renewHours) {
   const kb = { inline_keyboard: [[{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] };
   const s = await cityStats(city.name);
   const text = pinText(city.name, s);
 
-  const { data: pin } = await db.from('group_pins').select('*').eq('city_name', city.name).maybeSingle();
+  let { data: pin } = await db.from('group_pins').select('*').eq('city_name', city.name).maybeSingle();
+
+  // пора показать сводку заново — удаляем старую и отправляем свежую вниз чата
+  if (pin && pin.message_id && renewHours > 0) {
+    const last = pin.renewed_at ? new Date(pin.renewed_at).getTime() : 0;
+    if (Date.now() - last > renewHours * 3600 * 1000) {
+      await tg('unpinChatMessage', { chat_id: city.group_id, message_id: pin.message_id }).catch(() => {});
+      await tg('deleteMessage', { chat_id: city.group_id, message_id: pin.message_id }).catch(() => {});
+      await db.from('group_pins').delete().eq('city_name', city.name);
+      pin = null;
+    }
+  }
 
   // текст не изменился — ничего не трогаем
   if (pin && pin.message_id && pin.last_text === text) return;
@@ -1030,7 +1054,8 @@ async function updatePin(city) {
   await tg('pinChatMessage', { chat_id: city.group_id, message_id: mid, disable_notification: true });
   await db.from('group_pins').upsert({
     city_name: city.name, chat_id: city.group_id, message_id: mid,
-    last_text: text, updated_at: new Date().toISOString()
+    last_text: text, updated_at: new Date().toISOString(),
+    renewed_at: new Date().toISOString()
   });
   glog(`${city.name}: закреп создан`);
 }
@@ -1038,12 +1063,13 @@ async function updatePin(city) {
 async function pinLoop() {
   let mins = 5;
   try {
-    const { data: st } = await db.from('settings').select('pin_enabled,pin_minutes').eq('id', 1).maybeSingle();
+    const { data: st } = await db.from('settings').select('pin_enabled,pin_minutes,pin_renew_hours').eq('id', 1).maybeSingle();
     if (st && st.pin_minutes) mins = Math.max(2, Number(st.pin_minutes));
+    const renew = st && st.pin_renew_hours ? Number(st.pin_renew_hours) : 0;
     if (st && st.pin_enabled) {
       const { data: cities } = await db.from('cities').select('name,group_id').not('group_id', 'is', null);
       for (const c of cities || []) {
-        try { await updatePin(c); } catch (e) { glog(`${c.name}: закреп — ${e.message}`); }
+        try { await updatePin(c, renew); } catch (e) { glog(`${c.name}: закреп — ${e.message}`); }
       }
     }
   } catch (e) { console.error('pinLoop', e.message); }
@@ -1558,6 +1584,27 @@ http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, map });
     }
 
+    // --- нужна ли подписка и подписан ли человек ---
+    if (req.url === '/api/sub-check') {
+      const { data: st } = await db.from('settings').select('require_sub').eq('id', 1).maybeSingle();
+      const need = !!(st && st.require_sub);
+      if (!need) return json(res, 200, { ok: true, need: false, member: true });
+
+      const cityName = String(body.city || me.city || '').trim();
+      if (!cityName) return json(res, 200, { ok: true, need: false, member: true });
+      const { data: c } = await db.from('cities').select('*').eq('name', cityName).maybeSingle();
+      if (!c || !c.group_id || !c.group_link) {
+        return json(res, 200, { ok: true, need: false, member: true });  // группы нет — не мешаем
+      }
+      let member = true;
+      try {
+        const r = await tg('getChatMember', { chat_id: c.group_id, user_id: me.telegram_id });
+        if (r && r.ok && r.result) member = !['left', 'kicked'].includes(r.result.status);
+        else member = true;   // не смогли проверить — пропускаем, чтобы не запереть людей
+      } catch (e) { member = true; }
+      return json(res, 200, { ok: true, need: true, member, link: c.group_link, city: c.name });
+    }
+
     // --- городское сообщество ---
     if (req.url === '/api/community') {
       try {
@@ -1914,7 +1961,7 @@ http.createServer(async (req, res) => {
         if (!cities || !cities.length) return json(res, 400, { error: 'no_groups' });
         let done = 0;
         for (const c of cities) {
-          try { await updatePin(c); done++; } catch (e) {}
+          try { await updatePin(c, 0); done++; } catch (e) {}
         }
         return json(res, 200, { ok: true, done });
       }
@@ -2217,7 +2264,7 @@ http.createServer(async (req, res) => {
       if (act === 'save-settings' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes'].forEach(k => {
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours'].forEach(k => {
           if (f[k] !== undefined) allowed[k] = f[k];
         });
         if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
@@ -2621,7 +2668,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
