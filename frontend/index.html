@@ -133,7 +133,11 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .nb.active{color:var(--g);}
 .nb svg{width:21px;height:21px;}
 .ph{padding:24px 20px 18px;text-align:center;background:var(--elev);border-bottom:1px solid var(--line);}
-.pa{width:70px;height:70px;border-radius:22px;margin:0 auto 12px;background:linear-gradient(135deg,var(--g),var(--g2));display:flex;align-items:center;justify-content:center;font-family:Oswald,sans-serif;font-weight:700;font-size:27px;color:#06120b;}
+.pawrap{position:relative;width:70px;margin:0 auto 12px;}
+.pa{width:70px;height:70px;border-radius:22px;background:linear-gradient(135deg,var(--g),var(--g2));display:flex;align-items:center;justify-content:center;font-family:Oswald,sans-serif;font-weight:700;font-size:27px;color:#06120b;overflow:hidden;position:relative;flex-shrink:0;}
+.pa img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit;}
+.avcam{position:absolute;right:0;bottom:0;width:24px;height:24px;border-radius:50%;background:var(--surf);border:2px solid var(--elev);display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;}
+.avdel{display:inline-block;margin:-6px 0 10px;font-size:11.5px;color:var(--dim);cursor:pointer;}
 .pn{font-family:Oswald,sans-serif;font-weight:600;font-size:19px;}
 .pr{font-size:12.5px;color:var(--dim);margin-top:3px;}
 .ml{padding:6px 18px 24px;}
@@ -1380,7 +1384,7 @@ async function openRideFrom(id){
 async function markRevSeen(){unreadRev=0;}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
- return `${act}<div class="ph"><div class="pa avedit" onclick="pickAvatar()">${me.avatar?`<img src="${esc(me.avatar)}" alt="">`:(esc(me.name)[0]||'?')}<span class="avcam">📷</span></div><div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
+ return `${act}<div class="ph"><div class="pawrap"><div class="pa avedit" onclick="avatarMenu()">${me.avatar?`<img src="${esc(me.avatar)}" alt="">`:(esc(me.name)[0]||'?')}</div><span class="avcam" onclick="avatarMenu()">📷</span></div>${me.avatar?'<div class="avdel" onclick="delAvatar()">убрать фото</div>':''}<div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
  ${SETTINGS.community_enabled?'<div class="mi" onclick="communitySheet()"><span>Группа города</span><span class="c">›</span></div>':''}
  <div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div></div>`;
 }
@@ -1457,6 +1461,31 @@ async function loadDrvAvatars(ids){
   (data||[]).forEach(u=>{if(u.avatar){DAV[u.id]=u.avatar;ch=true;}});
   if(ch&&role==='passenger'&&pTab==='ride')openRide();
  }catch(e){}
+}
+async function delAvatar(){
+ const{error}=await db.from('users').update({avatar:null}).eq('id',me.id);
+ if(error)return T('Не удалось убрать');
+ try{await db.storage.from('avatars').remove([me.id+'.jpg']);}catch(e){}
+ me.avatar=null;T('Фото убрано');
+ if(role==='driver')drawD();else drawP();
+}
+function avatarMenu(){
+ if(!me.avatar){pickAvatar();return;}
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Фото профиля</h3><div class="s">Его видят другие пользователи рядом с вашим именем.</div>
+ <div class="sa" style="flex-direction:column;gap:8px">
+  <button class="o" style="width:100%" onclick="closeSh();pickAvatar()">Заменить фото</button>
+  <button class="c" style="width:100%;color:var(--red)" onclick="removeAvatar()">Удалить фото</button>
+  <button class="c" style="width:100%" onclick="closeSh()">Отмена</button>
+ </div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function removeAvatar(){
+ const{error}=await db.from('users').update({avatar:null}).eq('id',me.id);
+ if(error)return T('Не удалось удалить');
+ try{await db.storage.from('avatars').remove([me.id+'.jpg']);}catch(e){}
+ me.avatar=null;closeSh();T('Фото удалено');
+ if(role==='driver')drawD();else drawP();
 }
 function pickAvatar(){
  const i=document.createElement('input');i.type='file';i.accept='image/*';
@@ -2115,7 +2144,7 @@ function dProfHTML(){
  }else if(SETTINGS.ref_enabled){
   subCard=`<div class="subcard"><div style="flex:1"><div class="sct">Зовите своих</div><div class="scs">Бонус за каждого приглашённого водителя</div></div><button class="subbtn" onclick="refSheet()">Пригласить</button></div>`;
  }
- return `<div class="ph"><div class="pa avedit" onclick="pickAvatar()">${me.avatar?`<img src="${esc(me.avatar)}" alt="">`:(esc(me.name)[0]||'?')}<span class="avcam">📷</span></div><div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.vehicle_type==='moto'?'<div class="pr" style="margin-top:4px;color:#5B9DF9">🏍 мотокурьер · только доставка</div>':(me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':'')}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Мой транспорт</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Весь транспорт ›</span></div></div></div>
+ return `<div class="ph"><div class="pawrap"><div class="pa avedit" onclick="avatarMenu()">${me.avatar?`<img src="${esc(me.avatar)}" alt="">`:(esc(me.name)[0]||'?')}</div><span class="avcam" onclick="avatarMenu()">📷</span></div>${me.avatar?'<div class="avdel" onclick="delAvatar()">убрать фото</div>':''}<div class="pn">${esc(me.name)}</div><div class="pr">Водитель · ${esc(me.car)||'машина не назначена'}${me.plate?' · '+esc(me.plate):''}</div><div class="pr" style="margin-top:2px">⭐ ${me.rating||5} · ${refuseTxt(me.cancel_as_driver)}</div>${me.vehicle_type==='moto'?'<div class="pr" style="margin-top:4px;color:#5B9DF9">🏍 мотокурьер · только доставка</div>':(me.delivery?'<div class="pr" style="margin-top:4px;color:var(--g)">📦 берёте доставку</div>':'')}${me.intercity?'<div class="pr" style="margin-top:4px;color:#A98BF5">🛣 берёте межгород</div>':''}</div>${subCard}<div class="fl"><div class="fr"><label>Имя · его видят пассажиры</label><input id="d1" value="${esc(me.name)}" placeholder="Витя"></div>${me.full_name?`<div class="fr" style="opacity:.65"><label>ФИО по документам · проверено 🔒</label><input value="${esc(me.full_name)}" disabled></div>`:''}<div class="fr"><label>Телефон</label><input id="d2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Где стою</label><input id="d3" value="${esc(me.spot)}" placeholder="центр, у рынка…"></div><div class="fr" onclick="myCars()" style="cursor:pointer"><label>Мой транспорт</label><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:15px;font-weight:500">${esc(me.car)||'не назначена'}${me.plate?' · '+esc(me.plate):''}</div><span style="color:var(--g);font-size:12.5px;font-weight:600">Весь транспорт ›</span></div></div></div>
  <div class="sv"><button class="btn" onclick="saveD()">Сохранить</button><button class="btn ghost" onclick="setRole('passenger')">Вернуться как пассажир</button></div>`;
 }
 async function shiftVehicles(){
