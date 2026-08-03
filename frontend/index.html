@@ -1035,20 +1035,12 @@ async function home(m){
  if(!ds||!ds.length){l.innerHTML='<div class="empty"><b>В городе '+esc(me.city)+' сейчас никого нет</b>Как только водитель выйдет на линию — он появится здесь. Если тестируете сами: у водителя должен быть выбран тот же город и включён тумблер «на линии».</div>';return;}
  l.innerHTML=ds.map(d=>drvCard(d)).join('');
 }
-function starsFor(r){
- const v=Number(r||5);
- let s='';
- for(let i=1;i<=5;i++){
-  s+=`<span class="st ${v>=i-0.25?'f':(v>=i-0.75?'h':'')}">★</span>`;
- }
- return s;
-}
 function drvCard(d){
  const on=favs().includes(d.id);
  return `<div class="dcard"><div class="ava" onclick="pickDriver('${d.id}')">${d.avatar?`<img src="${esc(d.avatar)}" alt="">`:(esc(d.name)[0]||'?')}</div>
  <div class="info" onclick="pickDriver('${d.id}')">
-  <div class="nmx">${esc(d.name)}</div>
-  <div class="row stars">${starsFor(d.rating)}<span class="rnum">${Number(d.rating||5).toFixed(1)}</span></div>
+  <div class="nmx">${esc(d.name)}<span class="rmini">★ ${Number(d.rating||5).toFixed(1)}</span></div>
+
   <div class="row"><span class="k">${d.vehicle_type==='moto'?'🏍':'🚗'}</span><span class="car">${esc(d.car)||(d.vehicle_type==='moto'?'мотоцикл':'машина не указана')}</span>${d.city&&d.city!==me.city?`<span class="plate" style="border-color:var(--am);color:var(--am)">${esc(d.city)}</span>`:''}</div>
   <div class="row"><span class="k">📍 стоит:</span><span class="loc">${esc(d.spot)||'место не указано'}</span></div>
   ${d.vehicle_type==='moto'
