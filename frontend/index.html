@@ -2982,7 +2982,11 @@ function bcCount(){
   const r=await api('/api/admin',{action:'broadcast-count',audience:bcAud,city:bcCity});
   const n=r&&r.count!==undefined?r.count:0;
   const t=(document.getElementById('bctext')?.value||'').trim();
-  el.innerHTML=`Получателей: <b>${n}</b>${n?` · уйдёт примерно за ${Math.max(1,Math.round(n*0.07))} сек`:''}${t.length?` · символов ${t.length}`:''}`;
+  const why=[];
+  if(r&&r.no_tg)why.push(r.no_tg+' без телеграма');
+  if(r&&r.opted_out)why.push(r.opted_out+' отписались');
+  el.innerHTML=`Получателей: <b>${n}</b>${n?` · уйдёт примерно за ${Math.max(1,Math.round(n*0.07))} сек`:''}${t.length?` · символов ${t.length}`:''}`
+   +(r&&r.total?`<div style="font-size:11.5px;color:var(--dim);margin-top:5px">всего в базе ${r.total}${r.in_city!==null&&r.in_city!==undefined?`, в городе ${r.in_city}`:''}${why.length?' · не получат: '+why.join(', '):''}</div>`:'');
  },300);
 }
 function mailConfirm(){

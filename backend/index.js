@@ -7,7 +7,7 @@ const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
-const VERSION = 'v62-rides-list';
+const VERSION = 'v64-audience-fix';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -1055,12 +1055,16 @@ async function pinLoop() {
 
 // кому пойдёт сообщение
 async function audienceQuery(audience, city) {
-  let q = db.from('users').select('id,telegram_id,name').not('telegram_id', 'is', null).eq('no_broadcast', false);
+  // берём всех с телеграмом, а лишних отсеиваем уже в коде:
+  // условия вида «не равно» в базе молча выбрасывают записи с пустым полем
+  let q = db.from('users').select('id,telegram_id,name,city,driver_status,no_broadcast')
+    .not('telegram_id', 'is', null);
   if (city && city !== 'all') q = q.eq('city', city);
-  if (audience === 'drivers') q = q.eq('driver_status', 'approved');
-  if (audience === 'passengers') q = q.not('driver_status', 'eq', 'approved');
   const { data } = await q.limit(5000);
-  let list = data || [];
+  let list = (data || []).filter(u => u.no_broadcast !== true);
+
+  if (audience === 'drivers')    list = list.filter(u => u.driver_status === 'approved');
+  if (audience === 'passengers') list = list.filter(u => u.driver_status !== 'approved');
 
   // «ни разу не заказывал» и «заказывал» считаем по заявкам
   if (audience === 'never' || audience === 'ordered') {
@@ -1536,6 +1540,24 @@ http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
+    // --- заслуги водителей для списка: поездки и отзывы ---
+    if (req.url === '/api/drivers-merit') {
+      const ids = Array.isArray(body.ids) ? body.ids.slice(0, 60) : [];
+      if (!ids.length) return json(res, 200, { ok: true, map: {} });
+      const map = {};
+      ids.forEach(id => { map[id] = { rides: 0, reviews: 0 }; });
+      for (let i = 0; i < ids.length; i += 60) {
+        const chunk = ids.slice(i, i + 60);
+        const { data: rs } = await db.from('rides').select('driver_id')
+          .in('driver_id', chunk).eq('status', 'completed').limit(5000);
+        (rs || []).forEach(r => { if (map[r.driver_id]) map[r.driver_id].rides++; });
+        const { data: rv } = await db.from('reviews').select('target_id')
+          .in('target_id', chunk).eq('visible', true).limit(5000);
+        (rv || []).forEach(r => { if (map[r.target_id]) map[r.target_id].reviews++; });
+      }
+      return json(res, 200, { ok: true, map });
+    }
+
     // --- городское сообщество ---
     if (req.url === '/api/community') {
       try {
@@ -1931,7 +1953,17 @@ http.createServer(async (req, res) => {
       // ---- рассылка ----
       if (act === 'broadcast-count') {
         const list = await audienceQuery(body.audience, body.city);
-        return json(res, 200, { ok: true, count: list.length });
+        // сколько всего людей и кто отсеялся — чтобы цифра не была загадкой
+        const { count: total } = await db.from('users').select('*', { count: 'exact', head: true });
+        const { count: noTg } = await db.from('users').select('*', { count: 'exact', head: true }).is('telegram_id', null);
+        const { count: opted } = await db.from('users').select('*', { count: 'exact', head: true }).eq('no_broadcast', true);
+        let inCity = null;
+        if (body.city && body.city !== 'all') {
+          const { count } = await db.from('users').select('*', { count: 'exact', head: true }).eq('city', body.city);
+          inCity = count || 0;
+        }
+        return json(res, 200, { ok: true, count: list.length,
+          total: total || 0, no_tg: noTg || 0, opted_out: opted || 0, in_city: inCity });
       }
       if (act === 'broadcast-send' && isAdminUp(me)) {
         const text = String(body.text || '').trim();
