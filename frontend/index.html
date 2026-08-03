@@ -787,7 +787,13 @@ async function boot(){
   if(!me.onboarded){onboard(0);return;}
   if(!me.has_phone&&!me.phone){phoneGate();return;}
   if(!me.city){cityGate();return;}
-  if(!(await subGate()))return;
+  if(!(await subGate())){
+   // прячем интерфейс, пока человек не вступил в группу
+   document.getElementById('rsw').style.display='none';
+   document.getElementById('nav').innerHTML='';
+   document.getElementById('main').innerHTML='';
+   return;
+  }
   paintCity();
   drawRoles();count();setInterval(count,12000);
   await restore();await restoreD();
@@ -843,7 +849,8 @@ async function loadCities(){
 async function subGate(){
  const r=await api('/api/sub-check',{});
  if(!r||r.error||!r.need||r.member)return true;
- const m=document.createElement('div');m.className='mask';m.id='sh';
+ const m=document.createElement('div');m.className='mask nodismiss';m.id='sh';
+ m.onclick=e=>{e.stopPropagation();};
  m.innerHTML=`<div class="sheet"><h3>Группа ${esc(r.city)}</h3>
  <div class="s">Чтобы пользоваться сервисом, вступите в группу своего города. Там новости, объявления и предупреждения о непогоде.</div>
  <div class="commbox">
@@ -3098,7 +3105,6 @@ async function finCities(c){
  <div class="note" style="margin:6px 14px 0">При пересоздании старое сообщение удаляется, а новое появляется внизу чата — его снова замечают. Людям придёт одно уведомление.</div>
  <div style="padding:8px 14px 0"><button class="rolebtn" onclick="pinNow()">обновить закреп сейчас</button></div>
  `:''}
- <div style="padding:0 14px 14px"><button class="rolebtn" onclick="inviteAll()">📣 позвать всех в группу</button></div>
  <div class="sec">Города</div>
  <div class="note" style="margin:0 14px 12px">Выключенный город исчезает из выбора, но у тех, кто уже его выбрал, остаётся.</div>
  <div style="padding:0 14px 10px"><button class="rolebtn" onclick="cityEdit()">+ добавить город</button></div>
@@ -3130,34 +3136,6 @@ async function pinNow(){
  const r=await api('/api/admin',{action:'pin-now'});
  if(r.error)return T(r.error==='no_groups'?'Ни у одного города не указан ID группы':'Ошибка');
  T('Закреп обновлён');
-}
-async function inviteAll(){
- const r=await api('/api/admin',{action:'city-list'});
- const withLink=((r&&r.items)||[]).filter(c=>c.group_link);
- if(!withLink.length)return T('Сначала укажите ссылку на группу');
- const c=withLink[0];
- bcAud='all';bcCity=withLink.length===1?c.name:'all';
- const m=document.createElement('div');m.className='mask';m.id='sh';
- const txt=`👋 У Бомбил появилась группа города\n\nТам новости, объявления и обсуждения — заходите, чтобы быть в курсе.\n\nЗаказы по-прежнему в боте, группа для общения.`;
- m.innerHTML=`<div class="sheet"><h3>Позвать всех в группу</h3>
- <div class="s">Сообщение придёт людям в бота. Ссылка подставится кнопкой.</div>
- <textarea class="ta" id="invtext" style="min-height:130px">${esc(txt)}</textarea>
- <div class="note" id="invinfo" style="margin:0 0 12px">Считаем получателей…</div>
- <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="sendInvite('${esc(c.group_link)}')">Отправить</button></div></div>`;
- document.getElementById('device').appendChild(m);
- const cnt=await api('/api/admin',{action:'broadcast-count',audience:'all',city:bcCity});
- const el=document.getElementById('invinfo');
- if(el)el.innerHTML=`Получателей: <b>${(cnt&&cnt.count)||0}</b>`;
-}
-async function sendInvite(link){
- return once('inv', async()=>{
-  const t=(document.getElementById('invtext').value||'').trim();
-  if(t.length<5)return T('Напишите текст');
-  const r=await api('/api/admin',{action:'broadcast-send',text:t,audience:'all',city:bcCity,
-   btn_text:'Вступить в группу',btn_url:link});
-  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
-  closeSh();T('Приглашения пошли');
- });
 }
 async function togGroup(field){
  const v=!(field==='group_clean_service'?SETTINGS[field]!==false:SETTINGS[field]);
