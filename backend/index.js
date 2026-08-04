@@ -7,7 +7,7 @@ const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
-const VERSION = 'v66-pin-force';
+const VERSION = 'v67-sources';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -201,6 +201,16 @@ async function onUpdate(u) {
   }
 
   if (text.startsWith('/start')) {
+    // метка источника: /start src_chatname
+    const arg = text.split(' ')[1] || '';
+    if (arg.startsWith('src_')) {
+      const code = arg.slice(4).slice(0, 40);
+      try {
+        const { data: u } = await db.from('users').select('id,source').eq('telegram_id', chat).maybeSingle();
+        if (u) { if (!u.source) await db.from('users').update({ source: code }).eq('id', u.id); }
+        else await db.from('pending_src').upsert({ tg: chat, code, created_at: new Date().toISOString() });
+      } catch (e) {}
+    }
     await clearWait(chat);
     db.from('users').update({ no_broadcast: false }).eq('telegram_id', chat).then(() => {}, () => {});
     // реферальная ссылка: /start ref_CODE
@@ -1759,7 +1769,7 @@ http.createServer(async (req, res) => {
       const readOnly = new Set(['promo-list','support-list','support-count','winback-list','cars-of-user',
         'cars-pending','cars-pending-list','doc-urls','user-phone','apps-phones','admin-counts','stats',
         'drivers-stats','days-stats','user-search','avatars','avatar-fetch',
-        'audit-list','audit-actors','activity','broadcast-count','broadcast-list','rides-stats','rides-list','rides-list',
+        'audit-list','audit-actors','activity','broadcast-count','broadcast-list','rides-stats','rides-list','src-list','rides-list',
         'city-list','group-check']);
       const customLog = new Set(['edit-user', 'adjust-balance', 'driver-status', 'ban', 'car-edit']);
       if (!readOnly.has(act) && !customLog.has(act)) {
@@ -2034,6 +2044,44 @@ http.createServer(async (req, res) => {
       if (act === 'broadcast-list') {
         const { data } = await db.from('broadcasts').select('*').order('created_at', { ascending: false }).limit(20);
         return json(res, 200, { ok: true, items: data || [] });
+      }
+
+      // ---- метки источников ----
+      if (act === 'src-list') {
+        const { data: srcs } = await db.from('sources').select('*').order('created_at', { ascending: false });
+        const { data: us } = await db.from('users').select('id,source,created_at').not('source', 'is', null).limit(5000);
+        const { data: rides } = await db.from('rides').select('passenger_id,status').limit(20000);
+        const made = {}, done = {};
+        (rides || []).forEach(r => {
+          if (!r.passenger_id) return;
+          made[r.passenger_id] = true;
+          if (r.status === 'completed') done[r.passenger_id] = true;
+        });
+        const agg = {};
+        (us || []).forEach(u => {
+          const k = u.source;
+          agg[k] = agg[k] || { code: k, users: 0, ordered: 0, arrived: 0 };
+          agg[k].users++;
+          if (made[u.id]) agg[k].ordered++;
+          if (done[u.id]) agg[k].arrived++;
+        });
+        const items = (srcs || []).map(s => ({ ...s, ...(agg[s.code] || { users: 0, ordered: 0, arrived: 0 }) }));
+        // метки без описания, если кто-то пришёл по неизвестной ссылке
+        Object.values(agg).forEach(a2 => {
+          if (!items.find(i => i.code === a2.code)) items.push({ code: a2.code, title: null, ...a2 });
+        });
+        items.sort((a2, b2) => b2.users - a2.users);
+        return json(res, 200, { ok: true, items });
+      }
+      if (act === 'src-save' && isAdminUp(me)) {
+        const code = String(body.code || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 40);
+        if (!code) return json(res, 400, { error: 'bad_code' });
+        await db.from('sources').upsert({ code, title: String(body.title || '').slice(0, 80), note: String(body.note || '').slice(0, 200) });
+        return json(res, 200, { ok: true, code });
+      }
+      if (act === 'src-delete' && isAdminUp(me)) {
+        await db.from('sources').delete().eq('code', body.code);
+        return json(res, 200, { ok: true });
       }
 
       // ---- города и сообщества ----

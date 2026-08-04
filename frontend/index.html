@@ -8,6 +8,7 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"
         onerror="window.__sbFail=1"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" crossorigin="anonymous"></script>
 <script>
 // если основная библиотека не загрузилась — пробуем запасной источник
 (function(){
@@ -740,7 +741,13 @@ async function boot(){
    try{const{data:pr}=await db.from('pending_refs').select('*').eq('tg_id',tgId).maybeSingle();
     if(pr&&pr.ref_code){const{data:inv}=await db.from('users').select('id').eq('ref_code',pr.ref_code).maybeSingle();if(inv)refBy=inv.id;await db.from('pending_refs').delete().eq('tg_id',tgId);}
    }catch(e){}
-   const r=await db.from('users').insert({telegram_id:tgId,name:tgName,ref_by:refBy}).select().single();if(r.error)throw r.error;data=r.data;
+   let srcCode=null;
+   try{
+    const{data:ps}=await db.from('pending_src').select('code').eq('tg',tgId).maybeSingle();
+    if(ps&&ps.code)srcCode=ps.code;
+   }catch(e){}
+   const r=await db.from('users').insert({telegram_id:tgId,name:tgName,ref_by:refBy,source:srcCode}).select().single();if(r.error)throw r.error;data=r.data;
+   if(srcCode){try{await db.from('pending_src').delete().eq('tg',tgId);}catch(e){}}
   }
    me=data;
   // если в базе осталось «Гость…», а Telegram знает настоящее имя — обновим
@@ -2946,13 +2953,14 @@ async function finLog(c){
  <div style="height:20px"></div>`;
 }
 async function aFin(m){
- const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат'],['city','Города'],['mail','Рассылка']];
+ const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат'],['city','Города'],['mail','Рассылка'],['src','Реклама']];
  if(isOwner())seg.push(['log','🔒 Журнал']);
  m.innerHTML=`<div class="head"><h2>Финансы</h2><span class="m">${SETTINGS.paid_mode?'платно':'бесплатно'}</span></div>
  <div class="minifilter">${[['','все'],['ordered','заказывали'],['never','ни разу'],['repeat','повторно']].map(f=>`<span class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</span>`).join('')}</div>
  <div class="seg">${seg.map(s=>`<div class="${finTab===s[0]?'on':''}" onclick="finTab='${s[0]}';aFin(document.getElementById('main'))">${s[1]}</div>`).join('')}</div>
  <div id="fincont"><div class="empty">Загрузка…</div></div>`;
  const c=document.getElementById('fincont');
+ if(finTab==='src')return finSrc(c);
  if(finTab==='mail')return finMail(c);
  if(finTab==='city')return finCities(c);
  if(finTab==='log')return finLog(c);
@@ -2964,6 +2972,93 @@ async function aFin(m){
 }
 let bcAud='all',bcCity='all',bcCities=null;
 const AUD=[['all','Всем'],['drivers','Водителям'],['passengers','Пассажирам'],['never','Кто ни разу не заказывал'],['ordered','Кто уже заказывал']];
+const BOT_LINK='https://t.me/'+(window.BOT_NAME||'bombily_bot');
+async function finSrc(c){
+ c.innerHTML='<div class="empty">Загрузка…</div>';
+ const r=await api('/api/admin',{action:'src-list'});
+ const items=(r&&r.items)||[];
+ c.innerHTML=`
+ <div class="note" style="margin:0 14px 12px">Для каждой площадки — своя ссылка и QR-код. Видно, сколько человек пришло и сколько из них доехали.</div>
+ <div style="padding:0 14px 14px"><button class="btn" onclick="srcNew()">Новая метка</button></div>
+ ${items.length?items.map(s=>{
+   const link=BOT_LINK+'?start=src_'+s.code;
+   return `<div class="card" style="flex-direction:column;align-items:stretch;gap:8px">
+    <div style="display:flex;gap:10px;align-items:center">
+     <div style="flex:1;min-width:0">
+      <div class="nm">${esc(s.title)||esc(s.code)}</div>
+      <div class="sub" style="font-family:'Roboto Mono',monospace;font-size:11px">${esc(link)}</div>
+      ${s.note?`<div class="sub" style="color:var(--am)">${esc(s.note)}</div>`:''}
+     </div>
+     <div style="text-align:right"><div class="price" style="font-size:19px">${s.users}</div><div class="sub" style="font-size:10px">пришло</div></div>
+    </div>
+    <div class="sub">заказали ${s.ordered} · доехали ${s.arrived}${s.users?` · ${Math.round(s.ordered/s.users*100)}% дошли до заказа`:''}</div>
+    <div class="appcontact">
+     <button class="acbtn" onclick="srcQR('${esc(s.code)}','${esc(s.title)||esc(s.code)}')">QR-код</button>
+     <button class="acbtn" onclick="copyText('${esc(link)}')">Копировать</button>
+     <button class="acbtn" style="color:var(--red)" onclick="srcDel('${esc(s.code)}')">Удалить</button>
+    </div>
+   </div>`;
+  }).join(''):'<div class="empty"><b>Меток пока нет</b>Создайте метку для каждой площадки, где даёте рекламу.</div>'}
+ <div style="height:16px"></div>`;
+}
+function srcNew(){
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Новая метка</h3><div class="s">Метка — короткое слово латиницей. По ней вы поймёте, откуда пришёл человек.</div>
+ <div class="fr"><label>Метка · латиница без пробелов</label><input id="sc_code" placeholder="chat_baraholka"></div>
+ <div class="fr"><label>Название для себя</label><input id="sc_title" placeholder="Барахолка Енакиево"></div>
+ <div class="fr"><label>Заметка · не обязательно</label><input id="sc_note" placeholder="пост 500 ₽, вышел 3 августа"></div>
+ <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="srcSave()">Создать</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function srcSave(){
+ const code=(document.getElementById('sc_code').value||'').trim().toLowerCase().replace(/[^a-z0-9_]/g,'');
+ if(!code)return T('Впишите метку латиницей');
+ const r=await api('/api/admin',{action:'src-save',code,
+  title:(document.getElementById('sc_title').value||'').trim(),
+  note:(document.getElementById('sc_note').value||'').trim()});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ closeSh();T('Метка создана');aFin(document.getElementById('main'));
+}
+async function srcDel(code){
+ const r=await api('/api/admin',{action:'src-delete',code});
+ if(r.error)return T('Ошибка');
+ T('Удалено');aFin(document.getElementById('main'));
+}
+function copyText(t){
+ try{navigator.clipboard.writeText(t);T('Ссылка скопирована');}
+ catch(e){T('Не удалось скопировать');}
+}
+function drawQR(canvas,text){
+ if(!canvas)return;
+ if(window.QRCode&&window.QRCode.toCanvas){
+  window.QRCode.toCanvas(canvas,text,{width:260,margin:1,color:{dark:'#0B0F0D',light:'#ffffff'}},err=>{
+   if(err)qrFallback(canvas,text);
+  });
+ }else qrFallback(canvas,text);
+}
+function qrFallback(canvas,text){
+ // библиотека не загрузилась — берём картинку с сервиса
+ const img=new Image();
+ img.crossOrigin='anonymous';
+ img.onload=()=>{canvas.width=260;canvas.height=260;canvas.getContext('2d').drawImage(img,0,0,260,260);};
+ img.onerror=()=>{
+  const p=canvas.parentElement;
+  if(p)p.innerHTML='<div style="color:#666;font-size:12px;padding:20px">Не удалось нарисовать код. Проверьте интернет.</div>';
+ };
+ img.src='https://api.qrserver.com/v1/create-qr-code/?size=260x260&data='+encodeURIComponent(text);
+}
+function srcQR(code,title){
+ const link=BOT_LINK+'?start=src_'+code;
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet"><h3>${esc(title)}</h3><div class="s">Наведите камеру, чтобы проверить. Картинку можно сохранить долгим нажатием.</div>
+ <div style="background:#fff;padding:16px;border-radius:14px;margin:0 0 12px;text-align:center">
+  <canvas id="qrc" style="max-width:100%;image-rendering:pixelated"></canvas>
+ </div>
+ <div class="sub" style="text-align:center;font-family:'Roboto Mono',monospace;font-size:11px;word-break:break-all">${esc(link)}</div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Закрыть</button><button class="o" onclick="copyText('${esc(link)}')">Копировать ссылку</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ drawQR(document.getElementById('qrc'),link);
+}
 async function finMail(c){
  c.innerHTML='<div class="empty">Загрузка…</div>';
  const r=await api('/api/admin',{action:'broadcast-list'});
