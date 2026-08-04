@@ -896,7 +896,8 @@ async function setCity(c){
  if(error)return;
  me.city=c;closeSh();T('Город сохранён: '+c);
  if(!(await subGate()))return;
- setTimeout(()=>communityOffer(c),400);
+ // мягкое предложение — только когда подписка не обязательна
+ if(!SETTINGS.require_sub)setTimeout(()=>communityOffer(c),400);
  paintCity();
  drawRoles();count();
  await restore();await restoreD();setRole('passenger');
