@@ -7,7 +7,7 @@ const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
-const VERSION = 'v69-sched-fix';
+const VERSION = 'v70-remind';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -1168,7 +1168,7 @@ async function runBroadcast(id) {
 async function schedLoop() {
   try {
     const now = Date.now();
-    const soon = new Date(now + 45 * 60 * 1000).toISOString();
+    const soon = new Date(now + 7 * 60 * 60 * 1000).toISOString();   // ловим и ранние напоминания
     const { data: rides } = await db.from('rides').select('*')
       .not('scheduled_at', 'is', null)
       .in('status', ['created', 'confirmed'])
@@ -1180,6 +1180,22 @@ async function schedLoop() {
       const when = new Date(r.scheduled_at);
       const mins = Math.round((when - now) / 60000);
       const timeStr = when.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+      const dayStr = when.toLocaleString('ru', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+      // раннее напоминание водителю — за столько, сколько он сам выбрал
+      if (r.driver_id && !r.early_sent) {
+        const { data: dv } = await db.from('users').select('remind_before,telegram_id').eq('id', r.driver_id).maybeSingle();
+        const before = dv && dv.remind_before ? Number(dv.remind_before) : 120;
+        if (mins <= before && mins > 45) {
+          if (dv && dv.telegram_id) {
+            const h = Math.floor(mins / 60), mm = mins % 60;
+            await send(dv.telegram_id,
+              `🔔 <b>Напоминание о заказе</b>\nЧерез ${h ? h + ' ч ' : ''}${mm} мин вам ехать.\n\n🕒 ${dayStr}\n📍 ${r.from_address}\n🏁 ${r.to_address}${r.price ? `\n💰 ${r.price} ₽` : ''}\n\nПодробности и телефон пассажира придут ещё раз за 40 минут.`,
+              { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
+          }
+          await db.from('rides').update({ early_sent: true }).eq('id', r.id);
+        }
+      }
 
       // за 40 минут — напоминание обеим сторонам
       if (r.driver_id && !r.remind_sent && mins <= 40 && mins > 0) {

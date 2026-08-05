@@ -184,15 +184,19 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
  padding:11px 14px;font-size:14.5px;font-weight:600;color:var(--am);margin-bottom:12px;}
 .abar.plan{border-left:3px solid var(--am);}
 .plbadge{background:var(--red);color:#fff;border-radius:20px;font-size:10px;font-weight:700;padding:1px 7px;}
-.plancard{background:var(--surf);border:1px solid var(--line2);border-left:3px solid var(--am);border-radius:13px;padding:13px 15px;margin-bottom:9px;}
+.plancard{display:block!important;background:var(--surf);border:1px solid var(--line2);
+ border-left:3px solid var(--am);border-radius:14px;padding:12px 14px;margin-bottom:8px;cursor:pointer;}
 .plancard.ok{border-left-color:var(--g);}
-.pltop{display:flex;align-items:center;gap:10px;margin-bottom:7px;}
-.plwhen{font-size:13px;font-weight:600;}
-.plst{margin-left:auto;font-size:11px;color:var(--dim);}
-.plancard.ok .plst{color:var(--g);}
-.plroute{font-size:13.5px;line-height:1.45;}
-.plsub{font-size:11.5px;color:var(--dim);margin-top:4px;}
-.planact{display:flex;gap:8px;margin-top:10px;}
+.plrow{display:flex;align-items:center;gap:12px;}
+.plclock{font-size:19px;line-height:1;flex-shrink:0;}
+.plmain{flex:1;min-width:0;}
+.plwhen{font-size:14px;font-weight:600;margin-bottom:3px;}
+.plroute{font-size:12.5px;color:var(--ink);line-height:1.4;
+ overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.plsub{font-size:11.5px;color:var(--dim);margin-top:3px;}
+.plgo{color:var(--dim);font-size:19px;flex-shrink:0;}
+.plbadge{background:var(--red);color:#fff;border-radius:20px;font-size:11px;font-weight:700;
+ padding:2px 8px;flex-shrink:0;}
 .schedhead{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--am);margin:4px 0 10px;display:flex;gap:8px;align-items:center;}
 .schedhead span{background:rgba(240,180,60,.15);border-radius:20px;padding:1px 7px;font-size:10px;}
 .req.sched{border-left:3px solid var(--am);}
@@ -1186,14 +1190,12 @@ function planBar(r,forDriver){
 function drawBar(){
  const b=document.getElementById('abar');
  if(role==='passenger'){
-  if(!active&&planned.length&&pTab!=='ride'){b.innerHTML=planBar(nextPlanned(planned),false);return;}
   if(!active||pTab==='ride'){b.innerHTML='';return;}
   const conf=active.status==='confirmed';
   b.innerHTML=`<div class="abar" onclick="openRide()"><div class="ava">${conf?'🚗':'⏳'}</div><div class="t"><b>${conf?'Бомбила в пути':'Ждём предложений'}${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</b><span>${chatUnread?'новое сообщение в чате':esc(active.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
   return;
  }
  if(role==='driver'){
-  if(!dActive&&dPlanned.length&&dTab!=='ride'){b.innerHTML=planBar(nextPlanned(dPlanned),true);return;}
   if(!dActive||dTab==='ride'){b.innerHTML='';return;}
   b.innerHTML=`<div class="abar" onclick="dGo('ride')"><div class="ava">🚗</div><div class="t"><b>Активный заказ${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</b><span>${chatUnread?'новое сообщение в чате':esc(dActive.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
   return;
@@ -1771,15 +1773,16 @@ function plannedBlock(){
   const d=new Date(r.scheduled_at);
   const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
   const taken=!!r.driver_id;
-  return `<div class="plancard ${taken?'ok':''}">
-   <div class="pltop"><span class="plwhen">🕒 ${when}</span>
-    <span class="plst">${taken?'водитель есть':'ищем водителя'}</span>
-    ${(!taken&&PLOFF[r.id])?`<span class="plbadge">${PLOFF[r.id]}</span>`:''}</div>
-   <div class="plroute">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div>
-   ${r.price?`<div class="plsub">Цена ${r.price} ₽</div>`:(r.passenger_price?`<div class="plsub">Вы предложили ${r.passenger_price} ₽</div>`:'')}
-   <div class="planact">
-    <button class="rolebtn" onclick="planSheet('${r.id}')">подробнее</button>
-    <button class="rolebtn" style="color:var(--red)" onclick="cancelPlanned('${r.id}')">отменить</button>
+  const off=(!taken&&PLOFF[r.id])?PLOFF[r.id]:0;
+  return `<div class="plancard ${taken?'ok':''}" onclick="planSheet('${r.id}')">
+   <div class="plrow">
+    <div class="plclock">🕒</div>
+    <div class="plmain">
+     <div class="plwhen">${when}</div>
+     <div class="plroute">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div>
+     <div class="plsub">${taken?'<span style="color:var(--g)">водитель назначен</span>':'ищем водителя'}${r.price?' · '+r.price+' ₽':(r.passenger_price?' · вы предложили '+r.passenger_price+' ₽':'')}</div>
+    </div>
+    ${off?`<div class="plbadge">${off}</div>`:'<div class="plgo">›</div>'}
    </div>
   </div>`;
  }).join('')}</div>`;
@@ -1798,8 +1801,19 @@ async function dPlanSheet(id){
  ${r.comment?`<div class="fr"><label>Комментарий пассажира</label><div style="font-size:13.5px">${esc(r.comment)}</div></div>`:''}
  ${r.price?`<div class="fr"><label>Цена</label><div class="price">${r.price} ₽</div></div>`:''}
  <div class="fr"><label>Пассажир</label><div style="font-size:14px">${esc(r.passenger_name)}</div></div>
+ <div class="fr"><label>Напомнить в бота</label>
+  <div class="seg" style="padding:6px 0 0">${[[30,'за 30 мин'],[60,'за час'],[120,'за 2 часа'],[180,'за 3 часа'],[360,'за 6 часов']].map(o=>`<div class="${(me.remind_before||120)===o[0]?'on':''}" onclick="setRemind(${o[0]})">${o[1]}</div>`).join('')}</div>
+  <div class="sub" style="margin-top:7px;font-size:11.5px">Придёт в бота, чтобы не забыть. Плюс отдельное напоминание за 40 минут перед выездом.</div>
+ </div>
  <div class="sa"><button class="c" onclick="closeSh()">Закрыть</button><button class="c" style="color:var(--red)" onclick="dropPlanned('${r.id}')">Отказаться</button></div></div>`;
  document.getElementById('device').appendChild(m);
+}
+async function setRemind(v){
+ const{error}=await db.from('users').update({remind_before:v}).eq('id',me.id);
+ if(error)return T('Не удалось сохранить');
+ me.remind_before=v;
+ T(v>=60?('Напомним за '+(v/60)+' ч'):('Напомним за '+v+' мин'));
+ const sh=document.getElementById('sh');if(sh)sh.remove();
 }
 async function dropPlanned(id){
  if(!confirm('Отказаться от заказа? Пассажир останется без машины и будет искать другого водителя.'))return;
@@ -1847,7 +1861,8 @@ async function loadPlanOffers(r){
 }
 async function acceptPlan(offerId,did,price,rideId){
  return once('accplan', async()=>{
-  await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null,confirmed_at:new Date().toISOString()}).eq('id',rideId);
+  await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null,
+   confirmed_at:new Date().toISOString(),driver_notified:false,remind_sent:false,early_sent:false}).eq('id',rideId);
   await db.from('offers').update({status:'accepted'}).eq('id',offerId);
   await db.from('offers').update({status:'declined'}).eq('ride_id',rideId).neq('id',offerId);
   const p=planned.find(x=>x.id===rideId);
@@ -2422,6 +2437,27 @@ async function load(){
  reqs=(data||[]).filter(r=>!r.target_driver_id||r.target_driver_id===me.id);
  drawReqs();
 }
+function dPlanBlock(){
+ if(!dPlanned.length)return '';
+ return `<div class="schedhead" style="color:var(--g)">✅ Вы взяли на время <span style="background:rgba(51,209,126,.15)">${dPlanned.length}</span></div>`+
+ dPlanned.map(r=>{
+  const d=new Date(r.scheduled_at);
+  const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const left=Math.round((d-Date.now())/60000);
+  const lt=left<1440?(left>=60?'через '+Math.floor(left/60)+' ч '+(left%60)+' мин':'через '+left+' мин'):'';
+  return `<div class="plancard ok" onclick="dPlanSheet('${r.id}')">
+   <div class="plrow">
+    <div class="plclock">✅</div>
+    <div class="plmain">
+     <div class="plwhen">${when}${lt?' · '+lt:''}</div>
+     <div class="plroute">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div>
+     <div class="plsub">${esc(r.passenger_name)}${r.price?' · '+r.price+' ₽':''}</div>
+    </div>
+    <div class="plgo">›</div>
+   </div>
+  </div>`;
+ }).join('');
+}
 function schedBlock(){
  if(!schedReqs.length)return '';
  return `<div class="schedhead">🕒 Заказы на определённое время <span>${schedReqs.length}</span></div>
@@ -2445,7 +2481,7 @@ function schedBlock(){
 }
 function drawReqs(){
  const l=document.getElementById('il');if(!l)return;
- const sb=schedBlock();
+ const sb=dPlanBlock()+schedBlock();
  if(!reqs.length){l.innerHTML=sb+(sb?'':'<div class="empty"><b>Пока тихо</b>Новые заявки появятся здесь сразу.</div>');return;}
  l.innerHTML=sb+reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(91,157,249,.15);color:#5B9DF9">📦 доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(169,139,245,.15);color:#A98BF5">🛣 в ${esc(r.to_city)}</span> `:''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
  ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
