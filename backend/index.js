@@ -7,7 +7,7 @@ const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
-const VERSION = 'v67-sources';
+const VERSION = 'v68-scheduled';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -346,7 +346,10 @@ async function notifyLoop() {
         const head = r.target_driver_id
           ? (isDel ? '🎯 <b>Доставка лично вам</b>' : isInter ? '🎯 <b>Межгород лично вам</b>' : '🎯 <b>Заявка лично вам</b>')
           : (isDel ? '📦 <b>Новая доставка</b>' : isInter ? `🛣 <b>Межгород в ${r.to_city}</b>` : '🚕 <b>Новая заявка</b>');
-        const extra = `${r.to_city ? `\n🛣 Город назначения: <b>${r.to_city}</b>` : ''}${r.passenger_price ? `\n💰 Пассажир предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
+        const schedLine = r.scheduled_at
+        ? `\n🕒 <b>На ${new Date(r.scheduled_at).toLocaleString('ru', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</b>`
+        : '';
+      const extra = `${schedLine}${r.to_city ? `\n🛣 Город назначения: <b>${r.to_city}</b>` : ''}${r.passenger_price ? `\n💰 Пассажир предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
         for (const d of drv || [])
           if (d.telegram_id) await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
             { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'driver')]] } });
@@ -1155,6 +1158,58 @@ async function runBroadcast(id) {
     console.error('broadcast', e.message);
     await db.from('broadcasts').update({ status: 'done', finished_at: new Date().toISOString() }).eq('id', id);
   }
+}
+
+
+/* ---------- предварительные заказы: напоминания ---------- */
+async function schedLoop() {
+  try {
+    const now = Date.now();
+    const soon = new Date(now + 45 * 60 * 1000).toISOString();
+    const { data: rides } = await db.from('rides').select('*')
+      .not('scheduled_at', 'is', null)
+      .in('status', ['created', 'confirmed'])
+      .lte('scheduled_at', soon)
+      .gte('scheduled_at', new Date(now - 30 * 60 * 1000).toISOString())
+      .limit(50);
+
+    for (const r of rides || []) {
+      const when = new Date(r.scheduled_at);
+      const mins = Math.round((when - now) / 60000);
+      const timeStr = when.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+
+      // за 40 минут — напоминание обеим сторонам
+      if (r.driver_id && !r.remind_sent && mins <= 40 && mins > 0) {
+        const route = `📍 ${r.from_address}\n🏁 ${r.to_address}`;
+        const pt = await tgIdOf(r.passenger_id);
+        if (pt) await send(pt, `⏰ <b>Через ${mins} мин ваша поездка</b>\n\n${route}\n🕒 ${timeStr}${r.price ? `\n💰 ${r.price} ₽` : ''}\n\nВодитель предупреждён.`,
+          { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'order')]] } });
+        const dt = await tgIdOf(r.driver_id);
+        if (dt) await send(dt, `⏰ <b>Через ${mins} мин заказ</b>\n\n${route}\n🕒 ${timeStr}${r.price ? `\n💰 ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}\n\nПора выезжать.`,
+          { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
+        await db.from('rides').update({ remind_sent: true }).eq('id', r.id);
+      }
+
+      // за 40 минут никто не взял — трясём всех водителей города и честно говорим пассажиру
+      if (!r.driver_id && !r.nodriver_sent && mins <= 40) {
+        let q = db.from('users').select('telegram_id').eq('city', r.city).in('role', ['driver', 'both']);
+        if (r.kind === 'delivery') q = q.or('delivery.eq.true,vehicle_type.eq.moto');
+        else q = q.or('vehicle_type.is.null,vehicle_type.eq.car');
+        const { data: drv } = await q;
+        for (const d of drv || []) {
+          if (!d.telegram_id) continue;
+          await send(d.telegram_id,
+            `🕒 <b>Заказ на ${timeStr}, водителя нет</b>\n📍 ${r.from_address}\n🏁 ${r.to_address}${r.passenger_price ? `\n💰 Пассажир предлагает ${r.passenger_price} ₽` : ''}\n\nЧеловек ждёт машину. Если можете — возьмите.`,
+            { reply_markup: { inline_keyboard: [[wa('Взять заказ', 'driver')]] } });
+        }
+        const pt2 = await tgIdOf(r.passenger_id);
+        if (pt2) await send(pt2,
+          `⚠️ <b>Заказ на ${timeStr} пока никто не взял</b>\n\nМы напомнили всем водителям города. Если через полчаса никого не будет — лучше поискать машину другим способом, чтобы не опоздать.`);
+        await db.from('rides').update({ nodriver_sent: true }).eq('id', r.id);
+      }
+    }
+  } catch (e) { console.error('schedLoop', e.message); }
+  setTimeout(schedLoop, 5 * 60 * 1000);
 }
 
 /* ---------- проверка подписи Telegram initData ---------- */
@@ -2791,3 +2846,4 @@ idleLoop();
 winbackLoop();
 shiftLoop();
 pinLoop();
+schedLoop();

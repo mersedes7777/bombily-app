@@ -180,6 +180,20 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .abar .g{font-size:12px;font-weight:700;color:var(--g);}
 .fav{background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--line2);padding:4px 6px;}
 .dright{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;}
+.plancard{background:var(--surf);border:1px solid var(--line2);border-left:3px solid var(--am);border-radius:13px;padding:13px 15px;margin-bottom:9px;}
+.plancard.ok{border-left-color:var(--g);}
+.pltop{display:flex;align-items:center;gap:10px;margin-bottom:7px;}
+.plwhen{font-size:13px;font-weight:600;}
+.plst{margin-left:auto;font-size:11px;color:var(--dim);}
+.plancard.ok .plst{color:var(--g);}
+.plroute{font-size:13.5px;line-height:1.45;}
+.plsub{font-size:11.5px;color:var(--dim);margin-top:4px;}
+.planact{display:flex;gap:8px;margin-top:10px;}
+.schedhead{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--am);margin:4px 0 10px;display:flex;gap:8px;align-items:center;}
+.schedhead span{background:rgba(240,180,60,.15);border-radius:20px;padding:1px 7px;font-size:10px;}
+.req.sched{border-left:3px solid var(--am);}
+.schedwhen{font-size:12.5px;font-weight:600;color:var(--am);margin-bottom:7px;}
+.schedwhen.soon{color:var(--red);}
 .homecard{margin:0 14px 16px;background:linear-gradient(140deg,rgba(51,209,126,.09),rgba(51,209,126,.02));
  border:1px solid rgba(51,209,126,.22);border-radius:16px;padding:15px 16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;}
 .hcico{font-size:26px;line-height:1;flex-shrink:0;}
@@ -662,11 +676,48 @@ let unreadRev=0;
 async function loadUnreadRev(){try{const{count}=await db.from('reviews').select('*',{count:'exact',head:true}).eq('target_id',me.id).eq('visible',true).eq('seen_by_target',false);unreadRev=Number(count)||0;}catch(e){unreadRev=0;}}
 let me=null,role='passenger',pTab='home',dTab='inbox',aTab='over';
 let orderKind='ride';
+let schedOn=false,schedDay='',schedH='',schedM='00';
+function dayOpts(){
+ const out=[];
+ for(let i=0;i<7;i++){
+  const d=new Date();d.setDate(d.getDate()+i);
+  const key=d.toISOString().slice(0,10);
+  const wd=['вс','пн','вт','ср','чт','пт','сб'][d.getDay()];
+  const lbl=i===0?'сегодня':i===1?'завтра':i===2?'послезавтра':
+    d.toLocaleDateString('ru',{day:'2-digit',month:'2-digit'})+' '+wd;
+  out.push([key,lbl]);
+ }
+ if(!schedDay)schedDay=out[1][0];   // по умолчанию завтра
+ return out;
+}
+function hourOpts(){
+ let s='';
+ for(let h=0;h<24;h++){
+  const v=String(h).padStart(2,'0');
+  s+=`<option value="${v}" ${schedH===v?'selected':''}>${v}</option>`;
+ }
+ if(!schedH){const n=new Date();schedH=String((n.getHours()+1)%24).padStart(2,'0');}
+ return s;
+}
+function schedWhen(){
+ if(!schedDay||!schedH)return null;
+ const d=new Date(schedDay+'T'+schedH+':'+(schedM||'00')+':00');
+ return isNaN(d)?null:d;
+}
+function schedLabel(){
+ const d=schedWhen();
+ if(!d)return '';
+ const diff=d-Date.now();
+ if(diff<0)return 'Это время уже прошло';
+ const h=Math.floor(diff/3600000),m=Math.round(diff%3600000/60000);
+ const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+ return `Машина к ${when} · через ${h?h+' ч ':''}${m} мин`;
+}
 let interCity=false;
 let appVeh='car';
 let curShift=null,shiftTick=null,pendingShift=null;
 let pendingDone=null;
-let active=null,dActive=null,offCh=null,inCh=null,myCh=null,rideCh=null,reqs=[],myOffs=[],targetDrv=null;
+let active=null,planned=[],dActive=null,offCh=null,inCh=null,myCh=null,rideCh=null,reqs=[],myOffs=[],targetDrv=null;
 
 function bootMsg(t){
  const e=document.querySelector('#boot .btag');
@@ -1029,7 +1080,11 @@ setInterval(async()=>{
 async function count(){const{count:c}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city||'');const e=document.getElementById('onl');if(e)e.textContent=c||0;}
 
 async function restore(){
- const{data}=await db.from('rides').select('*').eq('passenger_id',me.id).in('status',['created','confirmed','in_progress']).order('created_at',{ascending:false}).limit(1);
+ const{data:all}=await db.from('rides').select('*').eq('passenger_id',me.id).in('status',['created','confirmed','in_progress']).order('created_at',{ascending:false}).limit(10);
+ const soon=Date.now()+60*60*1000;   // заказ «на подходе», если до него меньше часа
+ const list=all||[];
+ planned=list.filter(r=>r.scheduled_at&&new Date(r.scheduled_at).getTime()>soon);
+ const data=list.filter(r=>!planned.find(p=>p.id===r.id)).slice(0,1);
  if(data&&data.length){active=data[0];if(active.status==='created')subOffers(active.id);if(active.status==='confirmed'||active.status==='in_progress'){subRide(active.id);watchCompletion();watchUnread(active.id);}}
  // недавно завершённая поездка, которую пассажир ещё не оценил
  const dayAgo=new Date(Date.now()-24*3600*1000).toISOString();
@@ -1156,7 +1211,7 @@ function drawP(){
 const pGo=t=>{pTab=t;drawP();};
 
 async function home(m){
- m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;orderKind='ride';interCity=false;pTab='order';drawP()">Заявка всем водителям</button><button class="cta2" id="delbtn" onclick="targetDrv=null;orderKind='delivery';interCity=false;pTab='order';drawP()">📦 Заказать доставку <span id="delcnt" style="color:var(--dim);font-weight:500"></span></button></div>${homeCard()}<div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
+ m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;orderKind='ride';interCity=false;schedOn=false;pTab='order';drawP()">Заявка всем водителям</button><button class="cta2" id="delbtn" onclick="targetDrv=null;orderKind='delivery';interCity=false;pTab='order';drawP()">📦 Заказать доставку <span id="delcnt" style="color:var(--dim);font-weight:500"></span></button></div>${homeCard()}${plannedBlock()}<div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
  const{data:ds,error:dsE}=await Q(db.from('users').select('*').eq('status','online').eq('city',me.city).in('role',['driver','both']),'Не удалось загрузить водителей');
  const{count:rc}=await db.from('rides').select('*',{count:'exact',head:true}).eq('status','created').eq('city',me.city);
  db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city).eq('delivery',true).then(({count:dc})=>{
@@ -1228,6 +1283,21 @@ function formHTML(d){
  const hdr=d?`<div class="card" style="margin:14px 14px 0"><div class="ava">${d.avatar?`<img src="${esc(d.avatar)}" alt="">`:esc(d.name)[0]}</div><div style="flex:1"><div class="nm">${esc(d.name)}</div><div class="sub">${d.spot?'<span class="spot">📍 '+esc(d.spot)+'</span>':''}${d.car?'<span>· '+esc(d.car)+'</span>':''}</div></div></div>`:'';
  const isDel=orderKind==='delivery';
  return `<div class="head"><h2>${isDel?(d?'Доставка водителю':'Заказать доставку'):(d?'Заявка водителю':'Заявка всем')}</h2></div>${hdr}<div class="form"><div class="addr"><div class="ar"><span class="pin"></span><input id="from" placeholder="${isDel?'Откуда забрать':'Откуда — адрес или ориентир'}"></div><div class="ar"><span class="pin to"></span><input id="to" placeholder="${isDel?'Куда доставить':'Куда едем'}"></div></div><div class="chips">${ch}<div class="chip add" onclick="addPlace()">＋ Сохранить место</div></div>
+ <div class="fr"><label>Когда нужна машина</label><div class="tabsw">
+  <div class="${!schedOn?'on':''}" onclick="schedOn=false;document.getElementById('host').innerHTML=formHTML(targetDrv)">Сейчас</div>
+  <div class="${schedOn?'on':''}" onclick="schedOn=true;document.getElementById('host').innerHTML=formHTML(targetDrv)">Ко времени</div>
+ </div></div>
+ ${schedOn?`<div class="fr"><label>Дата</label>
+  <div class="seg" style="padding:6px 0 0">${dayOpts().map(o=>`<div class="${schedDay===o[0]?'on':''}" onclick="schedDay='${o[0]}';document.getElementById('host').innerHTML=formHTML(targetDrv)">${o[1]}</div>`).join('')}</div>
+ </div>
+ <div class="fr"><label>Время</label>
+  <div class="tsel">
+   <select id="sh_hh" onchange="schedH=this.value">${hourOpts()}</select>
+   <span class="tcol">:</span>
+   <select id="sh_mm" onchange="schedM=this.value">${['00','10','15','20','30','40','45','50'].map(m=>`<option value="${m}" ${schedM===m?'selected':''}>${m}</option>`).join('')}</select>
+  </div>
+  <div class="sub" style="margin-top:7px;font-size:11.5px">${schedLabel()}</div>
+ </div>`:''}
  ${(!isDel&&!(d&&d.vehicle_type==='moto'))?`<div class="fr"><label>Куда едем</label><div class="tabsw"><div class="${!interCity?'on':''}" onclick="interCity=false;document.getElementById('host').innerHTML=formHTML(targetDrv)">По городу</div><div class="${interCity?'on':''}" onclick="interCity=true;document.getElementById('host').innerHTML=formHTML(targetDrv)">🛣 Межгород</div></div></div>`:''}
  ${(!isDel&&interCity)?`<div class="fr"><label>Город назначения</label><select id="ocity" onchange="document.getElementById('ocityx').style.display=this.value==='__other'?'block':'none'" style="width:100%;background:transparent;border:none;color:var(--ink);font-size:15px;outline:none;padding:2px 0">${CITIES.filter(c=>c!==me.city).map(c=>`<option value="${c}">${c}</option>`).join('')}<option value="__other">Другой город…</option></select><input id="ocityx" placeholder="впишите город" style="display:none;margin-top:8px;width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:9px;padding:10px;color:var(--ink);font-size:14px;outline:none" oninput=""></div>`:''}
  <div class="fr"><label>${isDel?'Что везём — обязательно':'Комментарий для водителя (не обязательно)'}</label><input id="ocom" placeholder="${isDel?'документы, пакет из аптеки, торт…':'трое, большая сумка, второй подъезд…'}" maxlength="200"></div>
@@ -1279,11 +1349,26 @@ async function _send(did){
   }
   if(!toCity)return T('Выберите город назначения');
  }
- const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city,comment:com||null,passenger_price:pp,kind:orderKind,to_city:toCity};
+ let schedAt=null;
+ if(schedOn){
+  const d=schedWhen();
+  if(!d)return T('Выберите дату и время');
+  const diff=d-Date.now();
+  if(diff<20*60*1000)return T('Закажите минимум за 20 минут');
+  if(diff>7*24*3600*1000)return T('Не больше чем на неделю вперёд');
+  schedAt=d.toISOString();
+ }
+ const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city,comment:com||null,passenger_price:pp,kind:orderKind,to_city:toCity,scheduled_at:schedAt};
  if(did)row.target_driver_id=did;
  const{data,error}=await Q(db.from('rides').insert(row).select().single(),'Не удалось создать заявку');
  if(error)return;
- active=data;targetDrv=null;subOffers(data.id);pTab='ride';drawP();
+ targetDrv=null;
+ if(schedAt&&new Date(schedAt).getTime()-Date.now()>60*60*1000){
+  planned.unshift(data);schedOn=false;
+  T('Заказ принят на '+new Date(schedAt).toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}));
+  pTab='home';drawP();return;
+ }
+ active=data;subOffers(data.id);pTab='ride';drawP();
 }
 function subOffers(id){
  if(offCh)db.removeChannel(offCh);
@@ -1628,6 +1713,38 @@ function hideHomeCard(){
 // возможность отключена: ярлык ломается при перемещении на рабочем столе.
 // чтобы вернуть — поставьте HOME_ON=true
 const HOME_ON=false;
+function plannedBlock(){
+ if(!planned.length)return '';
+ return `<div class="head"><h2>Запланировано</h2><span class="m">${planned.length}</span></div>
+ <div style="padding:0 14px 6px">${planned.map(r=>{
+  const d=new Date(r.scheduled_at);
+  const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const taken=!!r.driver_id;
+  return `<div class="plancard ${taken?'ok':''}">
+   <div class="pltop"><span class="plwhen">🕒 ${when}</span>
+    <span class="plst">${taken?'водитель есть':'ищем водителя'}</span></div>
+   <div class="plroute">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div>
+   ${r.price?`<div class="plsub">Цена ${r.price} ₽</div>`:(r.passenger_price?`<div class="plsub">Вы предложили ${r.passenger_price} ₽</div>`:'')}
+   <div class="planact">
+    <button class="rolebtn" onclick="openPlanned('${r.id}')">подробнее</button>
+    <button class="rolebtn" style="color:var(--red)" onclick="cancelPlanned('${r.id}')">отменить</button>
+   </div>
+  </div>`;
+ }).join('')}</div>`;
+}
+async function openPlanned(id){
+ const r=planned.find(x=>x.id===id);
+ if(!r)return;
+ active=r;
+ if(r.status==='created')subOffers(r.id); else {subRide(r.id);watchCompletion();}
+ pTab='ride';drawP();
+}
+async function cancelPlanned(id){
+ if(!confirm('Отменить предварительный заказ?'))return;
+ await db.from('rides').update({status:'cancelled_by_passenger_free'}).eq('id',id);
+ planned=planned.filter(x=>x.id!==id);
+ T('Заказ отменён');drawP();
+}
 function homeCard(){
  if(!HOME_ON)return '';
  if(homeStatus!=='missed'||homeHidden())return '';
@@ -2171,7 +2288,15 @@ async function saveSpot(){
 }
 async function load(){
  const cut=new Date(Date.now()-10*60000).toISOString();
- let q=db.from('rides').select('*').eq('status','created').eq('city',me.city).gt('created_at',cut);
+ // предварительные заказы показываем отдельно и не привязываем к свежести
+ let qs=db.from('rides').select('*').eq('status','created').eq('city',me.city)
+   .not('scheduled_at','is',null).gte('scheduled_at',new Date().toISOString())
+   .order('scheduled_at').limit(20);
+ if(me.vehicle_type==='moto')qs=qs.eq('kind','delivery');
+ const{data:sd}=await qs;
+ schedReqs=(sd||[]).filter(r=>!r.target_driver_id||r.target_driver_id===me.id);
+
+ let q=db.from('rides').select('*').eq('status','created').eq('city',me.city).gt('created_at',cut).is('scheduled_at',null);
  if(me.vehicle_type==='moto'||(me.car&&/мото|moto/i.test(me.car)&&me.delivery))q=q.eq('kind','delivery');
  else{
   if(!me.delivery)q=q.or('kind.is.null,kind.eq.ride');
@@ -2181,10 +2306,31 @@ async function load(){
  reqs=(data||[]).filter(r=>!r.target_driver_id||r.target_driver_id===me.id);
  drawReqs();
 }
+function schedBlock(){
+ if(!schedReqs.length)return '';
+ return `<div class="schedhead">Предварительные заказы <span>${schedReqs.length}</span></div>`+
+ schedReqs.map(r=>{
+  const d=new Date(r.scheduled_at);
+  const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const left=Math.round((d-Date.now())/60000);
+  const soon=left<180;
+  return `<div class="req sched">
+   <div class="schedwhen ${soon?'soon':''}">🕒 ${when}${left<600?' · через '+(left>=60?Math.floor(left/60)+' ч '+(left%60)+' мин':left+' мин'):''}</div>
+   ${r.kind==='delivery'?'<span class="badge" style="background:rgba(91,157,249,.15);color:#5B9DF9">📦 доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(169,139,245,.15);color:#A98BF5">🛣 в ${esc(r.to_city)}</span> `:''}
+   <div class="rt" style="margin-top:6px">${esc(r.from_address)} → ${esc(r.to_address)}</div>
+   <div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
+   ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
+   ${r.passenger_price?`<div class="rprice"><div class="rpt">Пассажир предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
+   <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div>
+   <div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Взять заказ'}</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div>
+  </div>`;
+ }).join('');
+}
 function drawReqs(){
  const l=document.getElementById('il');if(!l)return;
- if(!reqs.length){l.innerHTML='<div class="empty"><b>Пока тихо</b>Новые заявки появятся здесь сразу.</div>';return;}
- l.innerHTML=reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(91,157,249,.15);color:#5B9DF9">📦 доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(169,139,245,.15);color:#A98BF5">🛣 в ${esc(r.to_city)}</span> `:''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
+ const sb=schedBlock();
+ if(!reqs.length){l.innerHTML=sb+(sb?'':'<div class="empty"><b>Пока тихо</b>Новые заявки появятся здесь сразу.</div>');return;}
+ l.innerHTML=sb+reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(91,157,249,.15);color:#5B9DF9">📦 доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(169,139,245,.15);color:#A98BF5">🛣 в ${esc(r.to_city)}</span> `:''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
  ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
  ${r.passenger_price?`<div class="rprice"><div class="rpt">Пассажир предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
  <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div><div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Отправить цену'}</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div></div>`).join('');
