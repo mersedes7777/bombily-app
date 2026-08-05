@@ -830,7 +830,7 @@ async function boot(){
   // интерфейс показан: посторонние ошибки (например от скрипта Telegram
   // при открытии клавиатуры) больше не должны закрывать экран
   window.__booted=true;
-  setTimeout(checkHome,1200);
+  if(HOME_ON)setTimeout(checkHome,1200);
   const miss=window.__skipSchema?[]:await checkSchema();
   if(miss.length){
    document.getElementById('boot').classList.remove('gone');document.getElementById('boot').style.display='flex';
@@ -860,7 +860,7 @@ async function boot(){
   if(START==='profile'){pTab='profile';drawP();}
   if(START==='driver'){ if(isDrv()){setRole('driver');} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
   window.__booted=true;
-  setTimeout(checkHome,1200);
+  if(HOME_ON)setTimeout(checkHome,1200);
   if(START==='chat'){
    const rid=new URLSearchParams(location.search).get('ride');
    if(rid){
@@ -1593,8 +1593,11 @@ function hideHomeCard(){
  try{localStorage.setItem('bmb_home_hide','1');}catch(e){}
  if(role==='passenger')drawP(); else drawD();
 }
+// возможность отключена: ярлык ломается при перемещении на рабочем столе.
+// чтобы вернуть — поставьте HOME_ON=true
+const HOME_ON=false;
 function homeCard(){
- // предлагаем только если телеграм это умеет и иконки ещё нет
+ if(!HOME_ON)return '';
  if(homeStatus!=='missed'||homeHidden())return '';
  return `<div class="homecard">
   <div class="hcico">📲</div>
@@ -1609,6 +1612,7 @@ function homeCard(){
  </div>`;
 }
 function homeMenuItem(){
+ if(!HOME_ON)return '';
  if(homeStatus==='unsupported')return '';
  if(homeStatus==='added')return `<div class="mi" style="opacity:.6"><span>Иконка на экране телефона</span><span class="c" style="color:var(--g)">есть ✓</span></div>`;
  return `<div class="mi" onclick="addToHome()"><span>Добавить на экран телефона</span><span class="c">›</span></div>`;
