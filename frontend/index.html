@@ -1092,7 +1092,7 @@ async function count(){const{count:c}=await db.from('users').select('*',{count:'
 
 async function restore(){
  const{data:all}=await db.from('rides').select('*').eq('passenger_id',me.id).in('status',['created','confirmed','in_progress']).order('created_at',{ascending:false}).limit(10);
- const soon=Date.now()+60*60*1000;   // заказ «на подходе», если до него меньше часа
+ const soon=Date.now()+40*60*1000;   // становится активным за 40 минут до времени
  const list=all||[];
  planned=list.filter(r=>r.scheduled_at&&new Date(r.scheduled_at).getTime()>soon);
  if(planned.length)setTimeout(watchPlanned,600);
@@ -1108,7 +1108,7 @@ async function restore(){
 }
 async function restoreD(){
  const{data:allD}=await db.from('rides').select('*').eq('driver_id',me.id).in('status',['confirmed','in_progress']).order('created_at',{ascending:false}).limit(10);
- const soonD=Date.now()+60*60*1000;
+ const soonD=Date.now()+40*60*1000;
  const listD=allD||[];
  dPlanned=listD.filter(r=>r.scheduled_at&&new Date(r.scheduled_at).getTime()>soonD);
  const data=listD.filter(r=>!dPlanned.find(p=>p.id===r.id)).slice(0,1);
@@ -1190,13 +1190,15 @@ function planBar(r,forDriver){
 function drawBar(){
  const b=document.getElementById('abar');
  if(role==='passenger'){
-  if(!active||pTab==='ride'){b.innerHTML='';return;}
+  const farPlanP=active&&active.scheduled_at&&(new Date(active.scheduled_at)-Date.now()>40*60*1000);
+  if(!active||farPlanP||pTab==='ride'){b.innerHTML='';return;}
   const conf=active.status==='confirmed';
   b.innerHTML=`<div class="abar" onclick="openRide()"><div class="ava">${conf?'🚗':'⏳'}</div><div class="t"><b>${conf?'Бомбила в пути':'Ждём предложений'}${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</b><span>${chatUnread?'новое сообщение в чате':esc(active.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
   return;
  }
  if(role==='driver'){
-  if(!dActive||dTab==='ride'){b.innerHTML='';return;}
+  const farPlan=dActive&&dActive.scheduled_at&&(new Date(dActive.scheduled_at)-Date.now()>40*60*1000);
+  if(!dActive||farPlan||dTab==='ride'){b.innerHTML='';return;}
   b.innerHTML=`<div class="abar" onclick="dGo('ride')"><div class="ava">🚗</div><div class="t"><b>Активный заказ${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</b><span>${chatUnread?'новое сообщение в чате':esc(dActive.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
   return;
  }
@@ -1769,20 +1771,22 @@ async function watchPlanned(){
 function plannedBlock(){
  if(!planned.length)return '';
  return `<div class="head"><h2>Запланировано</h2><span class="m">${planned.length}</span></div>
- <div style="padding:0 14px 6px">${planned.map(r=>{
+ <div style="display:block;padding:0 14px 6px">${planned.map(r=>{
   const d=new Date(r.scheduled_at);
   const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
   const taken=!!r.driver_id;
   const off=(!taken&&PLOFF[r.id])?PLOFF[r.id]:0;
-  return `<div class="plancard ${taken?'ok':''}" onclick="planSheet('${r.id}')">
-   <div class="plrow">
-    <div class="plclock">🕒</div>
-    <div class="plmain">
-     <div class="plwhen">${when}</div>
-     <div class="plroute">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div>
-     <div class="plsub">${taken?'<span style="color:var(--g)">водитель назначен</span>':'ищем водителя'}${r.price?' · '+r.price+' ₽':(r.passenger_price?' · вы предложили '+r.passenger_price+' ₽':'')}</div>
+  const edge=taken?'#33d17e':'#f0b43c';
+  return `<div onclick="planSheet('${r.id}')" style="display:block;width:100%;box-sizing:border-box;background:var(--surf);border:1px solid var(--line2);border-left:3px solid ${edge};border-radius:14px;padding:12px 14px;margin:0 0 8px;cursor:pointer">
+   <div style="display:flex;align-items:center;gap:10px;width:100%">
+    <div style="flex:1;min-width:0">
+     <div style="font-size:14px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${when}</div>
+     <div style="font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div>
+     <div style="font-size:11.5px;color:var(--dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${taken?'<span style="color:#33d17e">водитель назначен</span>':'ищем водителя'}${r.price?' · '+r.price+' ₽':(r.passenger_price?' · вы предложили '+r.passenger_price+' ₽':'')}</div>
     </div>
-    ${off?`<div class="plbadge">${off}</div>`:'<div class="plgo">›</div>'}
+    ${off
+      ?`<div style="flex:0 0 auto;background:var(--red);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:2px 8px">${off}</div>`
+      :`<div style="flex:0 0 auto;color:var(--dim);font-size:18px;line-height:1">›</div>`}
    </div>
   </div>`;
  }).join('')}</div>`;
@@ -2439,21 +2443,20 @@ async function load(){
 }
 function dPlanBlock(){
  if(!dPlanned.length)return '';
- return `<div class="schedhead" style="color:var(--g)">✅ Вы взяли на время <span style="background:rgba(51,209,126,.15)">${dPlanned.length}</span></div>`+
+ return `<div style="display:flex;align-items:center;gap:8px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#33d17e;margin:4px 0 10px">Вы взяли на время <span style="background:rgba(51,209,126,.15);border-radius:20px;padding:1px 7px;font-size:10px">${dPlanned.length}</span></div>`+
  dPlanned.map(r=>{
   const d=new Date(r.scheduled_at);
   const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
   const left=Math.round((d-Date.now())/60000);
   const lt=left<1440?(left>=60?'через '+Math.floor(left/60)+' ч '+(left%60)+' мин':'через '+left+' мин'):'';
-  return `<div class="plancard ok" onclick="dPlanSheet('${r.id}')">
-   <div class="plrow">
-    <div class="plclock">✅</div>
-    <div class="plmain">
-     <div class="plwhen">${when}${lt?' · '+lt:''}</div>
-     <div class="plroute">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div>
-     <div class="plsub">${esc(r.passenger_name)}${r.price?' · '+r.price+' ₽':''}</div>
+  return `<div onclick="dPlanSheet('${r.id}')" style="display:block;width:100%;box-sizing:border-box;background:var(--surf);border:1px solid var(--line2);border-left:3px solid #33d17e;border-radius:14px;padding:12px 14px;margin:0 0 8px;cursor:pointer">
+   <div style="display:flex;align-items:center;gap:10px;width:100%">
+    <div style="flex:1;min-width:0">
+     <div style="font-size:14px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${when}${lt?' · '+lt:''}</div>
+     <div style="font-size:12.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div>
+     <div style="font-size:11.5px;color:var(--dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.passenger_name)}${r.price?' · '+r.price+' ₽':''}</div>
     </div>
-    <div class="plgo">›</div>
+    <div style="flex:0 0 auto;color:var(--dim);font-size:18px;line-height:1">›</div>
    </div>
   </div>`;
  }).join('');
