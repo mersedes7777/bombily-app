@@ -8,20 +8,39 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"
         onerror="window.__sbFail=1"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" crossorigin="anonymous"></script>
+
 <script>
-// если основная библиотека не загрузилась — пробуем запасной источник
-(function(){
-  function boot2(){
-    if (window.supabase && window.supabase.createClient) return;
-    var s=document.createElement('script');
-    s.src='https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js';
-    s.crossOrigin='anonymous';
-    s.onerror=function(){window.__sbFail=2;};
-    document.head.appendChild(s);
+// библиотека обязательна. если основной источник недоступен —
+// перебираем запасные и только потом сдаёмся
+window.__libReady = (function(){
+  var MIRRORS = [
+    'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js',
+    'https://cdn.skypack.dev/@supabase/supabase-js@2',
+    'https://esm.sh/@supabase/supabase-js@2?bundle'
+  ];
+  function has(){ return !!(window.supabase && window.supabase.createClient); }
+  function load(url){
+    return new Promise(function(res){
+      var s = document.createElement('script');
+      s.src = url; s.crossOrigin = 'anonymous';
+      s.onload = function(){ res(has()); };
+      s.onerror = function(){ res(false); };
+      document.head.appendChild(s);
+      setTimeout(function(){ res(has()); }, 6000);
+    });
   }
-  if (window.__sbFail) boot2();
-  else window.addEventListener('DOMContentLoaded', boot2);
+  return (async function(){
+    if (has()) return true;
+    // основной скрипт мог ещё грузиться — подождём немного
+    for (var i = 0; i < 12; i++){
+      if (has()) return true;
+      await new Promise(function(r){ setTimeout(r, 250); });
+    }
+    for (var j = 0; j < MIRRORS.length; j++){
+      if (await load(MIRRORS[j])) return true;
+    }
+    return has();
+  })();
 })();
 </script>
 <style>
@@ -540,11 +559,6 @@ window.onerror=function(msg,srcFile,line,col,err){
  b.innerHTML='<div style="color:#e2585a;padding:24px;line-height:1.7;text-align:center">'+human+
   '<br><br><button onclick="location.reload()" style="background:#33d17e;color:#06120b;border:none;border-radius:12px;padding:12px 22px;font-size:15px;font-weight:700;cursor:pointer">Попробовать снова</button></div>';
 };
-if(!(window.supabase&&window.supabase.createClient)){
- var _b=document.getElementById('boot');
- if(_b){_b.style.display='flex';_b.innerHTML='<div style="color:#e2585a;padding:24px;line-height:1.7;text-align:center">Не удалось загрузить библиотеку.<br><br>Выключите VPN, проверьте интернет и откройте заново.<br><br><button onclick="location.reload()" style="background:#33d17e;color:#06120b;border:none;border-radius:12px;padding:12px 22px;font-size:15px;font-weight:700">Попробовать снова</button></div>';}
- throw new Error('supabase-lib-missing');
-}
 const SUPABASE_URL="https://wygmuydnodwpbtsdfjuq.supabase.co";
 const SUPABASE_ANON_KEY="sb_publishable_BYSmJx0oJGxvoomZrOPTJQ_mxVHZMT1";
 const OWNER_ID=8672930773;
@@ -566,11 +580,16 @@ if(!window.supabase){
  document.getElementById('boot').innerHTML='<div style="color:#e2585a;padding:20px;line-height:1.6"><b>Не загрузилась библиотека</b><br><br>Обновите страницу. Если не помогает и включён VPN — попробуйте выключить его.</div>';
  throw new Error('supabase not loaded');
 }
-const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{
- auth:{persistSession:false,autoRefreshToken:false},
- global:{headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY}},
- realtime:{params:{eventsPerSecond:2}}
-});
+let db=null;
+function makeDb(){
+ db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{
+  auth:{persistSession:false,autoRefreshToken:false},
+  global:{headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY}},
+  realtime:{params:{eventsPerSecond:2}}
+ });
+}
+// если библиотека уже здесь — создаём сразу, иначе дождёмся в boot()
+if(window.supabase&&window.supabase.createClient)makeDb();
 const tg=window.Telegram?.WebApp;try{tg?.ready();tg?.expand();}catch(e){}
 
 /* ---- иконка на экране телефона (Telegram Bot API 8.0+) ---- */
@@ -777,6 +796,19 @@ function withTimeout(promise,ms,label){
  return Promise.race([promise,new Promise((_,rej)=>setTimeout(()=>rej(new Error('Таймаут: '+(label||'база не ответила за '+ms+'мс'))),ms))]);
 }
 async function boot(){
+ // библиотека могла ещё грузиться или подтягиваться с запасного источника
+ if(!db){
+  const ok=await (window.__libReady||Promise.resolve(false));
+  if(ok&&window.supabase&&window.supabase.createClient)makeDb();
+ }
+ if(!db){
+  const b0=document.getElementById('boot');
+  if(b0){
+   b0.style.display='flex';
+   b0.innerHTML='<div style="color:#e2585a;padding:24px;line-height:1.7;text-align:center">Не удалось загрузить приложение.<br><br>Проверьте интернет и откройте заново. Если стоит VPN — попробуйте выключить.<br><br><button onclick="location.reload()" style="background:#33d17e;color:#06120b;border:none;border-radius:12px;padding:12px 22px;font-size:15px;font-weight:700;cursor:pointer">Попробовать снова</button></div>';
+  }
+  return;
+ }
  try{
   bootMsg('соединяемся…');
   let{data,error:qerr}=await withTimeout(db.from('users').select('*').eq('telegram_id',tgId).maybeSingle(),10000,'запрос пользователя');
@@ -3107,8 +3139,21 @@ function copyText(t){
  try{navigator.clipboard.writeText(t);T('Ссылка скопирована');}
  catch(e){T('Не удалось скопировать');}
 }
-function drawQR(canvas,text){
+function loadQRLib(){
+ return new Promise(res=>{
+  if(window.QRCode&&window.QRCode.toCanvas)return res(true);
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
+  s.crossOrigin='anonymous';
+  s.onload=()=>res(true);
+  s.onerror=()=>res(false);
+  document.head.appendChild(s);
+  setTimeout(()=>res(!!(window.QRCode&&window.QRCode.toCanvas)),4000);
+ });
+}
+async function drawQR(canvas,text){
  if(!canvas)return;
+ await loadQRLib();
  if(window.QRCode&&window.QRCode.toCanvas){
   window.QRCode.toCanvas(canvas,text,{width:260,margin:1,color:{dark:'#0B0F0D',light:'#ffffff'}},err=>{
    if(err)qrFallback(canvas,text);
