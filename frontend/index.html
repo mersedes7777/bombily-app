@@ -161,6 +161,17 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .abar .g{font-size:12px;font-weight:700;color:var(--g);}
 .fav{background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--line2);padding:4px 6px;}
 .dright{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;}
+.homecard{margin:0 14px 16px;background:linear-gradient(140deg,rgba(51,209,126,.09),rgba(51,209,126,.02));
+ border:1px solid rgba(51,209,126,.22);border-radius:16px;padding:15px 16px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;}
+.hcico{font-size:26px;line-height:1;flex-shrink:0;}
+.hctx{flex:1;min-width:150px;}
+.hctx b{display:block;font-size:14.5px;margin-bottom:4px;}
+.hctx span{display:block;font-size:12px;color:var(--dim);line-height:1.5;}
+.hcact{display:flex;gap:8px;width:100%;}
+.hcadd{flex:1;background:var(--g);color:#06120b;border:none;border-radius:11px;padding:11px;
+ font-size:13.5px;font-weight:700;font-family:Inter,sans-serif;cursor:pointer;}
+.hcno{background:none;border:none;color:var(--dim);font-size:12.5px;padding:11px 14px;
+ font-family:Inter,sans-serif;cursor:pointer;}
 .rmini{font-family:'Roboto Mono',monospace;font-size:12.5px;font-weight:700;color:#F7C948;white-space:nowrap;letter-spacing:.3px;}
 .fav.on{color:var(--red);}
 .stars{display:flex;gap:8px;justify-content:center;margin:6px 0 4px;}
@@ -561,6 +572,40 @@ const db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{
  realtime:{params:{eventsPerSecond:2}}
 });
 const tg=window.Telegram?.WebApp;try{tg?.ready();tg?.expand();}catch(e){}
+
+/* ---- иконка на экране телефона (Telegram Bot API 8.0+) ---- */
+let homeStatus='unknown';   // unsupported | unknown | added | missed
+function homeSupported(){
+ try{ return !!(tg&&tg.addToHomeScreen&&tg.isVersionAtLeast&&tg.isVersionAtLeast('8.0')); }
+ catch(e){ return false; }
+}
+function checkHome(){
+ if(!homeSupported()){homeStatus='unsupported';return;}
+ try{
+  tg.checkHomeScreenStatus(s=>{
+   homeStatus=s||'unknown';
+   if(role==='passenger'&&pTab==='profile')drawP();
+   if(role==='driver'&&dTab==='profile')drawD();
+  });
+ }catch(e){homeStatus='unsupported';}
+}
+function addToHome(){
+ if(!homeSupported())return T('Обновите Telegram — тогда появится эта возможность');
+ try{
+  tg.addToHomeScreen();
+  // ответ приходит событием, дублируем проверкой
+  setTimeout(checkHome,1500);
+  setTimeout(checkHome,4000);
+ }catch(e){T('Не получилось. Попробуйте позже');}
+}
+try{
+ tg&&tg.onEvent&&tg.onEvent('homeScreenAdded',()=>{
+  homeStatus='added';
+  T('Готово! Иконка на экране телефона');
+  try{localStorage.setItem('bmb_home','added');}catch(e){}
+  if(role==='passenger')drawP(); else if(role==='driver')drawD();
+ });
+}catch(e){}
 let START='',tu=null,tgId=null,tgName='Гость';
 try{
  const qs=new URLSearchParams(location.search);
@@ -785,6 +830,7 @@ async function boot(){
   // интерфейс показан: посторонние ошибки (например от скрипта Telegram
   // при открытии клавиатуры) больше не должны закрывать экран
   window.__booted=true;
+  setTimeout(checkHome,1200);
   const miss=window.__skipSchema?[]:await checkSchema();
   if(miss.length){
    document.getElementById('boot').classList.remove('gone');document.getElementById('boot').style.display='flex';
@@ -814,6 +860,7 @@ async function boot(){
   if(START==='profile'){pTab='profile';drawP();}
   if(START==='driver'){ if(isDrv()){setRole('driver');} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
   window.__booted=true;
+  setTimeout(checkHome,1200);
   if(START==='chat'){
    const rid=new URLSearchParams(location.search).get('ride');
    if(rid){
@@ -1077,7 +1124,7 @@ function drawP(){
 const pGo=t=>{pTab=t;drawP();};
 
 async function home(m){
- m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;orderKind='ride';interCity=false;pTab='order';drawP()">Заявка всем водителям</button><button class="cta2" id="delbtn" onclick="targetDrv=null;orderKind='delivery';interCity=false;pTab='order';drawP()">📦 Заказать доставку <span id="delcnt" style="color:var(--dim);font-weight:500"></span></button></div><div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
+ m.innerHTML=`<div class="hero"><div class="hgrid"><div class="hs"><div class="n g" id="c1">…</div><div class="l">водителей на линии</div></div><div class="hs"><div class="n a" id="c2">…</div><div class="l">открытых заявок</div></div></div><button class="cta" onclick="targetDrv=null;orderKind='ride';interCity=false;pTab='order';drawP()">Заявка всем водителям</button><button class="cta2" id="delbtn" onclick="targetDrv=null;orderKind='delivery';interCity=false;pTab='order';drawP()">📦 Заказать доставку <span id="delcnt" style="color:var(--dim);font-weight:500"></span></button></div>${homeCard()}<div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
  const{data:ds,error:dsE}=await Q(db.from('users').select('*').eq('status','online').eq('city',me.city).in('role',['driver','both']),'Не удалось загрузить водителей');
  const{count:rc}=await db.from('rides').select('*',{count:'exact',head:true}).eq('status','created').eq('city',me.city);
  db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city).eq('delivery',true).then(({count:dc})=>{
@@ -1437,6 +1484,7 @@ function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
  return `${act}<div class="ph"><div class="pawrap"><div class="pa avedit" onclick="avatarMenu()">${me.avatar?`<img src="${esc(me.avatar)}" alt="">`:(esc(me.name)[0]||'?')}</div><span class="avcam" onclick="avatarMenu()">📷</span></div>${me.avatar?'<div class="avdel" onclick="delAvatar()">убрать фото</div>':''}<div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
  ${SETTINGS.community_enabled?'<div class="mi" onclick="communitySheet()"><span>Группа города</span><span class="c">›</span></div>':''}
+ ${homeMenuItem()}
  <div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div></div>`;
 }
 function disputeRev(rid,about,text){
@@ -1537,6 +1585,33 @@ async function removeAvatar(){
  try{await db.storage.from('avatars').remove([me.id+'.jpg']);}catch(e){}
  me.avatar=null;closeSh();T('Фото удалено');
  if(role==='driver')drawD();else drawP();
+}
+function homeHidden(){
+ try{return localStorage.getItem('bmb_home_hide')==='1';}catch(e){return false;}
+}
+function hideHomeCard(){
+ try{localStorage.setItem('bmb_home_hide','1');}catch(e){}
+ if(role==='passenger')drawP(); else drawD();
+}
+function homeCard(){
+ // предлагаем только если телеграм это умеет и иконки ещё нет
+ if(homeStatus!=='missed'||homeHidden())return '';
+ return `<div class="homecard">
+  <div class="hcico">📲</div>
+  <div class="hctx">
+   <b>Бомбилы на экране телефона</b>
+   <span>Иконка рядом с остальными приложениями — заказ в одно касание, без поиска в Telegram.</span>
+  </div>
+  <div class="hcact">
+   <button class="hcadd" onclick="addToHome()">Добавить</button>
+   <button class="hcno" onclick="hideHomeCard()">Не сейчас</button>
+  </div>
+ </div>`;
+}
+function homeMenuItem(){
+ if(homeStatus==='unsupported')return '';
+ if(homeStatus==='added')return `<div class="mi" style="opacity:.6"><span>Иконка на экране телефона</span><span class="c" style="color:var(--g)">есть ✓</span></div>`;
+ return `<div class="mi" onclick="addToHome()"><span>Добавить на экран телефона</span><span class="c">›</span></div>`;
 }
 function pickAvatar(){
  const i=document.createElement('input');i.type='file';i.accept='image/*';
