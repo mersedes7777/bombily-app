@@ -180,6 +180,10 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .abar .g{font-size:12px;font-weight:700;color:var(--g);}
 .fav{background:none;border:none;font-size:22px;line-height:1;cursor:pointer;color:var(--line2);padding:4px 6px;}
 .dright{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;}
+.planwhen{background:rgba(240,180,60,.1);border:1px solid rgba(240,180,60,.28);border-radius:11px;
+ padding:11px 14px;font-size:14.5px;font-weight:600;color:var(--am);margin-bottom:12px;}
+.abar.plan{border-left:3px solid var(--am);}
+.plbadge{background:var(--red);color:#fff;border-radius:20px;font-size:10px;font-weight:700;padding:1px 7px;}
 .plancard{background:var(--surf);border:1px solid var(--line2);border-left:3px solid var(--am);border-radius:13px;padding:13px 15px;margin-bottom:9px;}
 .plancard.ok{border-left-color:var(--g);}
 .pltop{display:flex;align-items:center;gap:10px;margin-bottom:7px;}
@@ -677,6 +681,9 @@ async function loadUnreadRev(){try{const{count}=await db.from('reviews').select(
 let me=null,role='passenger',pTab='home',dTab='inbox',aTab='over';
 let orderKind='ride';
 let schedOn=false,schedDay='',schedH='',schedM='00';
+function todayStr(){return new Date().toISOString().slice(0,10);}
+function maxDay(){const d=new Date();d.setDate(d.getDate()+14);return d.toISOString().slice(0,10);}
+function defDay(){const d=new Date();d.setDate(d.getDate()+1);const s=d.toISOString().slice(0,10);if(!schedDay)schedDay=s;return schedDay;}
 function dayOpts(){
  const out=[];
  for(let i=0;i<7;i++){
@@ -1084,6 +1091,7 @@ async function restore(){
  const soon=Date.now()+60*60*1000;   // заказ «на подходе», если до него меньше часа
  const list=all||[];
  planned=list.filter(r=>r.scheduled_at&&new Date(r.scheduled_at).getTime()>soon);
+ if(planned.length)setTimeout(watchPlanned,600);
  const data=list.filter(r=>!planned.find(p=>p.id===r.id)).slice(0,1);
  if(data&&data.length){active=data[0];if(active.status==='created')subOffers(active.id);if(active.status==='confirmed'||active.status==='in_progress'){subRide(active.id);watchCompletion();watchUnread(active.id);}}
  // недавно завершённая поездка, которую пассажир ещё не оценил
@@ -1095,7 +1103,11 @@ async function restore(){
  }
 }
 async function restoreD(){
- const{data}=await db.from('rides').select('*').eq('driver_id',me.id).in('status',['confirmed','in_progress']).order('created_at',{ascending:false}).limit(1);
+ const{data:allD}=await db.from('rides').select('*').eq('driver_id',me.id).in('status',['confirmed','in_progress']).order('created_at',{ascending:false}).limit(10);
+ const soonD=Date.now()+60*60*1000;
+ const listD=allD||[];
+ dPlanned=listD.filter(r=>r.scheduled_at&&new Date(r.scheduled_at).getTime()>soonD);
+ const data=listD.filter(r=>!dPlanned.find(p=>p.id===r.id)).slice(0,1);
  if(data&&data.length)dActive=data[0];
  const{data:o}=await db.from('offers').select('*').eq('driver_id',me.id).eq('status','pending');
  myOffs=o||[];
@@ -1157,15 +1169,31 @@ function subRide(id){
   }
  }).subscribe();
 }
+function nextPlanned(list){
+ if(!list||!list.length)return null;
+ return list.slice().sort((a,b)=>new Date(a.scheduled_at)-new Date(b.scheduled_at))[0];
+}
+function planBar(r,forDriver){
+ const d=new Date(r.scheduled_at);
+ const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+ const left=Math.round((d-Date.now())/60000);
+ const lt=left<600?(left>=60?'через '+Math.floor(left/60)+' ч':'через '+left+' мин'):'';
+ return `<div class="abar plan" onclick="${forDriver?`dPlanSheet('${r.id}')`:`planSheet('${r.id}')`}">
+  <div class="ava" style="background:rgba(240,180,60,.15);color:var(--am)">🕒</div>
+  <div class="t"><b>Заказ на ${when}</b><span>${forDriver?'вы взяли этот заказ':(r.driver_id?'водитель есть':'ищем водителя')}${lt?' · '+lt:''}</span></div>
+  <span class="g">Открыть ›</span></div>`;
+}
 function drawBar(){
  const b=document.getElementById('abar');
  if(role==='passenger'){
+  if(!active&&planned.length&&pTab!=='ride'){b.innerHTML=planBar(nextPlanned(planned),false);return;}
   if(!active||pTab==='ride'){b.innerHTML='';return;}
   const conf=active.status==='confirmed';
   b.innerHTML=`<div class="abar" onclick="openRide()"><div class="ava">${conf?'🚗':'⏳'}</div><div class="t"><b>${conf?'Бомбила в пути':'Ждём предложений'}${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</b><span>${chatUnread?'новое сообщение в чате':esc(active.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
   return;
  }
  if(role==='driver'){
+  if(!dActive&&dPlanned.length&&dTab!=='ride'){b.innerHTML=planBar(nextPlanned(dPlanned),true);return;}
   if(!dActive||dTab==='ride'){b.innerHTML='';return;}
   b.innerHTML=`<div class="abar" onclick="dGo('ride')"><div class="ava">🚗</div><div class="t"><b>Активный заказ${chatUnread?` <i class="mbadge">${chatUnread}</i>`:''}</b><span>${chatUnread?'новое сообщение в чате':esc(dActive.to_address)}</span></div><span class="g">Открыть ›</span></div>`;
   return;
@@ -1287,8 +1315,10 @@ function formHTML(d){
   <div class="${!schedOn?'on':''}" onclick="schedOn=false;document.getElementById('host').innerHTML=formHTML(targetDrv)">Сейчас</div>
   <div class="${schedOn?'on':''}" onclick="schedOn=true;document.getElementById('host').innerHTML=formHTML(targetDrv)">Ко времени</div>
  </div></div>
- ${schedOn?`<div class="fr"><label>Дата</label>
-  <div class="seg" style="padding:6px 0 0">${dayOpts().map(o=>`<div class="${schedDay===o[0]?'on':''}" onclick="schedDay='${o[0]}';document.getElementById('host').innerHTML=formHTML(targetDrv)">${o[1]}</div>`).join('')}</div>
+ ${schedOn?`<div class="fr"><label>Дата поездки</label>
+  <input type="date" id="sh_date" value="${schedDay||defDay()}" min="${todayStr()}" max="${maxDay()}"
+   onchange="schedDay=this.value;document.getElementById('host').innerHTML=formHTML(targetDrv)"
+   style="width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:11px;color:var(--ink);font-size:15px;font-family:'Roboto Mono',monospace;outline:none">
  </div>
  <div class="fr"><label>Время</label>
   <div class="tsel">
@@ -1364,7 +1394,7 @@ async function _send(did){
  if(error)return;
  targetDrv=null;
  if(schedAt&&new Date(schedAt).getTime()-Date.now()>60*60*1000){
-  planned.unshift(data);schedOn=false;
+  planned.unshift(data);schedOn=false;watchPlanned();
   T('Заказ принят на '+new Date(schedAt).toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}));
   pTab='home';drawP();return;
  }
@@ -1713,6 +1743,27 @@ function hideHomeCard(){
 // возможность отключена: ярлык ломается при перемещении на рабочем столе.
 // чтобы вернуть — поставьте HOME_ON=true
 const HOME_ON=false;
+let PLOFF={},planPoll=null;
+async function watchPlanned(){
+ if(planPoll)clearInterval(planPoll);
+ const tick=async()=>{
+  if(!planned.length||role!=='passenger')return;
+  const ids=planned.filter(r=>!r.driver_id).map(r=>r.id);
+  if(!ids.length)return;
+  try{
+   const{data}=await db.from('offers').select('ride_id').in('ride_id',ids).eq('status','pending');
+   const cnt={};(data||[]).forEach(o=>{cnt[o.ride_id]=(cnt[o.ride_id]||0)+1;});
+   let grew=false;
+   Object.keys(cnt).forEach(id=>{ if((cnt[id]||0)>(PLOFF[id]||0))grew=true; });
+   PLOFF=cnt;
+   if(grew){
+    T('Водитель откликнулся на заказ ко времени');
+    if(pTab==='home')drawP();
+   }
+  }catch(e){}
+ };
+ tick();planPoll=setInterval(tick,15000);
+}
 function plannedBlock(){
  if(!planned.length)return '';
  return `<div class="head"><h2>Запланировано</h2><span class="m">${planned.length}</span></div>
@@ -1722,22 +1773,87 @@ function plannedBlock(){
   const taken=!!r.driver_id;
   return `<div class="plancard ${taken?'ok':''}">
    <div class="pltop"><span class="plwhen">🕒 ${when}</span>
-    <span class="plst">${taken?'водитель есть':'ищем водителя'}</span></div>
+    <span class="plst">${taken?'водитель есть':'ищем водителя'}</span>
+    ${(!taken&&PLOFF[r.id])?`<span class="plbadge">${PLOFF[r.id]}</span>`:''}</div>
    <div class="plroute">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)} → ${esc(r.to_address)}</div>
    ${r.price?`<div class="plsub">Цена ${r.price} ₽</div>`:(r.passenger_price?`<div class="plsub">Вы предложили ${r.passenger_price} ₽</div>`:'')}
    <div class="planact">
-    <button class="rolebtn" onclick="openPlanned('${r.id}')">подробнее</button>
+    <button class="rolebtn" onclick="planSheet('${r.id}')">подробнее</button>
     <button class="rolebtn" style="color:var(--red)" onclick="cancelPlanned('${r.id}')">отменить</button>
    </div>
   </div>`;
  }).join('')}</div>`;
 }
-async function openPlanned(id){
+async function dPlanSheet(id){
+ const r=dPlanned.find(x=>x.id===id);
+ if(!r)return T('Заказ не найден');
+ const d=new Date(r.scheduled_at);
+ const when=d.toLocaleString('ru',{weekday:'long',day:'2-digit',month:'long',hour:'2-digit',minute:'2-digit'});
+ const left=Math.round((d-Date.now())/60000);
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>Заказ ко времени</h3>
+ <div class="planwhen">🕒 ${when}</div>
+ <div class="note" style="margin:0 0 12px">Это предварительный заказ. Приезжать к назначенному времени, не сейчас. За 40 минут придёт напоминание с телефоном пассажира.</div>
+ <div class="fr"><label>Маршрут</label><div style="font-size:14px;line-height:1.5">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)}<br>→ ${esc(r.to_address)}</div></div>
+ ${r.comment?`<div class="fr"><label>Комментарий пассажира</label><div style="font-size:13.5px">${esc(r.comment)}</div></div>`:''}
+ ${r.price?`<div class="fr"><label>Цена</label><div class="price">${r.price} ₽</div></div>`:''}
+ <div class="fr"><label>Пассажир</label><div style="font-size:14px">${esc(r.passenger_name)}</div></div>
+ <div class="sa"><button class="c" onclick="closeSh()">Закрыть</button><button class="c" style="color:var(--red)" onclick="dropPlanned('${r.id}')">Отказаться</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function dropPlanned(id){
+ if(!confirm('Отказаться от заказа? Пассажир останется без машины и будет искать другого водителя.'))return;
+ await db.from('rides').update({driver_id:null,status:'created',price:null,confirmed_at:null,cancelled_by:'driver',cancel_notified:false}).eq('id',id);
+ dPlanned=dPlanned.filter(x=>x.id!==id);
+ closeSh();T('Вы отказались от заказа');drawD();
+}
+async function planSheet(id){
  const r=planned.find(x=>x.id===id);
- if(!r)return;
- active=r;
- if(r.status==='created')subOffers(r.id); else {subRide(r.id);watchCompletion();}
- pTab='ride';drawP();
+ if(!r)return T('Заказ не найден');
+ const d=new Date(r.scheduled_at);
+ const when=d.toLocaleString('ru',{weekday:'long',day:'2-digit',month:'long',hour:'2-digit',minute:'2-digit'});
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Заказ на время</h3>
+ <div class="planwhen">🕒 ${when}</div>
+ <div class="fr"><label>Маршрут</label><div style="font-size:14px;line-height:1.5">${r.kind==='delivery'?'📦 ':''}${esc(r.from_address)}<br>→ ${esc(r.to_address)}</div></div>
+ ${r.comment?`<div class="fr"><label>Комментарий</label><div style="font-size:13.5px">${esc(r.comment)}</div></div>`:''}
+ ${r.passenger_price?`<div class="fr"><label>Ваша цена</label><div class="price">${r.passenger_price} ₽</div></div>`:''}
+ <div id="planoff"><div class="empty">Загрузка предложений…</div></div>
+ <div class="sa"><button class="c" onclick="closeSh()">Закрыть</button><button class="c" style="color:var(--red)" onclick="cancelPlanned('${r.id}')">Отменить заказ</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ loadPlanOffers(r);
+}
+async function loadPlanOffers(r){
+ const box=document.getElementById('planoff');if(!box)return;
+ if(r.driver_id){
+  const{data:d}=await db.from('users').select('name,car,plate,rating,avatar,tg_username').eq('id',r.driver_id).maybeSingle();
+  box.innerHTML=`<div class="sec" style="padding-left:0">Водитель</div>
+   <div class="card" style="margin:0"><div class="ava">${d&&d.avatar?`<img src="${esc(d.avatar)}" alt="">`:(esc(d?.name)[0]||'?')}</div>
+   <div style="flex:1;min-width:0"><div class="nm">${esc(d?.name)}</div><div class="sub">${esc(d?.car)||'—'}${d?.plate?' · '+esc(d.plate):''}</div></div>
+   <div class="rmini">★ ${Number(d?.rating||5).toFixed(1)}</div></div>
+   <div class="note" style="margin:10px 0 0">Приедет к назначенному времени. За 40 минут придёт напоминание вам обоим, там же будет телефон водителя.</div>`;
+  return;
+ }
+ const{data:offs}=await db.from('offers').select('*').eq('ride_id',r.id).eq('status','pending').order('price');
+ if(!offs||!offs.length){
+  box.innerHTML='<div class="note" style="margin:0">Пока никто не откликнулся. Водители видят заказ — как только кто-то возьмётся, придёт уведомление.</div>';
+  return;
+ }
+ box.innerHTML=`<div class="sec" style="padding-left:0">Предложения · ${offs.length}</div>`+
+  offs.map(o=>`<div class="card" style="margin:0 0 8px"><div class="ava">${esc(o.driver_name)[0]||'?'}</div>
+   <div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div></div>
+   <div style="text-align:right"><div class="price">${o.price} ₽</div>
+   <button class="pick" style="margin-top:6px" onclick="acceptPlan('${o.id}','${o.driver_id}',${o.price},'${r.id}')">Принять</button></div></div>`).join('');
+}
+async function acceptPlan(offerId,did,price,rideId){
+ return once('accplan', async()=>{
+  await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null,confirmed_at:new Date().toISOString()}).eq('id',rideId);
+  await db.from('offers').update({status:'accepted'}).eq('id',offerId);
+  await db.from('offers').update({status:'declined'}).eq('ride_id',rideId).neq('id',offerId);
+  const p=planned.find(x=>x.id===rideId);
+  if(p){p.driver_id=did;p.status='confirmed';p.price=price;}
+  closeSh();T('Водитель назначен — приедет к назначенному времени');drawP();
+ });
 }
 async function cancelPlanned(id){
  if(!confirm('Отменить предварительный заказ?'))return;
@@ -2308,7 +2424,8 @@ async function load(){
 }
 function schedBlock(){
  if(!schedReqs.length)return '';
- return `<div class="schedhead">Предварительные заказы <span>${schedReqs.length}</span></div>`+
+ return `<div class="schedhead">🕒 Заказы на определённое время <span>${schedReqs.length}</span></div>
+ <div class="note" style="margin:0 14px 12px;font-size:11.5px">Это предварительные заказы. Взяв такой, приезжайте к указанному времени, а не сейчас.</div>`+
  schedReqs.map(r=>{
   const d=new Date(r.scheduled_at);
   const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -2322,7 +2439,7 @@ function schedBlock(){
    ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
    ${r.passenger_price?`<div class="rprice"><div class="rpt">Пассажир предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
    <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div>
-   <div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Взять заказ'}</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div>
+   <div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Взять на это время'}</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div>
   </div>`;
  }).join('');
 }

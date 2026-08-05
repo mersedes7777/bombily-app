@@ -7,7 +7,7 @@ const APP_URL = process.env.MINI_APP_URL;
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
-const VERSION = 'v68-scheduled';
+const VERSION = 'v69-sched-fix';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const API = m => `https://api.telegram.org/bot${TOKEN}/${m}`;
@@ -377,14 +377,17 @@ async function notifyLoop() {
       // выбрали -> водителю
       const { data: conf } = await db.from('rides').select('*').eq('status', 'confirmed').eq('driver_notified', false);
       for (const r of conf || []) {
-        const route = `📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${r.price ? `\n💰 <b>Цена:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
+        const schedTxt = r.scheduled_at
+        ? `\n🕒 <b>На ${new Date(r.scheduled_at).toLocaleString('ru', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</b>`
+        : '';
+      const route = `📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${schedTxt}${r.price ? `\n💰 <b>Цена:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
 
         // водителю — контакты пассажира
         if (r.driver_id) {
           const tid = await tgIdOf(r.driver_id);
           if (tid) {
             const card = await contactCard(r.passenger_id, 'Пассажир');
-            await send(tid, `✅ <b>Вас выбрали!</b>\n\n${route}${card}`,
+            await send(tid, `${r.scheduled_at ? '🕒 <b>Вас выбрали на определённое время</b>\n<i>Приезжайте к назначенному часу, не сейчас.</i>' : '✅ <b>Вас выбрали!</b>'}\n\n${route}${card}`,
               { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
           }
         }
@@ -393,7 +396,7 @@ async function notifyLoop() {
           const tid = await tgIdOf(r.passenger_id);
           if (tid) {
             const card = await contactCard(r.driver_id, 'Водитель');
-            await send(tid, `🚕 <b>Водитель принял заказ</b>\n\n${route}${card}`,
+            await send(tid, `${r.scheduled_at ? '🕒 <b>Водитель принял заказ на время</b>' : '🚕 <b>Водитель принял заказ</b>'}\n\n${route}${card}`,
               { reply_markup: { inline_keyboard: [[wa('Открыть поездку', 'order')]] } });
           }
         }
@@ -1182,11 +1185,17 @@ async function schedLoop() {
       if (r.driver_id && !r.remind_sent && mins <= 40 && mins > 0) {
         const route = `📍 ${r.from_address}\n🏁 ${r.to_address}`;
         const pt = await tgIdOf(r.passenger_id);
-        if (pt) await send(pt, `⏰ <b>Через ${mins} мин ваша поездка</b>\n\n${route}\n🕒 ${timeStr}${r.price ? `\n💰 ${r.price} ₽` : ''}\n\nВодитель предупреждён.`,
-          { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'order')]] } });
+        if (pt) {
+          const dcard = await contactCard(r.driver_id, 'Водитель');
+          await send(pt, `⏰ <b>Через ${mins} мин ваша поездка</b>\n\n${route}\n🕒 ${timeStr}${r.price ? `\n💰 ${r.price} ₽` : ''}${dcard}`,
+            { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'order')]] } });
+        }
         const dt = await tgIdOf(r.driver_id);
-        if (dt) await send(dt, `⏰ <b>Через ${mins} мин заказ</b>\n\n${route}\n🕒 ${timeStr}${r.price ? `\n💰 ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}\n\nПора выезжать.`,
-          { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
+        if (dt) {
+          const pcard = await contactCard(r.passenger_id, 'Пассажир');
+          await send(dt, `⏰ <b>Через ${mins} мин заказ</b>\n\n${route}\n🕒 ${timeStr}${r.price ? `\n💰 ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}${pcard}\n\nПора выезжать.`,
+            { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
+        }
         await db.from('rides').update({ remind_sent: true }).eq('id', r.id);
       }
 
