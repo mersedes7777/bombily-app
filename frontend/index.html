@@ -1823,7 +1823,7 @@ async function dropPlanned(id){
  if(!confirm('Отказаться от заказа? Пассажир останется без машины и будет искать другого водителя.'))return;
  await db.from('rides').update({driver_id:null,status:'created',price:null,confirmed_at:null,cancelled_by:'driver',cancel_notified:false}).eq('id',id);
  dPlanned=dPlanned.filter(x=>x.id!==id);
- closeSh();T('Вы отказались от заказа');drawD();
+ closeSh();T('Вы отказались от заказа');drawD();drawDPlanned();
 }
 async function planSheet(id){
  const r=planned.find(x=>x.id===id);
@@ -2194,7 +2194,9 @@ async function inbox(m){
  </div>`}
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 14px 12px"><button class="btn ghost" style="padding:10px;font-size:13px" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
  <div id="mo"></div>
+ <div id="dplan"></div>
  <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
+ drawDPlanned();
  drawMyOffs();syncOffs();
  if(shiftTick)clearInterval(shiftTick);
  if(on&&curShift){tickShift();shiftTick=setInterval(tickShift,1000);}
@@ -2441,9 +2443,17 @@ async function load(){
  reqs=(data||[]).filter(r=>!r.target_driver_id||r.target_driver_id===me.id);
  drawReqs();
 }
+function drawDPlanned(){
+ const box=document.getElementById('dplan');
+ if(!box)return;
+ box.innerHTML=dPlanBlock();
+}
 function dPlanBlock(){
  if(!dPlanned.length)return '';
- return `<div style="display:flex;align-items:center;gap:8px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#33d17e;margin:4px 0 10px">Вы взяли на время <span style="background:rgba(51,209,126,.15);border-radius:20px;padding:1px 7px;font-size:10px">${dPlanned.length}</span></div>`+
+ const off=me.status!=='online';
+ return `<div class="head"><h2>Ваши заказы на время</h2><span class="m">${dPlanned.length}</span></div>
+ ${off?`<div class="note" style="margin:0 14px 10px">Вы не на линии, но эти заказы за вами. Напоминание придёт в бота заранее.</div>`:''}
+ <div style="display:block;padding:0 14px 6px">`+
  dPlanned.map(r=>{
   const d=new Date(r.scheduled_at);
   const when=d.toLocaleString('ru',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -2459,7 +2469,7 @@ function dPlanBlock(){
     <div style="flex:0 0 auto;color:var(--dim);font-size:18px;line-height:1">›</div>
    </div>
   </div>`;
- }).join('');
+ }).join('')+`</div>`;
 }
 function schedBlock(){
  if(!schedReqs.length)return '';
@@ -2484,7 +2494,7 @@ function schedBlock(){
 }
 function drawReqs(){
  const l=document.getElementById('il');if(!l)return;
- const sb=dPlanBlock()+schedBlock();
+ const sb=schedBlock();
  if(!reqs.length){l.innerHTML=sb+(sb?'':'<div class="empty"><b>Пока тихо</b>Новые заявки появятся здесь сразу.</div>');return;}
  l.innerHTML=sb+reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(91,157,249,.15);color:#5B9DF9">📦 доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(169,139,245,.15);color:#A98BF5">🛣 в ${esc(r.to_city)}</span> `:''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
  ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
@@ -2515,7 +2525,10 @@ async function offer(rid,fixed){
  if(error)return;
  const{data:nofr}=await db.from('offers').select('*').eq('ride_id',rid).eq('driver_id',me.id).eq('status','pending').limit(1);
  if(nofr&&nofr.length)myOffs.unshift(nofr[0]);
- reqs=reqs.filter(r=>r.id!==rid);drawReqs();drawMyOffs();T(fixed?'Вы согласились: '+v+' ₽':'Цена отправлена: '+v+' ₽');
+ reqs=reqs.filter(r=>r.id!==rid);
+ schedReqs=schedReqs.filter(r=>r.id!==rid);
+ drawReqs();drawMyOffs();
+ setTimeout(async()=>{try{await restoreD();drawDPlanned();}catch(e){}},1500);T(fixed?'Вы согласились: '+v+' ₽':'Цена отправлена: '+v+' ₽');
 }
 const skip=rid=>{reqs=reqs.filter(r=>r.id!==rid);drawReqs();};
 function won(r){
