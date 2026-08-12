@@ -120,6 +120,22 @@ async function staffByTg(tgid) {
 async function onUpdate(u) {
   if (u.callback_query) {
     const cq = u.callback_query, chat = cq.from.id;
+
+    // «какие машины на линии» — окошко видит только нажавший, закреп не трогаем
+    if (cq.data && cq.data.startsWith('cars:')) {
+      const cityName = cq.data.slice(5);
+      let text;
+      try {
+        text = await carsOnLine(cityName);
+      } catch (e) {
+        text = 'Не получилось получить список. Попробуйте ещё раз.';
+      }
+      await tg('answerCallbackQuery', {
+        callback_query_id: cq.id, text, show_alert: true, cache_time: 20
+      });
+      return;
+    }
+
     await tg('answerCallbackQuery', { callback_query_id: cq.id });
     if (cq.data && cq.data.startsWith('rep:')) {
       const staff = await staffByTg(chat);
@@ -1022,8 +1038,41 @@ function pinText(city, s) {
   return `${head}\n\n${lines.join('\n')}${tail}${foot}\n<i>обновлено в ${localTimeStr()}</i>`;
 }
 
+// список машин, которые сейчас на линии в городе.
+// всплывашка Telegram вмещает ~200 знаков, поэтому режем и дописываем «и ещё N»
+async function carsOnLine(cityName) {
+  const { data } = await db.from('users')
+    .select('car, vehicle_type')
+    .eq('city', cityName)
+    .eq('role', 'driver')
+    .eq('driver_status', 'online')
+    .eq('is_banned', false);
+
+  const list = data || [];
+  if (!list.length) return 'Сейчас на линии никого нет.\n\nОставьте заказ в боте — он придёт всем водителям.';
+
+  const cars = list.map(d => {
+    const c = (d.car || '').trim();
+    if (c) return c;
+    return d.vehicle_type === 'moto' ? 'мотоцикл' : 'машина не указана';
+  });
+
+  const head = `На линии ${cars.length} ${plural(cars.length, ['машина', 'машины', 'машин'])}:\n`;
+  const out = [];
+  let len = head.length;
+  for (const c of cars) {
+    if (len + c.length + 3 > 185) break;
+    out.push(c); len += c.length + 3;
+  }
+  const rest = cars.length - out.length;
+  return head + out.map(c => '• ' + c).join('\n') + (rest > 0 ? `\n…и ещё ${rest}` : '');
+}
+
 async function updatePin(city, renewHours) {
-  const kb = { inline_keyboard: [[{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] };
+  const kb = { inline_keyboard: [
+    [{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }],
+    [{ text: '🚗 Какие машины на линии', callback_data: `cars:${city.name}` }]
+  ] };
   const s = await cityStats(city.name);
   const text = pinText(city.name, s);
 
