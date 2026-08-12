@@ -1069,15 +1069,9 @@ async function carsOnLine(cityName) {
 }
 
 async function updatePin(city, renewHours) {
+  const kb = { inline_keyboard: [[{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] };
   const s = await cityStats(city.name);
   const text = pinText(city.name, s);
-
-  // счётчик прямо на кнопке. кнопка остаётся одна —
-  // только тогда Telegram выносит её синим в полоску закрепа
-  const label = s.online > 0
-    ? `🚖 Вызвать машину · ${s.online} на линии`
-    : '🚖 Вызвать машину';
-  const kb = { inline_keyboard: [[{ text: label, url: `https://t.me/${BOT_USERNAME}` }]] };
 
   let { data: pin } = await db.from('group_pins').select('*').eq('city_name', city.name).maybeSingle();
 
