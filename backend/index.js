@@ -1015,7 +1015,7 @@ async function cityStats(city) {
 
 function pinText(city, s) {
   const head = `🚖 <b>Bombily | ${city}</b>`;
-  const foot = `\n\n👉 <a href="https://t.me/${BOT_USERNAME}">Вызвать машину</a> — заказы только в боте`;
+  const foot = `\n\n👇 Заказы принимаются только в боте`;
   const h = localHour();
 
   // ночь: цифры прячем, «0 водителей» в три часа выглядит как поломка
@@ -1069,10 +1069,7 @@ async function carsOnLine(cityName) {
 }
 
 async function updatePin(city, renewHours) {
-  const kb = { inline_keyboard: [
-    [{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }],
-    [{ text: '🚗 Кто на линии', callback_data: `cars:${city.name}` }]
-  ] };
+  const kb = { inline_keyboard: [[{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] };
   const s = await cityStats(city.name);
   const text = pinText(city.name, s);
 
