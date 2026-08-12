@@ -1069,10 +1069,10 @@ async function carsOnLine(cityName) {
 }
 
 async function updatePin(city, renewHours) {
-  const kb = { inline_keyboard: [
-    [{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }],
-    [{ text: '🚗 Какие машины на линии', callback_data: `cars:${city.name}` }]
-  ] };
+  const kb = { inline_keyboard: [[
+    { text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` },
+    { text: '🚗 Кто на линии', callback_data: `cars:${city.name}` }
+  ]] };
   const s = await cityStats(city.name);
   const text = pinText(city.name, s);
 
