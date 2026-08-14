@@ -885,7 +885,16 @@ async function boot(){
     const{data:ps}=await db.from('pending_src').select('code').eq('tg',tgId).maybeSingle();
     if(ps&&ps.code)srcCode=ps.code;
    }catch(e){}
-   const r=await db.from('users').insert({telegram_id:tgId,name:tgName,ref_by:refBy,source:srcCode}).select().single();if(r.error)throw r.error;data=r.data;
+   // создаёт сервер: имя берётся из подписанных данных Telegram, подделать нельзя
+   let refCode=null;
+   try{const{data:pr2}=await db.from('pending_refs').select('ref_code').eq('tg_id',tgId).maybeSingle();if(pr2)refCode=pr2.ref_code;}catch(e){}
+   const r=await api('/api/me/register',{ref_code:refCode,source:srcCode});
+   if(r.error||!r.me){
+    bootMsg('');
+    document.body.innerHTML='<div style="color:#e8ede9;padding:40px;font-family:Golos Text,sans-serif;text-align:center;line-height:1.7"><b>Не удалось войти</b><br><br>Откройте приложение через бота @bombily_bot — нажмите /start и кнопку в сообщении.</div>';
+    return;
+   }
+   data=r.me;
    if(srcCode){try{await db.from('pending_src').delete().eq('tg',tgId);}catch(e){}}
   }
    me=data;
@@ -895,9 +904,8 @@ async function boot(){
     const upd={name:tu.first_name};
     // заодно чиним подделанный город, если он остался мусорным
     if(me.city==='lalalalala')upd.city=null;
-    await db.from('users').update(upd).eq('id',me.id);
-    me.name=tu.first_name;
-    if(upd.city===null)me.city=null;
+    const rr=await api('/api/me/update',upd);
+    if(rr.me)me=rr.me; else me.name=tu.first_name;
    }catch(e){}
   }
   bootMsg('почти готово…');
@@ -987,7 +995,7 @@ function onboard(i){
  document.getElementById('main').innerHTML=`<div class="ob"><div style="flex:1;display:flex;flex-direction:column;justify-content:center"><div class="em">${em}</div><h2>${h}</h2><p>${p}</p></div><div class="dots">${OB.map((_,k)=>`<i class="${k===i?'on':''}"></i>`).join('')}</div><button class="btn" onclick="${i<OB.length-1?`onboard(${i+1})`:'finishOb()'}">${i<OB.length-1?'Дальше':'Начать'}</button>${i<OB.length-1?'<button class="btn ghost" onclick="finishOb()">Пропустить</button>':''}</div>`;
 }
 async function finishOb(){
- await db.from('users').update({onboarded:true}).eq('id',me.id);
+ await api('/api/me/update',{onboarded:true});
  me.onboarded=true;
  if(!me.has_phone&&!me.phone){phoneGate();return;}
  if(!me.city){cityGate();return;}
@@ -1047,7 +1055,7 @@ async function setCity(c){
  if(me.status==='online'&&isDrv()){
   if(!confirm('Вы на линии в городе '+me.city+'.\n\nСмена города переведёт вас в '+c+' — заявки будут приходить оттуда. Продолжить?'))return;
  }
- const{error}=await Q(db.from('users').update({city:c}).eq('id',me.id),'Не удалось сохранить город');
+ const _r=await api('/api/me/update',{city:c});const error=_r.error?{message:'Не удалось сохранить город'}:null;if(error)T('Не удалось сохранить город');
  if(error)return;
  me.city=c;closeSh();T('Город сохранён: '+c);
  if(!(await subGate()))return;
@@ -1076,13 +1084,13 @@ async function saveGate(){
  const n=document.getElementById('g1').value.trim(),p=document.getElementById('g2').value.trim();
  if(!n)return T('Введите имя');
  if(!phoneValid(p))return T('Номер должен содержать 11 цифр: +7 900 000-00-00');
- const{error}=await Q(db.from('users').update({name:n}).eq('id',me.id),'Не удалось сохранить');
+ const _r=await api('/api/me/update',{name:n});const error=_r.error?{message:'Не удалось сохранить'}:null;if(error)T('Не удалось сохранить');
  if(error)return;
  const r=await api('/api/set-phone',{phone:p});
  if(r.error){
   if(r.error==='bad_phone')return T('Введите корректный телефон');
   // запасной путь: пишем в старое поле, чтобы человек не застрял
-  const{error:e2}=await db.from('users').update({phone:p}).eq('id',me.id);
+  const _r2=await api('/api/me/update',{phone:p});const e2=_r2.error?{message:'Не удалось сохранить номер'}:null;
   if(e2){showErr('Телефон не сохранился. Причина: '+r.error+'. Сообщите администратору.');return;}
  }
  me.name=n;me.phone=p;me.has_phone=true;T('Спасибо!');
@@ -1971,7 +1979,7 @@ async function saveP(){
  const n=document.getElementById('f1').value.trim();if(!n)return T('Введите имя');
  const _ph=document.getElementById('f2').value.trim();
  const p={name:n,age:parseInt(document.getElementById('f3').value)||null};
- const{error}=await Q(db.from('users').update(p).eq('id',me.id),'Не удалось сохранить профиль');
+ const _r=await api('/api/me/update',p);const error=_r.error?{message:'Не удалось сохранить профиль'}:null;if(error)T('Не удалось сохранить профиль');
  if(error)return;
  if(_ph&&_ph!==me.phone){
   if(!phoneValid(_ph)){T('Номер должен содержать 11 цифр');return;}
