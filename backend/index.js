@@ -4,6 +4,8 @@ import { createClient } from '@supabase/supabase-js';
 
 const TOKEN   = process.env.BOT_TOKEN;
 const APP_URL = process.env.MINI_APP_URL;
+// метка версии: меняем при каждом обновлении, чтобы телефоны не держали старое в памяти
+const APP_VER = '110';
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
@@ -30,7 +32,7 @@ const send = (chat_id, text, extra = {}) =>
 function appUrl(s, u, extra) {
   const uid = u ? u.id : '';
   const nm = u && u.first_name ? encodeURIComponent(u.first_name) : '';
-  let url = `${APP_URL}?s=${s}&uid=${uid}&nm=${nm}`;
+  let url = `${APP_URL}?s=${s}&uid=${uid}&nm=${nm}&v=${APP_VER}`;
   if (extra) for (const [k, v] of Object.entries(extra)) url += `&${k}=${encodeURIComponent(v)}`;
   return url;
 }
@@ -67,7 +69,7 @@ async function setupBot() {
     { command: 'support', description: 'Связь с админом' }
   ]});
   if (APP_URL && APP_URL.startsWith('https'))
-    await tg('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Открыть', web_app: { url: APP_URL } } });
+    await tg('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Открыть', web_app: { url: `${APP_URL}?v=${APP_VER}` } } });
   console.log('bot commands set');
 }
 
