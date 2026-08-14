@@ -592,7 +592,7 @@ async function api(path,payload){
   const r=await fetch(API_BASE+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({initData},payload||{}))});
   const j=await r.json();
   if(r.status===403&&j.error==='banned'){document.body.innerHTML='<div style="color:#e2585a;padding:40px;font-family:Inter,sans-serif;text-align:center;line-height:1.7"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return{error:'banned'};}
-  if(r.status===429)return{error:'too_many'};
+  if(r.status===429){T('Слишком много действий подряд — подождите минуту');return{error:'too_many'};}
   if(!r.ok)return{error:j.error||'error'};
   return j;
  }catch(e){return{error:'network'};}
@@ -1994,7 +1994,7 @@ async function saveP(){
  const n=document.getElementById('f1').value.trim();if(!n)return T('Введите имя');
  const _ph=document.getElementById('f2').value.trim();
  const p={name:n,age:parseInt(document.getElementById('f3').value)||null};
- const _r=await api('/api/me/update',p);const error=_r.error?{message:'Не удалось сохранить профиль'}:null;if(error)T('Не удалось сохранить профиль');
+ const _r=await api('/api/me/update',p);const error=_r.error?{message:'Не удалось сохранить профиль'}:null;if(error&&_r.error!=='too_many')T('Не удалось сохранить профиль: '+_r.error);
  if(error)return;
  if(_ph&&_ph!==me.phone){
   if(!phoneValid(_ph)){T('Номер должен содержать 11 цифр');return;}

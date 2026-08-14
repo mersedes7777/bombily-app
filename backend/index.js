@@ -1543,14 +1543,15 @@ http.createServer(async (req, res) => {
   if (!me) return json(res, 401, { error: 'auth' });
   if (me.is_banned) return json(res, 403, { error: 'banned' });
 
-  // простая защита от спама: не больше 40 запросов в минуту с аккаунта
+  // защита от спама. лимит поднят: теперь через сервер идёт вся работа приложения,
+  // а не только админские операции, поэтому запросов от обычного человека много больше
   const rlKey = String(me.id);
   const nowMs = Date.now();
   const bucket = rateMap.get(rlKey) || { n: 0, t: nowMs };
   if (nowMs - bucket.t > 60000) { bucket.n = 0; bucket.t = nowMs; }
   bucket.n++;
   rateMap.set(rlKey, bucket);
-  if (bucket.n > 40) return json(res, 429, { error: 'too_many' });
+  if (bucket.n > 300) return json(res, 429, { error: 'too_many' });
 
   try {
     // --- покупка подписки (сам пользователь) ---
