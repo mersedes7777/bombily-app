@@ -1178,12 +1178,24 @@ async function runBroadcast(id) {
     const list = await audienceQuery(b.audience, b.city);
     await db.from('broadcasts').update({ total: list.length }).eq('id', id);
 
-    const kb = b.btn_text && b.btn_url
+    // если вместо адреса написано «app» — делаем кнопку, открывающую само приложение.
+    // так человек заходит изнутри телеграма и подтягивает свежую версию,
+    // не набирая /start вручную
+    const asApp = b.btn_text && String(b.btn_url || '').trim().toLowerCase() === 'app';
+    const kbFixed = b.btn_text && b.btn_url && !asApp
       ? { reply_markup: { inline_keyboard: [[{ text: b.btn_text, url: b.btn_url }]] } }
       : {};
 
     let sent = 0, failed = 0, blocked = 0;
     for (const u of list) {
+      // кнопку приложения собираем персонально: в ссылке нужен uid человека
+      const kb = asApp
+        ? { reply_markup: { inline_keyboard: [[{
+            text: b.btn_text,
+            web_app: { url: appUrl('home', { id: u.telegram_id, first_name: u.name }) }
+          }]] } }
+        : kbFixed;
+
       const r = await tg('sendMessage', {
         chat_id: u.telegram_id, text: b.text, parse_mode: 'HTML',
         disable_web_page_preview: true, ...kb
