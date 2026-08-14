@@ -1957,6 +1957,151 @@ http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, me: fresh });
     }
 
+    // --- действия с заявками, откликами и сменами ---
+    // фронтенд просит «сделай действие», а не «поменяй поле».
+    // сервер сам проверяет, что человек участник этой заявки.
+    if (req.url === '/api/action') {
+      const act = String(body.action || '');
+      const rideId = body.ride_id || null;
+      const nowIso = new Date().toISOString();
+
+      // достаём заявку и сразу проверяем, кто есть кто
+      let ride = null;
+      if (rideId) {
+        const { data } = await db.from('rides').select('*').eq('id', rideId).maybeSingle();
+        if (!data) return json(res, 404, { error: 'no_ride' });
+        ride = data;
+      }
+      const iAmPassenger = ride && String(ride.passenger_id) === String(me.id);
+      const iAmDriver    = ride && String(ride.driver_id)    === String(me.id);
+
+      // ---------- пассажир ----------
+      if (act === 'ride-create') {
+        const str = (v, n) => v === null || v === undefined ? null : String(v).trim().slice(0, n) || null;
+        const row = {
+          passenger_id: me.id,
+          passenger_name: me.name,
+          from_address: str(body.from_address, 200),
+          to_address:   str(body.to_address, 200),
+          status: 'created',
+          city: me.city,
+          comment: str(body.comment, 300),
+          passenger_price: body.passenger_price === null || body.passenger_price === undefined
+            ? null : Math.max(0, Math.min(100000, parseInt(body.passenger_price) || 0)),
+          kind: ['ride', 'delivery'].includes(body.kind) ? body.kind : 'ride',
+          to_city: str(body.to_city, 40),
+          scheduled_at: body.scheduled_at ? new Date(body.scheduled_at).toISOString() : null
+        };
+        if (body.target_driver_id) row.target_driver_id = String(body.target_driver_id);
+        const { data, error } = await db.from('rides').insert(row).select().single();
+        if (error) return json(res, 500, { error: 'create_failed' });
+        return json(res, 200, { ok: true, ride: data });
+      }
+
+      if (act === 'ride-pick-driver') {
+        if (!iAmPassenger) return json(res, 403, { error: 'not_yours' });
+        const price = body.price ? Math.max(0, Math.min(100000, parseInt(body.price) || 0)) : null;
+        await db.from('rides').update({
+          driver_id: String(body.driver_id), status: 'confirmed',
+          price, confirmed_at: nowIso
+        }).eq('id', ride.id);
+        if (body.offer_id) {
+          await db.from('offers').update({ status: body.offer_status || 'selected' }).eq('id', body.offer_id);
+          await db.from('offers').update({ status: 'declined' })
+            .eq('ride_id', ride.id).neq('id', body.offer_id);
+        }
+        return json(res, 200, { ok: true });
+      }
+
+      if (act === 'ride-cancel-passenger') {
+        if (!iAmPassenger) return json(res, 403, { error: 'not_yours' });
+        await db.from('rides').update({ status: 'cancelled_by_passenger_free' }).eq('id', ride.id);
+        return json(res, 200, { ok: true });
+      }
+
+      if (act === 'ride-drop-driver') {
+        if (!iAmPassenger) return json(res, 403, { error: 'not_yours' });
+        await db.from('rides').update({
+          driver_id: null, status: 'created', price: null, confirmed_at: null,
+          cancelled_by: 'driver', cancel_notified: false
+        }).eq('id', ride.id);
+        return json(res, 200, { ok: true });
+      }
+
+      // ---------- общее ----------
+      if (act === 'ride-complete') {
+        if (!iAmPassenger && !iAmDriver) return json(res, 403, { error: 'not_yours' });
+        await db.from('rides').update({ status: 'completed' }).eq('id', ride.id);
+        return json(res, 200, { ok: true });
+      }
+
+      // ---------- водитель ----------
+      if (act === 'offer-create') {
+        if (!ride) return json(res, 400, { error: 'no_ride' });
+        const price = Math.max(0, Math.min(100000, parseInt(body.price) || 0));
+        if (!price) return json(res, 400, { error: 'bad_price' });
+        const { error } = await db.from('offers').insert({
+          ride_id: ride.id, driver_id: me.id, driver_name: me.name,
+          car: me.car, price, eta_minutes: 5
+        });
+        if (error) return json(res, 500, { error: 'offer_failed' });
+        return json(res, 200, { ok: true });
+      }
+
+      if (act === 'offer-decline') {
+        const { data: of } = await db.from('offers').select('driver_id').eq('id', body.offer_id).maybeSingle();
+        if (!of || String(of.driver_id) !== String(me.id)) return json(res, 403, { error: 'not_yours' });
+        await db.from('offers').update({ status: 'declined' }).eq('id', body.offer_id);
+        return json(res, 200, { ok: true });
+      }
+
+      if (act === 'ride-arrived') {
+        if (!iAmDriver) return json(res, 403, { error: 'not_yours' });
+        await db.from('rides').update({ arrived: true }).eq('id', ride.id);
+        return json(res, 200, { ok: true });
+      }
+
+      if (act === 'ride-cancel-driver') {
+        if (!iAmDriver) return json(res, 403, { error: 'not_yours' });
+        await db.from('rides').update({
+          status: 'created', driver_id: null,
+          cancelled_by: 'driver', cancel_notified: false
+        }).eq('id', ride.id);
+        await db.from('offers').update({ status: 'declined' })
+          .eq('ride_id', ride.id).eq('driver_id', me.id);
+        return json(res, 200, { ok: true });
+      }
+
+      // ---------- смены ----------
+      if (act === 'shift-open') {
+        const { data, error } = await db.from('shifts').insert({
+          driver_id: me.id, started_at: nowIso,
+          planned_end: body.planned_end ? new Date(body.planned_end).toISOString() : null
+        }).select().single();
+        if (error) return json(res, 500, { error: 'shift_failed' });
+        return json(res, 200, { ok: true, shift: data });
+      }
+
+      if (act === 'shift-close' || act === 'shift-extend') {
+        const { data: sh } = await db.from('shifts').select('driver_id').eq('id', body.shift_id).maybeSingle();
+        if (!sh || String(sh.driver_id) !== String(me.id)) return json(res, 403, { error: 'not_yours' });
+        if (act === 'shift-extend') {
+          await db.from('shifts').update({
+            planned_end: new Date(body.planned_end).toISOString()
+          }).eq('id', body.shift_id);
+        } else {
+          await db.from('shifts').update({
+            ended_at: nowIso,
+            minutes: Math.max(0, parseInt(body.minutes) || 0),
+            auto_closed: !!body.auto_closed
+          }).eq('id', body.shift_id);
+        }
+        return json(res, 200, { ok: true });
+      }
+
+      return json(res, 400, { error: 'unknown_action' });
+    }
+
     // --- админские операции (только staff) ---
     if (req.url === '/api/admin') {
       if (!isStaff(me)) return json(res, 403, { error: 'forbidden' });
