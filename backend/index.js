@@ -1461,6 +1461,76 @@ async function audit(me, action, tid, targetName, details) {
 }
 
 const rateMap = new Map();
+// безопасная вставка имени в сообщение (имя может содержать угловые скобки)
+function safeName(v) {
+  return String(v || '?').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ============ сторож: замечает накрутку и раздачу прав ============
+// раз в 5 минут смотрит, что изменилось. если что-то выбивается — пишет владельцу.
+let guardKnownStaff = null;     // кого знаем как персонал
+let guardLastAlert  = 0;        // чтобы не заваливать сообщениями
+
+async function guardCheck() {
+  try {
+    const since = new Date(Date.now() - 10 * 60000).toISOString();
+
+    // 1) наплыв новых пользователей
+    const { count: fresh } = await db.from('users')
+      .select('id', { count: 'exact', head: true }).gte('created_at', since);
+
+    // 2) наплыв заявок
+    const { count: freshRides } = await db.from('rides')
+      .select('id', { count: 'exact', head: true }).gte('created_at', since);
+
+    // 3) кто сейчас с правами
+    const { data: staff } = await db.from('users')
+      .select('id,name,telegram_id,staff_role').not('staff_role', 'is', null);
+    const now = new Map((staff || []).map(u => [String(u.id), u]));
+
+    const alerts = [];
+
+    if ((fresh || 0) >= 20)
+      alerts.push(`👥 За 10 минут завелось <b>${fresh}</b> новых пользователей — похоже на накрутку.`);
+
+    if ((freshRides || 0) >= 20)
+      alerts.push(`📋 За 10 минут создано <b>${freshRides}</b> заявок — похоже на накрутку.`);
+
+    // сравниваем состав персонала с прошлой проверкой
+    if (guardKnownStaff) {
+      for (const [id, u] of now) {
+        const was = guardKnownStaff.get(id);
+        if (!was) {
+          alerts.push(`🛑 Новые права: <b>${safeName(u.name)}</b> стал <b>${u.staff_role}</b> (ID ${u.telegram_id}).`);
+        } else if (was.staff_role !== u.staff_role) {
+          alerts.push(`🛑 Роль изменена: <b>${safeName(u.name)}</b> — было ${was.staff_role}, стало <b>${u.staff_role}</b>.`);
+        }
+      }
+      for (const [id, u] of guardKnownStaff) {
+        if (!now.has(id))
+          alerts.push(`⚠️ Права сняты: <b>${safeName(u.name)}</b> (был ${u.staff_role}).`);
+      }
+    }
+    guardKnownStaff = now;
+
+    if (!alerts.length) return;
+
+    // не чаще одного письма в 15 минут, чтобы не спамить
+    if (Date.now() - guardLastAlert < 15 * 60000) return;
+    guardLastAlert = Date.now();
+
+    await send(OWNER,
+      '🚨 <b>Похоже, что-то не так</b>\n\n' + alerts.join('\n\n') +
+      '\n\nЕсли это не вы — проверьте панель и напишите /backup, чтобы сохранить копию до изменений.'
+    );
+  } catch (e) {
+    console.error('guard', e.message);
+  }
+}
+
+setInterval(guardCheck, 5 * 60000);
+setTimeout(guardCheck, 20000);   // первый прогон вскоре после запуска — запомнить состав персонала
+
 // ============ ежедневная резервная копия ============
 // раз в сутки складываем все таблицы в один архив и шлём владельцу в Telegram.
 // это единственная копия — платных бэкапов на бесплатном тарифе нет.
