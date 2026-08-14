@@ -1531,6 +1531,11 @@ http.createServer(async (req, res) => {
     }).select().single();
 
     if (error) return json(res, 500, { error: 'register_failed' });
+
+    // временные метки приглашения больше не нужны
+    db.from('pending_refs').delete().eq('tg_id', tgUser.id).then(() => {}, () => {});
+    db.from('pending_src').delete().eq('tg', tgUser.id).then(() => {}, () => {});
+
     return json(res, 200, { ok: true, me: created });
   }
 
@@ -2001,10 +2006,15 @@ http.createServer(async (req, res) => {
       if (act === 'ride-pick-driver') {
         if (!iAmPassenger) return json(res, 403, { error: 'not_yours' });
         const price = body.price ? Math.max(0, Math.min(100000, parseInt(body.price) || 0)) : null;
-        await db.from('rides').update({
+        const upd = {
           driver_id: String(body.driver_id), status: 'confirmed',
           price, confirmed_at: nowIso
-        }).eq('id', ride.id);
+        };
+        // для заказа «на время» сбрасываем флаги напоминаний
+        if (body.reset_notify) {
+          upd.driver_notified = false; upd.remind_sent = false; upd.early_sent = false;
+        }
+        await db.from('rides').update(upd).eq('id', ride.id);
         if (body.offer_id) {
           await db.from('offers').update({ status: body.offer_status || 'selected' }).eq('id', body.offer_id);
           await db.from('offers').update({ status: 'declined' })

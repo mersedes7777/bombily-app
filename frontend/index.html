@@ -878,7 +878,7 @@ async function boot(){
   if(!data){
    let refBy=null;
    try{const{data:pr}=await db.from('pending_refs').select('*').eq('tg_id',tgId).maybeSingle();
-    if(pr&&pr.ref_code){const{data:inv}=await db.from('users').select('id').eq('ref_code',pr.ref_code).maybeSingle();if(inv)refBy=inv.id;await db.from('pending_refs').delete().eq('tg_id',tgId);}
+    if(pr&&pr.ref_code){const{data:inv}=await db.from('users').select('id').eq('ref_code',pr.ref_code).maybeSingle();if(inv)refBy=inv.id;}
    }catch(e){}
    let srcCode=null;
    try{
@@ -895,7 +895,7 @@ async function boot(){
     return;
    }
    data=r.me;
-   if(srcCode){try{await db.from('pending_src').delete().eq('tg',tgId);}catch(e){}}
+
   }
    me=data;
   // если имя в базе «Гость…» либо его испортили 14.08.26 — вернём настоящее из Telegram
@@ -1135,7 +1135,7 @@ async function restoreD(){
  // смена закончилась по расписанию — закроем и покажем итог при заходе
  if(curShift&&curShift.planned_end&&new Date(curShift.planned_end)<new Date()){
   const end=new Date();const mins=Math.max(1,Math.round((end-new Date(curShift.started_at))/60000));
-  await db.from('shifts').update({ended_at:end.toISOString(),minutes:mins,auto_closed:true}).eq('id',curShift.id);
+  await api('/api/action',{action:'shift-close',shift_id:curShift.id,minutes:mins,auto_closed:true});
   await api('/api/me/update',{status:'offline'});
   me.status='offline';const st0=curShift.started_at;curShift=null;
   pendingShift={mins,from:st0,to:end};
@@ -1144,7 +1144,7 @@ async function restoreD(){
   const dur=Date.now()-new Date(curShift.started_at).getTime();
   if(dur>10*60*60*1000){
    const end=new Date();const mins=Math.round(dur/60000);
-   await db.from('shifts').update({ended_at:end.toISOString(),minutes:mins}).eq('id',curShift.id);
+   await api('/api/action',{action:'shift-close',shift_id:curShift.id,minutes:mins});
    await api('/api/me/update',{status:'offline'});
    me.status='offline';const st=curShift.started_at;curShift=null;
    pendingShift={mins,from:st,to:end};
@@ -1409,8 +1409,9 @@ async function _send(did){
  }
  const row={passenger_id:me.id,passenger_name:me.name,from_address:f,to_address:t,status:'created',city:me.city,comment:com||null,passenger_price:pp,kind:orderKind,to_city:toCity,scheduled_at:schedAt};
  if(did)row.target_driver_id=did;
- const{data,error}=await Q(db.from('rides').insert(row).select().single(),'Не удалось создать заявку');
- if(error)return;
+ const _rc=await api('/api/action',Object.assign({action:'ride-create'},row));
+ const data=_rc.ride||null;const error=_rc.error?{message:'Не удалось создать заявку'}:null;
+ if(error||!data){T('Не удалось создать заявку');return;}
  targetDrv=null;
  if(schedAt&&new Date(schedAt).getTime()-Date.now()>60*60*1000){
   planned.unshift(data);schedOn=false;watchPlanned();
@@ -1469,21 +1470,19 @@ function startCd(created){
  upd();cdTick=setInterval(upd,1000);
 }
 async function accept(oid,did,price){
- await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null,confirmed_at:new Date().toISOString()}).eq('id',active.id);
+ await api('/api/action',{action:'ride-pick-driver',ride_id:active.id,driver_id:did,price:price||null,offer_id:oid,offer_status:'selected'});
  active.status='confirmed';active.driver_id=did;subRide(active.id);watchCompletion();watchUnread(active.id);
- await db.from('offers').update({status:'selected'}).eq('id',oid);
- await db.from('offers').update({status:'declined'}).eq('ride_id',active.id).neq('id',oid);
  if(offCh){db.removeChannel(offCh);offCh=null;}
  active.status='confirmed';T('Водитель подтверждён');openRide();
 }
 async function cancelRide(){
  if(active.status==='confirmed'){await api('/api/me/update',{cancel_as_passenger:true});me.cancel_as_passenger=(me.cancel_as_passenger||0)+1;}
- await db.from('rides').update({status:'cancelled_by_passenger_free'}).eq('id',active.id);
+ await api('/api/action',{action:'ride-cancel-passenger',ride_id:active.id});
  if(offCh){db.removeChannel(offCh);offCh=null;}
  active=null;T('Заявка отменена');pGo('home');
 }
 async function doneRide(did,dn){
- await db.from('rides').update({status:'completed'}).eq('id',active.id);
+ await api('/api/action',{action:'ride-complete',ride_id:active.id});
  const rid=active.id;active=null;
  rateSheet(rid,did,dn);
 }
@@ -1836,7 +1835,7 @@ async function setRemind(v){
 }
 async function dropPlanned(id){
  if(!confirm('Отказаться от заказа? Пассажир останется без машины и будет искать другого водителя.'))return;
- await db.from('rides').update({driver_id:null,status:'created',price:null,confirmed_at:null,cancelled_by:'driver',cancel_notified:false}).eq('id',id);
+ await api('/api/action',{action:'ride-drop-driver',ride_id:id});
  dPlanned=dPlanned.filter(x=>x.id!==id);
  closeSh();T('Вы отказались от заказа');drawD();drawDPlanned();
 }
@@ -1880,10 +1879,8 @@ async function loadPlanOffers(r){
 }
 async function acceptPlan(offerId,did,price,rideId){
  return once('accplan', async()=>{
-  await db.from('rides').update({driver_id:did,status:'confirmed',price:price||null,
-   confirmed_at:new Date().toISOString(),driver_notified:false,remind_sent:false,early_sent:false}).eq('id',rideId);
-  await db.from('offers').update({status:'accepted'}).eq('id',offerId);
-  await db.from('offers').update({status:'declined'}).eq('ride_id',rideId).neq('id',offerId);
+  await api('/api/action',{action:'ride-pick-driver',ride_id:rideId,driver_id:did,price:price||null,
+   offer_id:offerId,offer_status:'accepted',reset_notify:true});
   const p=planned.find(x=>x.id===rideId);
   if(p){p.driver_id=did;p.status='confirmed';p.price=price;}
   closeSh();T('Водитель назначен — приедет к назначенному времени');drawP();
@@ -1891,7 +1888,7 @@ async function acceptPlan(offerId,did,price,rideId){
 }
 async function cancelPlanned(id){
  if(!confirm('Отменить предварительный заказ?'))return;
- await db.from('rides').update({status:'cancelled_by_passenger_free'}).eq('id',id);
+ await api('/api/action',{action:'ride-cancel-passenger',ride_id:id});
  planned=planned.filter(x=>x.id!==id);
  T('Заказ отменён');drawP();
 }
@@ -2197,7 +2194,7 @@ async function inbox(m){
  if(on&&!curShift){
   const{data:sh}=await db.from('shifts').select('*').eq('driver_id',me.id).is('ended_at',null).order('started_at',{ascending:false}).limit(1);
   if(sh&&sh.length)curShift=sh[0];
-  else{const{data:ns}=await Q(db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString()}).select().single(),'Не удалось открыть смену');if(ns)curShift=ns;}
+  else{const _rs2=await api('/api/action',{action:'shift-open'});if(_rs2.shift)curShift=_rs2.shift;}
  }
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  <div class="card" style="margin:0 14px 14px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'📍 '+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
@@ -2304,7 +2301,7 @@ async function syncOffs(){
 }
 setInterval(()=>{if(role==='driver'&&dTab==='inbox')syncOffs();},15000);
 async function pullOff(id){
- await db.from('offers').update({status:'declined'}).eq('id',id);
+ await api('/api/action',{action:'offer-decline',offer_id:id});
  myOffs=myOffs.filter(o=>o.id!==id);drawMyOffs();T('Предложение отозвано');
 }
 async function tglOn(){
@@ -2319,7 +2316,7 @@ async function tglOn(){
    if(inCh){db.removeChannel(inCh);inCh=null;}
    if(curShift){
      const end=new Date();const mins=Math.max(1,Math.round((end-new Date(curShift.started_at))/60000));
-     await Q(db.from('shifts').update({ended_at:end.toISOString(),minutes:mins}).eq('id',curShift.id),'Не удалось закрыть смену');
+     await api('/api/action',{action:'shift-close',shift_id:curShift.id,minutes:mins});
      const st=curShift.started_at;curShift=null;shiftDone(mins,st,end);
    }else{T('Вы вышли с линии');}
  }
@@ -2387,7 +2384,7 @@ async function startShift(){
  const _ro=await api('/api/me/update',{status:'online',last_active:1});const stE=_ro.error?{message:'Не удалось выйти на линию'}:null;if(stE)T('Не удалось выйти на линию');
  if(stE)return;
  me.status='online';
- const{data,error}=await Q(db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString(),planned_end:end?end.toISOString():null}).select().single(),'Не удалось открыть смену');
+ const _rs3=await api('/api/action',{action:'shift-open',planned_end:end?end.toISOString():null});const data=_rs3.shift||null;const error=_rs3.error?{message:'Не удалось открыть смену'}:null;if(error)T('Не удалось открыть смену');
  if(!error)curShift=data;
  closeSh();T(end?('Смена до '+end.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})):'Вы на линии');
  drawD();count();
@@ -2423,7 +2420,7 @@ async function extendShift(){
  if(total>=10){T('Смена уже максимальной длины — 10 часов');return;}
  const add=Math.min(2,10-total);
  const ne=new Date(cur.getTime()+add*3600000);
- const{error}=await Q(db.from('shifts').update({planned_end:ne.toISOString()}).eq('id',curShift.id),'Не удалось продлить');
+ const _rs4=await api('/api/action',{action:'shift-extend',shift_id:curShift.id,planned_end:ne.toISOString()});const error=_rs4.error?{message:'Не удалось продлить'}:null;if(error)T('Не удалось продлить');
  if(error)return;
  curShift.planned_end=ne.toISOString();
  T('Смена продлена до '+ne.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}));
@@ -2536,7 +2533,7 @@ async function offer(rid,fixed){
  const v=fixed||document.getElementById('p'+rid).value;
  if(!v)return T('Укажите цену');
  if(Number(v)<1||Number(v)>100000)return T('Проверьте цену');
- const{error}=await Q(db.from('offers').insert({ride_id:rid,driver_id:me.id,driver_name:me.name,car:me.car,price:Number(v),eta_minutes:5}),'Не удалось отправить цену');
+ const _ro2=await api('/api/action',{action:'offer-create',ride_id:rid,price:Number(v)});const error=_ro2.error?{message:'Не удалось отправить цену'}:null;if(error)T('Не удалось отправить цену');
  if(error)return;
  const{data:nofr}=await db.from('offers').select('*').eq('ride_id',rid).eq('driver_id',me.id).eq('status','pending').limit(1);
  if(nofr&&nofr.length)myOffs.unshift(nofr[0]);
@@ -2567,9 +2564,9 @@ async function dRide(m){
  loadRideContact(r.id,'пассажиру');
  if(!unreadPoll)watchUnread(r.id);
 }
-async function dArrived(){await Q(db.from('rides').update({arrived:true}).eq('id',dActive.id),'Не удалось отметить');dActive.arrived=true;T('Пассажиру ушло уведомление');dGo('ride');}
+async function dArrived(){await api('/api/action',{action:'ride-arrived',ride_id:dActive.id});dActive.arrived=true;T('Пассажиру ушло уведомление');dGo('ride');}
 async function dDone(){
- const r=dActive;await db.from('rides').update({status:'completed'}).eq('id',r.id);dActive=null;T('Поездка завершена');
+ const r=dActive;await api('/api/action',{action:'ride-complete',ride_id:r.id});dActive=null;T('Поездка завершена');
  rateSheet(r.id,r.passenger_id,r.passenger_name||'Пассажир','passenger',"dGo('inbox')");
 }
 function dCancel(){
@@ -2578,10 +2575,10 @@ function dCancel(){
  document.getElementById('device').appendChild(m);
 }
 async function dCancelYes(){
- await db.from('rides').update({status:'created',driver_id:null}).eq('id',dActive.id);
- await db.from('offers').update({status:'declined'}).eq('ride_id',dActive.id).eq('driver_id',me.id);
+ await api('/api/action',{action:'ride-cancel-driver',ride_id:dActive.id});
+
  await api('/api/me/update',{cancel_as_driver:true});me.cancel_as_driver=(me.cancel_as_driver||0)+1;
- await db.from('rides').update({cancelled_by:'driver',cancel_notified:false}).eq('id',dActive.id);
+
  dActive=null;closeSh();T('Вы отказались от заказа');dGo('inbox');
 }
 async function myRev(m){
