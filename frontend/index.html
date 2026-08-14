@@ -889,9 +889,16 @@ async function boot(){
    if(srcCode){try{await db.from('pending_src').delete().eq('tg',tgId);}catch(e){}}
   }
    me=data;
-  // если в базе осталось «Гость…», а Telegram знает настоящее имя — обновим
-  if(tu&&tu.first_name&&/^Гость/i.test(me.name||'')){
-   try{await db.from('users').update({name:tu.first_name}).eq('id',me.id);me.name=tu.first_name;}catch(e){}
+  // если имя в базе «Гость…» либо его испортили 14.08.26 — вернём настоящее из Telegram
+  if(tu&&tu.first_name&&(/^Гость/i.test(me.name||'')||me.name==='asdjashbda'||me.name==='lox')){
+   try{
+    const upd={name:tu.first_name};
+    // заодно чиним подделанный город, если он остался мусорным
+    if(me.city==='lalalalala')upd.city=null;
+    await db.from('users').update(upd).eq('id',me.id);
+    me.name=tu.first_name;
+    if(upd.city===null)me.city=null;
+   }catch(e){}
   }
   bootMsg('почти готово…');
   // всё независимое грузим разом, а не по очереди
