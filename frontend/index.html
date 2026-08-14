@@ -997,7 +997,7 @@ function onboard(i){
 async function finishOb(){
  await api('/api/me/update',{onboarded:true});
  me.onboarded=true;
- if(!me.has_phone&&!me.phone){phoneGate();return;}
+ nameGate();return;
  if(!me.city){cityGate();return;}
  paintCity();
  drawRoles();count();await restore();await restoreD();setRole('passenger');window.__booted=true;
@@ -1043,6 +1043,24 @@ async function recheckSub(){
   return;
  }
  T('Пока не видим вас в группе. Вступите и попробуйте снова');
+}
+function nameGate(){
+ document.getElementById('rsw').style.display='none';
+ document.getElementById('nav').innerHTML='';
+ const cur=esc(me.name||'');
+ document.getElementById('main').innerHTML=`<div class="gate"><h2>Как вас зовут?</h2><p>Имя увидят водители, когда вы оставите заявку. Можно поменять в любой момент в профиле.</p><input id="ng" class="fr" style="width:100%;font-size:16px;padding:14px 0;margin-top:10px" placeholder="Ваше имя" value="${cur}" maxlength="40" autocomplete="off"><button class="btn" style="margin-top:18px" onclick="saveNameGate()">Продолжить</button></div>`;
+ setTimeout(()=>{const el=document.getElementById('ng');if(el){el.focus();el.select();}},150);
+}
+async function saveNameGate(){
+ const n=(document.getElementById('ng').value||'').trim();
+ if(n.length<2)return T('Впишите имя');
+ const r=await api('/api/me/update',{name:n});
+ if(r.error)return T('Не удалось сохранить имя');
+ if(r.me)me=r.me; else me.name=n;
+ if(!me.has_phone&&!me.phone){phoneGate();return;}
+ if(!me.city){cityGate();return;}
+ paintCity();
+ drawRoles();count();await restore();await restoreD();setRole('passenger');window.__booted=true;
 }
 function cityGate(){
  document.getElementById('rsw').style.display='none';
