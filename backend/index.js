@@ -1501,6 +1501,39 @@ http.createServer(async (req, res) => {
   });
 
   const body = await readBody(req);
+
+  // --- регистрация: создаём пользователя на сервере, а не с фронтенда ---
+  if (req.url === '/api/me/register') {
+    const tgUser = verifyInitData(body.initData);
+    if (!tgUser) return json(res, 401, { error: 'bad_init' });
+
+    const { data: exist } = await db.from('users')
+      .select('*').eq('telegram_id', tgUser.id).maybeSingle();
+    if (exist) return json(res, 200, { ok: true, me: exist });
+
+    // кто пригласил — ищем по коду, если он был
+    let refBy = null;
+    if (body.ref_code) {
+      const { data: inv } = await db.from('users')
+        .select('id').eq('ref_code', String(body.ref_code).slice(0, 40)).maybeSingle();
+      if (inv) refBy = inv.id;
+    }
+
+    const name = String(tgUser.first_name || '').trim().slice(0, 60)
+      || ('Гость' + String(tgUser.id).slice(-3));
+
+    const { data: created, error } = await db.from('users').insert({
+      telegram_id: tgUser.id,
+      name,
+      tg_username: tgUser.username || null,
+      ref_by: refBy,
+      source: body.source ? String(body.source).slice(0, 40) : null
+    }).select().single();
+
+    if (error) return json(res, 500, { error: 'register_failed' });
+    return json(res, 200, { ok: true, me: created });
+  }
+
   const me = await userFromInit(body.initData || '');
   if (!me) return json(res, 401, { error: 'auth' });
   if (me.is_banned) return json(res, 403, { error: 'banned' });
@@ -1873,6 +1906,55 @@ http.createServer(async (req, res) => {
           { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
       } catch (e) { console.error('notifyStaff complaint', e.message); }
       return json(res, 200, { ok: true });
+    }
+
+    // --- обновление собственных данных (вместо прямой записи с фронтенда) ---
+    // личность подтверждена подписью Telegram, подделать её без токена бота нельзя.
+    // пишем ТОЛЬКО поля из белого списка и ТОЛЬКО в свою строку.
+    if (req.url === '/api/me/update') {
+      const ALLOWED = {
+        name:        v => String(v).trim().slice(0, 60),
+        phone:       v => {
+          const d = String(v || '').replace(/\D/g, '');
+          return d.length === 11 ? d : null;
+        },
+        has_phone:   () => true,
+        city:        v => v === null ? null : String(v).trim().slice(0, 60),
+        spot:        v => v === null ? null : String(v).trim().slice(0, 120),
+        age:         v => v === null ? null : Math.max(0, Math.min(120, parseInt(v) || 0)) || null,
+        status:      v => ['online', 'offline'].includes(v) ? v : 'offline',
+        onboarded:   v => !!v,
+        idle_warned: v => !!v,
+        delivery:    v => !!v,
+        intercity:   v => !!v,
+        favs:        v => Array.isArray(v) ? v.slice(0, 100).map(String) : [],
+        remind_before: v => Math.max(0, Math.min(1440, parseInt(v) || 0)),
+        avatar:      v => v === null ? null : String(v).slice(0, 300),
+        doc_license: v => v === null ? null : String(v).slice(0, 300),
+        doc_pts:     v => v === null ? null : String(v).slice(0, 300),
+        doc_car:     v => v === null ? null : String(v).slice(0, 300),
+        last_active: () => new Date().toISOString(),
+        cancel_as_passenger: () => null,
+        cancel_as_driver:    () => null
+      };
+
+      const upd = {};
+      Object.keys(body || {}).forEach(k => {
+        if (!ALLOWED[k]) return;              // всё лишнее молча отбрасываем
+        if (k === 'cancel_as_passenger' || k === 'cancel_as_driver') return;
+        upd[k] = ALLOWED[k](body[k]);
+      });
+
+      // счётчики отмен наращиваем сами, чтобы их нельзя было выставить руками
+      if (body.cancel_as_passenger === true) upd.cancel_as_passenger = (Number(me.cancel_as_passenger) || 0) + 1;
+      if (body.cancel_as_driver === true)    upd.cancel_as_driver    = (Number(me.cancel_as_driver) || 0) + 1;
+
+      if (!Object.keys(upd).length) return json(res, 200, { ok: true, me });
+
+      const { data: fresh, error } = await db.from('users')
+        .update(upd).eq('id', me.id).select().single();
+      if (error) return json(res, 500, { error: 'update_failed' });
+      return json(res, 200, { ok: true, me: fresh });
     }
 
     // --- админские операции (только staff) ---
