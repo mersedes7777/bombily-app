@@ -1100,7 +1100,7 @@ async function saveGate(){
 }
 setInterval(async()=>{
  if(me&&me.status==='online'){
-   await db.from('users').update({last_active:new Date().toISOString(),idle_warned:false}).eq('id',me.id);
+   await api('/api/me/update',{last_active:1,idle_warned:false});
  }
 },120000);
 async function count(){const{count:c}=await db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city||'');const e=document.getElementById('onl');if(e)e.textContent=c||0;}
@@ -1136,7 +1136,7 @@ async function restoreD(){
  if(curShift&&curShift.planned_end&&new Date(curShift.planned_end)<new Date()){
   const end=new Date();const mins=Math.max(1,Math.round((end-new Date(curShift.started_at))/60000));
   await db.from('shifts').update({ended_at:end.toISOString(),minutes:mins,auto_closed:true}).eq('id',curShift.id);
-  await db.from('users').update({status:'offline'}).eq('id',me.id);
+  await api('/api/me/update',{status:'offline'});
   me.status='offline';const st0=curShift.started_at;curShift=null;
   pendingShift={mins,from:st0,to:end};
  }
@@ -1145,7 +1145,7 @@ async function restoreD(){
   if(dur>10*60*60*1000){
    const end=new Date();const mins=Math.round(dur/60000);
    await db.from('shifts').update({ended_at:end.toISOString(),minutes:mins}).eq('id',curShift.id);
-   await db.from('users').update({status:'offline'}).eq('id',me.id);
+   await api('/api/me/update',{status:'offline'});
    me.status='offline';const st=curShift.started_at;curShift=null;
    pendingShift={mins,from:st,to:end};
   }
@@ -1311,7 +1311,7 @@ async function togFav(id){
  let F=favs();
  if(F.includes(id)){F=F.filter(x=>x!==id);T('Убрали из своих');}else{F.push(id);T('Добавили в свои');}
  me.favs=JSON.stringify(F);
- await db.from('users').update({favs:me.favs}).eq('id',me.id);
+ await api('/api/me/update',{favs:me.favs});
  if(pTab==='home')home(document.getElementById('main'));
  if(pTab==='favs')favsView(document.getElementById('main'));
 }
@@ -1477,7 +1477,7 @@ async function accept(oid,did,price){
  active.status='confirmed';T('Водитель подтверждён');openRide();
 }
 async function cancelRide(){
- if(active.status==='confirmed'){await db.from('users').update({cancel_as_passenger:(me.cancel_as_passenger||0)+1}).eq('id',me.id);me.cancel_as_passenger=(me.cancel_as_passenger||0)+1;}
+ if(active.status==='confirmed'){await api('/api/me/update',{cancel_as_passenger:true});me.cancel_as_passenger=(me.cancel_as_passenger||0)+1;}
  await db.from('rides').update({status:'cancelled_by_passenger_free'}).eq('id',active.id);
  if(offCh){db.removeChannel(offCh);offCh=null;}
  active=null;T('Заявка отменена');pGo('home');
@@ -1728,7 +1728,7 @@ async function loadDrvAvatars(ids){
  }catch(e){}
 }
 async function delAvatar(){
- const{error}=await db.from('users').update({avatar:null}).eq('id',me.id);
+ const _ra=await api('/api/me/update',{avatar:null});const error=_ra.error?{message:'ошибка'}:null;
  if(error)return T('Не удалось убрать');
  try{await db.storage.from('avatars').remove([me.id+'.jpg']);}catch(e){}
  me.avatar=null;T('Фото убрано');
@@ -1746,7 +1746,7 @@ function avatarMenu(){
  document.getElementById('device').appendChild(m);
 }
 async function removeAvatar(){
- const{error}=await db.from('users').update({avatar:null}).eq('id',me.id);
+ const _ra=await api('/api/me/update',{avatar:null});const error=_ra.error?{message:'ошибка'}:null;
  if(error)return T('Не удалось удалить');
  try{await db.storage.from('avatars').remove([me.id+'.jpg']);}catch(e){}
  me.avatar=null;closeSh();T('Фото удалено');
@@ -1828,7 +1828,7 @@ async function dPlanSheet(id){
  document.getElementById('device').appendChild(m);
 }
 async function setRemind(v){
- const{error}=await db.from('users').update({remind_before:v}).eq('id',me.id);
+ const _rb=await api('/api/me/update',{remind_before:v});const error=_rb.error?{message:'ошибка'}:null;
  if(error)return T('Не удалось сохранить');
  me.remind_before=v;
  T(v>=60?('Напомним за '+(v/60)+' ч'):('Напомним за '+v+' мин'));
@@ -1927,7 +1927,7 @@ function pickAvatar(){
    const{error}=await db.storage.from('avatars').upload(path,small,{upsert:true,contentType:'image/jpeg'});
    if(error){T('Не загрузилось: '+error.message);return;}
    const url=db.storage.from('avatars').getPublicUrl(path).data.publicUrl+'?t='+Date.now();
-   const{error:e2}=await db.from('users').update({avatar:url}).eq('id',me.id);
+   const _rc=await api('/api/me/update',{avatar:url});const e2=_rc.error?{message:'ошибка'}:null;
    if(e2){T('Не сохранилось');return;}
    me.avatar=url;
    T('Фото обновлено');
@@ -2061,7 +2061,7 @@ function pick(kind){
    if(error)throw error;
    const url=path;
    const col={license:'doc_license',pts:'doc_pts',car:'doc_car'}[kind];
-   await db.from('users').update({[col]:url}).eq('id',me.id);
+   await api('/api/me/update',{[col]:url});
    me[col]=url;markUp(n,url);T('Фото загружено');
   }catch(err){if(s)s.textContent='ошибка';T('Не удалось загрузить: '+err.message);}
  };
@@ -2311,7 +2311,7 @@ async function tglOn(){
  const s=me.status==='online'?'offline':'online';
  if(s==='online'&&SETTINGS.paid_mode&&!subActive()){subSheet();return;}
  if(s==='online'){shiftSheet();return;}
- const{error:stE}=await Q(db.from('users').update({status:s,last_active:new Date().toISOString()}).eq('id',me.id),'Не удалось сменить статус');
+ const _rs=await api('/api/me/update',{status:s,last_active:1});const stE=_rs.error?{message:'Не удалось сменить статус'}:null;if(stE)T('Не удалось сменить статус');
  if(stE)return;
  me.status=s;
  if(false){
@@ -2384,7 +2384,7 @@ async function startShift(){
   const hh2=window._shGet();
   end=hh2===0?null:new Date(Date.now()+hh2*3600000);
  }
- const{error:stE}=await Q(db.from('users').update({status:'online',last_active:new Date().toISOString()}).eq('id',me.id),'Не удалось выйти на линию');
+ const _ro=await api('/api/me/update',{status:'online',last_active:1});const stE=_ro.error?{message:'Не удалось выйти на линию'}:null;if(stE)T('Не удалось выйти на линию');
  if(stE)return;
  me.status='online';
  const{data,error}=await Q(db.from('shifts').insert({driver_id:me.id,started_at:new Date().toISOString(),planned_end:end?end.toISOString():null}).select().single(),'Не удалось открыть смену');
@@ -2436,7 +2436,7 @@ function setSpot(){
 }
 async function saveSpot(){
  const v=document.getElementById('sp').value.trim();
- await db.from('users').update({spot:v}).eq('id',me.id);me.spot=v;closeSh();T('Место обновлено');drawD();
+ await api('/api/me/update',{spot:v});me.spot=v;closeSh();T('Место обновлено');drawD();
 }
 async function load(){
  const cut=new Date(Date.now()-10*60000).toISOString();
@@ -2580,7 +2580,7 @@ function dCancel(){
 async function dCancelYes(){
  await db.from('rides').update({status:'created',driver_id:null}).eq('id',dActive.id);
  await db.from('offers').update({status:'declined'}).eq('ride_id',dActive.id).eq('driver_id',me.id);
- await db.from('users').update({cancel_as_driver:(me.cancel_as_driver||0)+1}).eq('id',me.id);me.cancel_as_driver=(me.cancel_as_driver||0)+1;
+ await api('/api/me/update',{cancel_as_driver:true});me.cancel_as_driver=(me.cancel_as_driver||0)+1;
  await db.from('rides').update({cancelled_by:'driver',cancel_notified:false}).eq('id',dActive.id);
  dActive=null;closeSh();T('Вы отказались от заказа');dGo('inbox');
 }
@@ -2741,13 +2741,13 @@ async function _saveCar(){
 }
 async function togIntercity(){
  const v=!me.intercity;
- const{error}=await Q(db.from('users').update({intercity:v}).eq('id',me.id),'Не удалось изменить');
+ const _ri=await api('/api/me/update',{intercity:v});const error=_ri.error?{message:'Не удалось изменить'}:null;if(error)T('Не удалось изменить');
  if(error)return;
  me.intercity=v;T(v?'Межгород включён — увидите заказы в другие города':'Межгород выключен — только поездки по городу');drawD();
 }
 async function togDelivery(){
  const v=!me.delivery;
- const{error}=await Q(db.from('users').update({delivery:v}).eq('id',me.id),'Не удалось изменить');
+ const _rd=await api('/api/me/update',{delivery:v});const error=_rd.error?{message:'Не удалось изменить'}:null;if(error)T('Не удалось изменить');
  if(error)return;
  me.delivery=v;T(v?'Доставка включена — придут и посылки, и пассажиры':'Доставка выключена — только обычные заказы');drawD();
 }
@@ -2755,7 +2755,7 @@ async function saveD(){
  const n=document.getElementById('d1').value.trim();if(!n)return T('Введите имя');
  const _ph=document.getElementById('d2').value.trim();
  const p={name:n,spot:document.getElementById('d3').value.trim()};
- await db.from('users').update(p).eq('id',me.id);
+ await api('/api/me/update',p);
  if(_ph&&_ph!==me.phone){
   if(!phoneValid(_ph)){T('Номер должен содержать 11 цифр');return;}
   const r=await api('/api/set-phone',{phone:phoneFmt(_ph)});
