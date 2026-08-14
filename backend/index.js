@@ -1,6 +1,7 @@
 import http from 'http';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import zlib from 'node:zlib';
 
 const TOKEN   = process.env.BOT_TOKEN;
 const APP_URL = process.env.MINI_APP_URL;
@@ -173,6 +174,19 @@ async function onUpdate(u) {
 
   // отмена режима ответа
   if (text === '/cancel') { await clearStaffReply(chat); return send(chat, 'Отменено.'); }
+
+  // копия базы по запросу — только владельцу
+  if (text === '/backup') {
+    if (chat !== OWNER) return;
+    await send(chat, '⏳ Собираю копию, это займёт полминуты…');
+    try {
+      const ok = await sendBackup(chat);
+      if (!ok) await send(chat, '❌ Не получилось отправить копию. Загляните в логи Railway.');
+    } catch (e) {
+      await send(chat, '❌ Ошибка при сборке копии: ' + e.message);
+    }
+    return;
+  }
 
   if (text === '/stop') {
     await db.from('users').update({ no_broadcast: true }).eq('telegram_id', chat);
@@ -1447,6 +1461,73 @@ async function audit(me, action, tid, targetName, details) {
 }
 
 const rateMap = new Map();
+// ============ ежедневная резервная копия ============
+// раз в сутки складываем все таблицы в один архив и шлём владельцу в Telegram.
+// это единственная копия — платных бэкапов на бесплатном тарифе нет.
+const BACKUP_TABLES = [
+  'users', 'contacts', 'rides', 'offers', 'reviews', 'messages', 'shifts',
+  'cars', 'complaints', 'payments', 'promos', 'sources', 'settings',
+  'cities', 'broadcasts', 'audit_log', 'support_msgs', 'admin_msgs',
+  'group_pins', 'winback_queue', 'reports', 'pending_refs', 'pending_src'
+];
+
+async function makeBackup() {
+  const dump = {};
+  let rows = 0;
+  for (const t of BACKUP_TABLES) {
+    try {
+      const { data, error } = await db.from(t).select('*').limit(50000);
+      if (error) { dump[t] = { error: error.message }; continue; }
+      dump[t] = data || [];
+      rows += (data || []).length;
+    } catch (e) {
+      dump[t] = { error: String(e.message || e) };
+    }
+  }
+  const json = JSON.stringify({ made_at: new Date().toISOString(), rows, tables: dump });
+  const gz = zlib.gzipSync(Buffer.from(json, 'utf8'), { level: 9 });
+  return { gz, rows, size: gz.length };
+}
+
+async function sendBackup(chatId) {
+  const { gz, rows, size } = await makeBackup();
+  const day = new Date().toISOString().slice(0, 10);
+  const mb = (size / 1048576).toFixed(2);
+
+  // телеграм не принимает файлы тяжелее 50 МБ
+  if (size > 49 * 1048576) {
+    await send(chatId, `⚠️ Копия слишком большая (${mb} МБ) — Telegram столько не примет.\nНужно выгружать частями, напишите разработчику.`);
+    return false;
+  }
+
+  const form = new FormData();
+  form.append('chat_id', String(chatId));
+  form.append('caption', `🗄 Копия базы за ${day}\nЗаписей: ${rows} · размер ${mb} МБ\n\nХраните файл в надёжном месте: внутри телефоны и переписка.`);
+  form.append('document', new Blob([gz], { type: 'application/gzip' }), `bombily-${day}.json.gz`);
+
+  const r = await fetch(API('sendDocument'), { method: 'POST', body: form });
+  const j = await r.json().catch(() => ({}));
+  if (!j.ok) console.error('backup send', j.description);
+  return !!j.ok;
+}
+
+// ждём 4 утра по местному времени
+function msUntilBackup() {
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(4, 0, 0, 0);
+  if (target <= now) target.setDate(target.getDate() + 1);
+  return target - now;
+}
+
+function scheduleBackup() {
+  setTimeout(async () => {
+    try { await sendBackup(OWNER); } catch (e) { console.error('backup', e.message); }
+    scheduleBackup();          // ставим следующую
+  }, msUntilBackup());
+}
+scheduleBackup();
+
 setInterval(() => { const t = Date.now(); for (const [k, v] of rateMap) if (t - v.t > 300000) rateMap.delete(k); }, 300000);
 
 function readBody(req) {
