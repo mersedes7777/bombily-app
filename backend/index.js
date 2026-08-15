@@ -1484,8 +1484,10 @@ async function guardCheck() {
       .select('id', { count: 'exact', head: true }).gte('created_at', since);
 
     // 3) кто сейчас с правами
+    // настоящие права — только эти три. 'none' и пустое значение правами не являются
+    const REAL_ROLES = ['owner', 'admin', 'moderator'];
     const { data: staff } = await db.from('users')
-      .select('id,name,telegram_id,staff_role').not('staff_role', 'is', null);
+      .select('id,name,telegram_id,staff_role').in('staff_role', REAL_ROLES);
     const now = new Map((staff || []).map(u => [String(u.id), u]));
 
     const alerts = [];
