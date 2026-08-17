@@ -784,6 +784,51 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);-webkit-box-shadow:0 0
  filter:saturate(.85);}
 .cityhead{padding-left:18px;}
 
+
+/* ================= ПАЛИТРЫ ================= */
+body[data-t="orange"]{
+  --bg:#0c0a08;--elev:#0c0a08;--surf:#171310;--card2:#1d1814;
+  --line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.12);
+  --ink:#fff;--dim:#978c81;--dim2:#6a6058;
+  --g:#ff8a2b;--g2:#e5731a;--gs:rgba(255,138,43,.13);
+  --am:#ffc44d;--gold:#ffc44d;--blue:#6fb0f0;--onac:#1a0d02;
+}
+body[data-t="light"]{
+  --bg:#f6f7f5;--elev:#f6f7f5;--surf:#ffffff;--card2:#f0f2ee;
+  --line:rgba(0,0,0,.08);--line2:rgba(0,0,0,.15);
+  --ink:#0e1411;--dim:#6b7570;--dim2:#98a09b;
+  --g:#12a854;--g2:#0d8f46;--gs:rgba(18,168,84,.12);
+  --am:#c98510;--gold:#d9a017;--blue:#2f7fd4;--onac:#fff;
+}
+body[data-t="mono"]{
+  --bg:#0a0a0b;--elev:#0a0a0b;--surf:#141416;--card2:#1a1a1d;
+  --line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.15);
+  --ink:#fff;--dim:#8e8e93;--dim2:#5f5f65;
+  --g:#ffffff;--g2:#e3e3e6;--gs:rgba(255,255,255,.1);
+  --am:#e8b84b;--gold:#e8b84b;--blue:#7aa7d8;--onac:#0a0a0b;
+}
+body[data-t="blue"]{
+  --bg:#070b12;--elev:#070b12;--surf:#0f1521;--card2:#141c2b;
+  --line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.13);
+  --ink:#fff;--dim:#8b96ab;--dim2:#5d6779;
+  --g:#3d8bfd;--g2:#2e74dd;--gs:rgba(61,139,253,.13);
+  --am:#eda13a;--gold:#e8b84b;--blue:#3d8bfd;--onac:#02101f;
+}
+.cta,.btn,.ra .acc,.pick,.sa .o{color:var(--onac,#04140a)!important;}
+.cta svg{stroke:var(--onac,#04140a);}
+.avcam svg{stroke:var(--onac,#04140a)!important;}
+body[data-t="light"] .device{background:var(--bg);}
+body[data-t="light"] .mask{background:rgba(20,24,22,.4);}
+body[data-t="light"] .pa,body[data-t="light"] .dcard .ava{background:#e7ebe6;}
+.themes{display:flex;gap:9px;flex-wrap:wrap;padding:14px 0 4px;}
+.thopt{flex:1;min-width:96px;border:1px solid var(--line2);border-radius:14px;padding:12px 10px;
+ background:var(--surf);cursor:pointer;font-family:Golos Text,sans-serif;font-size:13px;
+ color:var(--dim);display:flex;align-items:center;gap:9px;}
+.thopt.on{border-color:var(--g);color:var(--ink);background:var(--card2);}
+.thopt .sw{width:16px;height:16px;border-radius:6px;flex-shrink:0;
+ box-shadow:inset 0 0 0 1px rgba(255,255,255,.15);}
+.thhint{padding:8px 0 0;font-size:12px;color:var(--dim2);line-height:1.5;}
+
 </style>
 </head>
 <body>
@@ -1145,6 +1190,7 @@ async function boot(){
     if(rr.me)me=rr.me; else me.name=tu.first_name;
    }catch(e){}
   }
+  applyTheme(me.theme||'green');
   bootMsg('почти готово…');
   // всё независимое грузим разом, а не по очереди
   const [stR,,prR]=await Promise.allSettled([
@@ -1546,6 +1592,46 @@ async function home(m){
  if(!ds||!ds.length){l.innerHTML='<div class="empty"><b>В городе '+esc(me.city)+' сейчас никого нет</b>Как только водитель выйдет на линию — он появится здесь. Если тестируете сами: у водителя должен быть выбран тот же город и включён тумблер «на линии».</div>';return;}
  l.innerHTML=ds.map(d=>drvCard(d)).join('');
 }
+// ===== палитра приложения =====
+const THEMES=[
+ {id:'green', name:'Зелёная',     sw:'#2fd06f'},
+ {id:'orange',name:'Оранжевая',   sw:'#ff8a2b'},
+ {id:'light', name:'Светлая',     sw:'#f6f7f5'},
+ {id:'mono',  name:'Чёрно-белая', sw:'#ffffff'},
+ {id:'blue',  name:'Синяя',       sw:'#3d8bfd'}
+];
+function themeName(id){const t=THEMES.find(x=>x.id===id);return t?t.name:'Зелёная';}
+function applyTheme(t){
+ const ok=THEMES.some(x=>x.id===t)?t:'green';
+ if(ok==='green')document.body.removeAttribute('data-t');
+ else document.body.setAttribute('data-t',ok);
+ try{localStorage.setItem('bmb_theme',ok);}catch(e){}
+ try{
+  const bg=getComputedStyle(document.body).getPropertyValue('--bg').trim();
+  if(window.Telegram&&Telegram.WebApp){
+   if(Telegram.WebApp.setBackgroundColor)Telegram.WebApp.setBackgroundColor(bg);
+   if(Telegram.WebApp.setHeaderColor)Telegram.WebApp.setHeaderColor(bg);
+  }
+ }catch(e){}
+}
+try{const t0=localStorage.getItem('bmb_theme');if(t0)applyTheme(t0);}catch(e){}
+async function setTheme(t){
+ applyTheme(t);
+ if(window.me)me.theme=t;
+ themeSheet();
+ const r=await api('/api/me/update',{theme:t});
+ if(r.error)T('Цвет применён только на этом телефоне');
+ else if(r.me)me=r.me;
+}
+function themeSheet(){
+ const cur=(window.me&&me.theme)||'green';
+ const opts=THEMES.map(t=>'<button class="thopt '+(t.id===cur?'on':'')+'" onclick="setTheme(\''+t.id+'\')">'+
+   '<span class="sw" style="background:'+t.sw+'"></span>'+t.name+'</button>').join('');
+ sheet('<h3>Цвет приложения</h3><div class="s">Выбор сохранится и на других устройствах</div>'+
+  '<div class="themes">'+opts+'</div>'+
+  '<div class="thhint">Светлая удобна днём, но ночью за рулём слепит — водителям лучше тёмная.</div>'+
+  '<div class="sa"><button class="c" onclick="closeSheet()">Готово</button></div>');
+}
 function drvCard(d){
  const on=favs().includes(d.id);
  const ICO={
@@ -1928,7 +2014,7 @@ async function openRideFrom(id){
 async function markRevSeen(){unreadRev=0;}
 function profHTML(){
  const act=active?`<div class="act-card" onclick="openRide()"><div class="ava" style="width:36px;height:36px;font-size:14px;border-radius:11px">${active.status==='confirmed'?'🚗':'⏳'}</div><div class="t"><b>${active.status==='confirmed'?(active.arrived?'Водитель на месте':'Водитель едет к вам'):'Заявка активна'}</b><span>${esc(active.to_address)}</span></div><span class="go">Открыть ›</span></div>`:'';
- return `${act}<div class="ph"><div class="pawrap"><div class="pa avedit" onclick="avatarMenu()">${me.avatar?`<img src="${esc(me.avatar)}" alt="">`:(esc(me.name)[0]||'?')}</div><span class="avcam" onclick="avatarMenu()"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:#04140a;fill:none;stroke-width:1.9"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg></span></div>${me.avatar?'<div class="avdel" onclick="delAvatar()">убрать фото</div>':''}<div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
+ return `${act}<div class="ph"><div class="pawrap"><div class="pa avedit" onclick="avatarMenu()">${me.avatar?`<img src="${esc(me.avatar)}" alt="">`:(esc(me.name)[0]||'?')}</div><span class="avcam" onclick="avatarMenu()"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:#04140a;fill:none;stroke-width:1.9"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.2"/></svg></span></div>${me.avatar?'<div class="avdel" onclick="delAvatar()">убрать фото</div>':''}<div class="pn">${esc(me.name)}</div><div class="pr">${isDrv()?'Водитель':'Пассажир'} · ⭐ ${me.rating||5}</div><div class="pr" style="margin-top:2px">${cancelTxt(me.cancel_as_passenger)}${isDrv()?' · '+refuseTxt(me.cancel_as_driver):''}</div></div><div class="fl"><div class="fr"><label>Имя</label><input id="f1" value="${esc(me.name)}"></div><div class="fr"><label>Телефон</label><input id="f2" value="${esc(me.phone)}" inputmode="tel" placeholder="+7 (900) 000-00-00" maxlength="18" oninput="maskPhone(this)"></div><div class="fr"><label>Возраст (не обязательно)</label><input id="f3" value="${me.age||''}" inputmode="numeric"></div><div class="fr" onclick="cityPick()"><label>Город</label><div style="font-size:15px;font-weight:500">${esc(me.city)} <span style="color:var(--g);font-size:12px">· изменить</span></div></div></div><div class="sv"><button class="btn" onclick="saveP()">Сохранить</button></div><div class="ml">${me.driver_status==='pending'?'<div class="mi" style="color:var(--am)"><span>Заявка в водители на проверке ⏳</span></div>':(isDrv()?'':'<div class="mi" onclick="applyDrv()"><span>Стать бомбилой</span><span class="c">›</span></div>')}<div class="mi" onclick="themeSheet()"><span>Цвет приложения</span><span class="c">${themeName(me.theme)} ›</span></div><div class="mi" onclick="myReviews()"><span>Отзывы обо мне</span><span class="c">›</span></div>
  ${SETTINGS.community_enabled?'<div class="mi" onclick="communitySheet()"><span>Группа города</span><span class="c">›</span></div>':''}
  ${homeMenuItem()}
  <div class="mi" onclick="supportSheet()"><span>Связь с администрацией</span><span class="c">›</span></div></div>`;
