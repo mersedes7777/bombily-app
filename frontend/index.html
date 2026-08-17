@@ -720,6 +720,26 @@ nav{background:transparent;border-top:1px solid var(--line);padding:9px 6px calc
 .shift .clk{font-family:Golos Text,sans-serif;font-size:24px;font-weight:700;letter-spacing:-.02em;color:var(--g);flex-shrink:0;}
 .btn.ghost{height:48px;border-radius:14px;}
 
+
+/* поля ввода: текст должен быть хорошо виден */
+input,textarea,select{
+  color:var(--ink)!important;
+  font-family:Golos Text,system-ui,sans-serif;
+  font-size:16px;
+  caret-color:var(--g);
+  background:transparent;
+}
+input::placeholder,textarea::placeholder{color:var(--dim2);opacity:1;}
+input:-webkit-autofill{-webkit-text-fill-color:var(--ink);-webkit-box-shadow:0 0 0 60px var(--surf) inset;}
+.gate input,.fr input,.fr textarea{
+  color:var(--ink)!important;font-size:16px;font-weight:500;
+}
+.gate input{
+  width:100%;background:var(--surf);border:1px solid rgba(47,208,111,.45);
+  border-radius:15px;padding:16px;margin-top:6px;
+}
+.gate input:focus{border-color:var(--g);outline:none;}
+
 </style>
 </head>
 <body>
