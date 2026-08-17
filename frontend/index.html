@@ -827,8 +827,10 @@ body[data-t="light"] .pa,body[data-t="light"] .dcard .ava{background:#e7ebe6;}
  white-space:nowrap;}
 .thopt::after{content:'';margin-left:auto;width:18px;height:18px;border-radius:50%;
  border:1.5px solid var(--line2);flex-shrink:0;}
+.thopt.on{border-color:var(--g);color:var(--ink);background:var(--card2);}
 .thopt.on::after{border-color:var(--g);background:var(--g);
  box-shadow:inset 0 0 0 3.5px var(--surf);}
+.thopt .sw{box-shadow:inset 0 0 0 1px rgba(128,128,128,.35);}
 .thopt.on{border-color:var(--g);color:var(--ink);background:var(--card2);}
 .thopt .sw{width:22px;height:22px;border-radius:7px;flex-shrink:0;
  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);}
@@ -1604,8 +1606,8 @@ async function home(m){
 const THEMES=[
  {id:'green', name:'Зелёная',     sw:'#2fd06f'},
  {id:'orange',name:'Оранжевая',   sw:'#ff8a2b'},
- {id:'light', name:'Светлая',     sw:'#f6f7f5'},
- {id:'mono',  name:'Чёрно-белая', sw:'#ffffff'},
+ {id:'light', name:'Светлая',     sw:'linear-gradient(135deg,#ffffff 50%,#dfe3dd 50%)'},
+ {id:'mono',  name:'Чёрно-белая', sw:'linear-gradient(135deg,#f2f2f4 50%,#17171a 50%)'},
  {id:'blue',  name:'Синяя',       sw:'#3d8bfd'}
 ];
 function themeName(id){const t=THEMES.find(x=>x.id===id);return t?t.name:'Зелёная';}
@@ -1634,8 +1636,10 @@ async function setTheme(t){
   else drawP();
  }catch(e){}
  const r=await api('/api/me/update',{theme:t});
- if(r.error)T('Цвет применён только на этом телефоне');
- else if(r.me)me=r.me;
+ if(r.error){T('Цвет применён только на этом телефоне');return;}
+ if(r.me){me=r.me;}
+ // если сервер ещё не умеет хранить цвет — держим выбор у себя
+ if(!me.theme)me.theme=t;
 }
 function themeSheet(){
  const old=document.getElementById('sh');if(old)old.remove();
