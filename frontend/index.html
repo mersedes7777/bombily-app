@@ -1624,14 +1624,19 @@ async function setTheme(t){
  else if(r.me)me=r.me;
 }
 function themeSheet(){
+ const old=document.getElementById('sh');if(old)old.remove();
  const cur=(window.me&&me.theme)||'green';
  const opts=THEMES.map(t=>'<button class="thopt '+(t.id===cur?'on':'')+'" onclick="setTheme(\''+t.id+'\')">'+
    '<span class="sw" style="background:'+t.sw+'"></span>'+t.name+'</button>').join('');
- sheet('<h3>Цвет приложения</h3><div class="s">Выбор сохранится и на других устройствах</div>'+
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML='<div class="sheet"><h3>Цвет приложения</h3>'+
+  '<div class="s">Выбор сохранится и на других устройствах</div>'+
   '<div class="themes">'+opts+'</div>'+
   '<div class="thhint">Светлая удобна днём, но ночью за рулём слепит — водителям лучше тёмная.</div>'+
-  '<div class="sa"><button class="c" onclick="closeSheet()">Готово</button></div>');
+  '<div class="sa"><button class="c" onclick="closeSh()">Готово</button></div></div>';
+ document.getElementById('device').appendChild(m);
 }
+
 function drvCard(d){
  const on=favs().includes(d.id);
  const ICO={
