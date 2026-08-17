@@ -778,6 +778,12 @@ input:-webkit-autofill{-webkit-text-fill-color:var(--ink);-webkit-box-shadow:0 0
 .ii{flex-shrink:0;}
 .avcam{display:flex;align-items:center;justify-content:center;}
 
+
+/* значки в строках карточки — ровный размер и отступ */
+.emj{font-size:13px;line-height:1;width:16px;display:inline-flex;justify-content:center;flex-shrink:0;
+ filter:saturate(.85);}
+.cityhead{padding-left:18px;}
+
 </style>
 </head>
 <body>
@@ -1508,7 +1514,6 @@ const pGo=t=>{pTab=t;drawP();};
 
 async function home(m){
  m.innerHTML=`<div class="cityhead">
-  <span class="cp"><svg viewBox="0 0 24 24"><path d="M12 21.5s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11Z"/><circle cx="12" cy="10.4" r="2.6"/></svg></span>
   <div><h1>${esc(me.city)||'Город не выбран'}</h1><div class="cs"><span class="bpx"></span>Вы в сети</div></div>
   <div class="cchip"><div class="n"><span class="bpx"></span><span id="c1">…</span></div><div class="l">на линии</div></div>
  </div>
@@ -1555,12 +1560,12 @@ function drvCard(d){
   <div class="ava" onclick="pickDriver('${d.id}')">${d.avatar?`<img src="${esc(d.avatar)}" alt="">`:(esc(d.name)[0]||'?')}${d.status==='online'?'<span class="onx"></span>':''}</div>
   <div class="info" onclick="pickDriver('${d.id}')">
    <div class="nmx">${esc(d.name)||'Без имени'}</div>
-   <div class="row">${ICO.car}<span class="car">${carTxt}</span>${d.city&&d.city!==me.city?`<span class="plate" style="border:1px solid var(--am);color:var(--am)">${esc(d.city)}</span>`:''}</div>
-   ${spot?`<div class="row">${ICO.pin}стоит: <em>${spot}</em></div>`:''}
+   <div class="row"><span class="emj">${d.vehicle_type==='moto'?'🏍':'🚗'}</span><span class="car">${carTxt}</span>${d.city&&d.city!==me.city?`<span class="plate" style="border:1px solid var(--am);color:var(--am)">${esc(d.city)}</span>`:''}</div>
+   ${spot?`<div class="row"><span class="emj">📍</span>стоит: <em>${spot}</em></div>`:''}
    ${d.vehicle_type==='moto'
-     ?`<div class="row dl">${ICO.box}только доставка</div>`
-     :(d.delivery?`<div class="row dl">${ICO.box}берёт доставку</div>`:'')}
-   ${d.intercity?`<div class="row">${ICO.road}возит в другие города</div>`:''}
+     ?`<div class="row dl"><span class="emj">📦</span>только доставка</div>`
+     :(d.delivery?`<div class="row dl"><span class="emj">📦</span>берёт доставку</div>`:'')}
+   ${d.intercity?`<div class="row"><span class="emj">🛣</span>возит в другие города</div>`:''}
    ${d.status!=='online'?'<div class="row">сейчас оффлайн</div>':''}
   </div>
   <div class="dright">
