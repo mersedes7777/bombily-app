@@ -45,7 +45,7 @@ window.__libReady = (function(){
 })();
 </script>
 <style>
-:root{--bg:#080c0a;--elev:#080c0a;--surf:#121714;--card2:#171e19;--line:rgba(255,255,255,.06);--line2:rgba(255,255,255,.11);--ink:#ffffff;--dim:#8b948f;--dim2:#5e6763;--g:#2fd06f;--g2:#25b45e;--gs:rgba(47,208,111,.12);--am:#eda13a;--gold:#e8b84b;--blue:#5aa9f0;--red:#e2585a;--sh:none;}
+:root{--bg:#080c0a;--elev:#080c0a;--surf:#121714;--card2:#171e19;--line:rgba(255,255,255,.06);--line2:rgba(255,255,255,.11);--ink:#ffffff;--dim:#8b948f;--dim2:#5e6763;--g:#2bbd66;--g2:#22a256;--gs:rgba(47,208,111,.12);--am:#eda13a;--gold:#e8b84b;--blue:#5aa9f0;--red:#e2585a;--sh:none;}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;}
 body{background:#070a09;font-family:Golos Text,sans-serif;color:var(--ink);display:flex;justify-content:center;}
@@ -592,7 +592,7 @@ body{background:var(--bg);font-family:Golos Text,system-ui,sans-serif;-webkit-fo
 /* кнопки */
 .hero{padding:0 18px;}
 .cta{width:100%;margin-top:14px;height:62px;border:none;border-radius:17px;box-shadow:none;
- background:linear-gradient(180deg,var(--g),var(--g2));color:#04140a;
+ background:var(--g);color:#04140a;
  font-family:Golos Text,sans-serif;font-size:15.5px;font-weight:700;letter-spacing:0;text-transform:none;
  display:flex;align-items:center;justify-content:space-between;padding:0 22px;
  transition:transform .15s cubic-bezier(.2,.8,.2,1);}
@@ -790,29 +790,29 @@ body[data-t="orange"]{
   --bg:#0c0a08;--elev:#0c0a08;--surf:#171310;--card2:#1d1814;
   --line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.12);
   --ink:#fff;--dim:#978c81;--dim2:#6a6058;
-  --g:#ff8a2b;--g2:#e5731a;--gs:rgba(255,138,43,.13);
-  --am:#ffc44d;--gold:#ffc44d;--blue:#6fb0f0;--onac:#1a0d02;
+  --g:#e07a2b;--g2:#c56520;--gs:rgba(224,122,43,.12);
+  --am:#e0a94a;--gold:#e0a94a;--blue:#6a9fd8;--onac:#1a0d02;
 }
 body[data-t="light"]{
-  --bg:#f6f7f5;--elev:#f6f7f5;--surf:#ffffff;--card2:#f0f2ee;
+  --bg:#f1f3f0;--elev:#f1f3f0;--surf:#fbfcfa;--card2:#e9ece7;
   --line:rgba(0,0,0,.08);--line2:rgba(0,0,0,.15);
   --ink:#0e1411;--dim:#6b7570;--dim2:#98a09b;
-  --g:#12a854;--g2:#0d8f46;--gs:rgba(18,168,84,.12);
+  --g:#1a9b53;--g2:#158445;--gs:rgba(26,155,83,.11);
   --am:#c98510;--gold:#d9a017;--blue:#2f7fd4;--onac:#fff;
 }
 body[data-t="mono"]{
   --bg:#0a0a0b;--elev:#0a0a0b;--surf:#141416;--card2:#1a1a1d;
   --line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.15);
   --ink:#fff;--dim:#8e8e93;--dim2:#5f5f65;
-  --g:#ffffff;--g2:#e3e3e6;--gs:rgba(255,255,255,.1);
+  --g:#dcdce0;--g2:#c4c4c9;--gs:rgba(255,255,255,.08);
   --am:#e8b84b;--gold:#e8b84b;--blue:#7aa7d8;--onac:#0a0a0b;
 }
 body[data-t="blue"]{
   --bg:#070b12;--elev:#070b12;--surf:#0f1521;--card2:#141c2b;
   --line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.13);
   --ink:#fff;--dim:#8b96ab;--dim2:#5d6779;
-  --g:#3d8bfd;--g2:#2e74dd;--gs:rgba(61,139,253,.13);
-  --am:#eda13a;--gold:#e8b84b;--blue:#3d8bfd;--onac:#02101f;
+  --g:#4a85d6;--g2:#3a6fb8;--gs:rgba(74,133,214,.12);
+  --am:#d99a3f;--gold:#dfae4a;--blue:#4a85d6;--onac:#02101f;
 }
 .cta,.btn,.ra .acc,.pick,.sa .o{color:var(--onac,#04140a)!important;}
 .cta svg{stroke:var(--onac,#04140a);}
@@ -1190,7 +1190,10 @@ async function boot(){
     if(rr.me)me=rr.me; else me.name=tu.first_name;
    }catch(e){}
   }
-  applyTheme(me.theme||'green');
+  // если в базе пусто — берём то, что человек выбрал на этом телефоне
+  let _th=me.theme;
+  if(!_th){try{_th=localStorage.getItem('bmb_theme');}catch(e){}}
+  applyTheme(_th||'green');
   bootMsg('почти готово…');
   // всё независимое грузим разом, а не по очереди
   const [stR,,prR]=await Promise.allSettled([
