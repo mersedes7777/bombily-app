@@ -709,6 +709,17 @@ nav{background:transparent;border-top:1px solid var(--line);padding:9px 6px calc
 .stars span.on{color:var(--gold);}
 .plancard{background:var(--surf);border:none;border-radius:17px;box-shadow:none;}
 
+
+/* блок смены: строки не должны слипаться */
+.shift{background:var(--surf);border:1px solid rgba(47,208,111,.25);border-radius:17px;margin:0 18px 10px;padding:16px;
+ display:flex;align-items:center;gap:14px;}
+.shift .t{flex:1;min-width:0;}
+.shift .t b{display:block;font-family:Golos Text,sans-serif;font-size:16px;font-weight:600;}
+.shift .t span{display:block;font-size:12.5px;color:var(--dim);margin-top:3px;line-height:1.5;}
+.shift .t span#sleft{color:var(--am);margin-top:2px;}
+.shift .clk{font-family:Golos Text,sans-serif;font-size:24px;font-weight:700;letter-spacing:-.02em;color:var(--g);flex-shrink:0;}
+.btn.ghost{height:48px;border-radius:14px;}
+
 </style>
 </head>
 <body>
