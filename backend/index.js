@@ -1428,6 +1428,81 @@ async function fetchAvatar(userId) {
     return { path, why: null };
   } catch (e) { return { path: null, why: 'сбой: ' + e.message }; }
 }
+/* ============ права персонала по разделам ============
+   владелец может всё и всегда.
+   у остальных — только то, что выдано галочками в панели. */
+const PERM_GROUPS = {
+  users:      'Люди: поиск, телефоны, пометки, бан',
+  drivers:    'Водители: машины и допуск на линию',
+  rides:      'Заявки: просмотр и вмешательство',
+  complaints: 'Жалобы',
+  support:    'Поддержка: переписка с людьми',
+  broadcast:  'Рассылка по боту',
+  promos:     'Промокоды',
+  balance:    'Баланс и подписки',
+  refs:       'Рефералка и метки источников',
+  cities:     'Города и ссылки на группы',
+  settings:   'Общие настройки',
+  stats:      'Отчёты и статистика',
+  audit:      'Журнал действий'
+};
+
+// какое действие к какому разделу относится
+const ACT_PERM = {
+  'user-search':'users','user-phone':'users','edit-user':'users','ban':'users',
+  'avatars':'users','avatar-fetch':'users','apps-phones':'users','activity':'users',
+  'admin-counts':'users','send-msg':'users',
+
+  'driver-status':'drivers','cars-pending':'drivers','cars-pending-list':'drivers',
+  'car-approve':'drivers','car-edit':'drivers','car-remove':'drivers',
+  'car-add-admin':'drivers','cars-of-user':'drivers','doc-urls':'drivers',
+
+  'rides-list':'rides','del-review':'rides',
+
+  'complaint-resolve':'complaints','resolve-complaint':'complaints',
+
+  'support-list':'support','support-answer':'support','support-hide':'support',
+  'support-count':'support','support-answered':'support',
+
+  'broadcast-send':'broadcast','broadcast-list':'broadcast','broadcast-count':'broadcast',
+  'winback':'broadcast','winback-list':'broadcast','winback-set':'broadcast',
+
+  'promo-create':'promos','create-promo':'promos','promo-list':'promos',
+  'promo-delete':'promos','delete-promo':'promos',
+
+  'adjust-balance':'balance',
+
+  'src-list':'refs','src-save':'refs','src-delete':'refs',
+
+  'city-list':'cities','city-save':'cities','city-delete':'cities','pin-now':'cities',
+
+  'settings-update':'settings','save-settings':'settings',
+
+  'stats':'stats','days-stats':'stats','rides-stats':'stats','drivers-stats':'stats',
+
+  'audit-list':'audit','audit-actors':'audit','audit-clear':'audit'
+};
+
+function isOwner(u) {
+  return u && (u.staff_role === 'owner' || String(u.telegram_id) === String(OWNER));
+}
+function permsOf(u) {
+  return Array.isArray(u && u.perms) ? u.perms : [];
+}
+function can(u, group) {
+  if (isOwner(u)) return true;
+  return permsOf(u).includes(group);
+}
+// назначать роли и раздавать права может только владелец
+const OWNER_ONLY = ['set-role', 'perms-set'];
+function canAct(u, act) {
+  if (isOwner(u)) return true;
+  if (OWNER_ONLY.includes(act)) return false;
+  const g = ACT_PERM[act];
+  if (!g) return true;               // действие без раздела — оставляем как было
+  return permsOf(u).includes(g);
+}
+
 const isStaff = u => u && ['owner', 'admin', 'moderator'].includes(u.staff_role);
 const isAdminUp = u => u && ['owner', 'admin'].includes(u.staff_role);
 
@@ -2003,6 +2078,14 @@ http.createServer(async (req, res) => {
     }
 
     // --- городское сообщество ---
+    if (req.url === '/api/my-perms') {
+      return json(res, 200, {
+        ok: true, owner: isOwner(me), role: me.staff_role || null,
+        perms: isOwner(me) ? Object.keys(PERM_GROUPS) : permsOf(me),
+        groups: PERM_GROUPS
+      });
+    }
+
     if (req.url === '/api/community') {
       try {
         const { data: st } = await db.from('settings').select('community_enabled').eq('id', 1).maybeSingle();
@@ -2339,7 +2422,45 @@ http.createServer(async (req, res) => {
       if (!isStaff(me)) return json(res, 403, { error: 'forbidden' });
       const act = body.action;
       const tid = body.target_id;
-      const iAmOwner = me.staff_role === 'owner' || String(me.telegram_id) === String(OWNER);
+      const iAmOwner = isOwner(me);
+
+      // проверка прав по разделам: чего не выдано — того нельзя
+      if (!canAct(me, act)) {
+        await audit({
+          actor_id: me.id, actor_name: me.name, actor_role: me.staff_role || 'staff',
+          action: 'отказано: ' + act, target_name: null,
+          details: 'нет права на раздел ' + (ACT_PERM[act] || 'владельца')
+        });
+        return json(res, 403, { error: 'no_perm', need: ACT_PERM[act] || 'owner' });
+      }
+
+// выдать или снять права разделов (только владелец)
+      if (act === 'perms-set') {
+        if (!iAmOwner) return json(res, 403, { error: 'forbidden' });
+        const list = Array.isArray(body.perms) ? body.perms.filter(x => PERM_GROUPS[x]) : [];
+        const { data: u } = await db.from('users').select('id,name,staff_role,telegram_id').eq('id', tid).maybeSingle();
+        if (!u) return json(res, 404, { error: 'no_user' });
+        if (isOwner(u)) return json(res, 400, { error: 'owner_untouchable' });
+        await db.from('users').update({ perms: list }).eq('id', u.id);
+        await audit({
+          actor_id: me.id, actor_name: me.name, actor_role: 'owner',
+          action: 'изменил права', target_id: u.id, target_name: u.name,
+          details: list.length ? list.map(k => PERM_GROUPS[k]).join(', ') : 'все права сняты'
+        });
+        return json(res, 200, { ok: true, perms: list });
+      }
+
+      // список разделов и текущие права человека
+      if (act === 'perms-get') {
+        if (!iAmOwner) return json(res, 403, { error: 'forbidden' });
+        const { data: u } = await db.from('users').select('id,name,staff_role,perms,telegram_id').eq('id', tid).maybeSingle();
+        if (!u) return json(res, 404, { error: 'no_user' });
+        return json(res, 200, {
+          ok: true, groups: PERM_GROUPS,
+          perms: Array.isArray(u.perms) ? u.perms : [],
+          owner: isOwner(u), name: u.name, role: u.staff_role
+        });
+      }
 
       // владельца нельзя трогать никому, кроме него самого
       let targetUser = null;
