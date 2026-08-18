@@ -4035,6 +4035,13 @@ async function finCities(c){
   <div class="obhint" style="padding:2px 0 12px">Поставьте <b>0</b>, чтобы сообщение оставалось в чате навсегда. Обычно хватает 60–120 секунд: подсказку успевают прочитать, и чат не засоряется.</div>
   <button class="btn" onclick="saveGroupTimers()">Сохранить время</button>
  </div>
+ <div class="head"><h2>Документы водителей</h2></div>
+ <div class="form">
+  <div class="fr"><label>Хранить после проверки, дней</label>
+   <input id="dkeep" type="number" min="1" max="90" value="${SETTINGS.docs_keep_days??3}"></div>
+  <div class="obhint" style="padding:2px 0 12px">Права и техпаспорт удаляются сами через указанный срок. В карточке водителя остаётся отметка: кто проверил и когда. Чем меньше срок — тем меньше риска, если базу попытаются украсть.</div>
+  <button class="btn" onclick="saveDocsKeep()">Сохранить срок</button>
+ </div>
  <div class="note" style="margin:10px 14px 14px">Работает независимо от приглашений — только в группах, чей ID указан ниже. В чужие группы бот не вмешивается, администраторов не трогает.</div>
 
  <div class="sec">Подписка на группу</div>
@@ -4085,6 +4092,13 @@ async function pinNow(){
  const r=await api('/api/admin',{action:'pin-now'});
  if(r.error)return T(r.error==='no_groups'?'Ни у одного города не указан ID группы':'Ошибка');
  T('Закреп обновлён');
+}
+async function saveDocsKeep(){
+ const d=Math.max(1,Math.min(90,parseInt(document.getElementById('dkeep').value)||3));
+ const r=await api('/api/admin',{action:'settings-update',fields:{docs_keep_days:d}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Не удалось сохранить');
+ if(r.settings)SETTINGS=r.settings; else SETTINGS.docs_keep_days=d;
+ T('Срок сохранён: '+d+' дн.');
 }
 async function saveGroupTimers(){
  const d=Math.max(0,Math.min(3600,parseInt(document.getElementById('gdel').value)||0));
@@ -4329,7 +4343,7 @@ async function loadDocs(userId,containerId){
   const k=sl.dataset.k;
   const url=r&&r.urls?r.urls[k]:null;
   sl.innerHTML=url?`<a href="${url}" target="_blank"><img src="${url}"></a>`
-   :'<div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">нет доступа</div>';
+   :'<div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;color:var(--dim2);font-size:10px;text-align:center;padding:4px"><span>документ удалён</span><span style="font-size:9px">после проверки</span></div>';
  });
 }
 async function loadPendingCars(){

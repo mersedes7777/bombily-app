@@ -1535,6 +1535,57 @@ async function guardCheck() {
 setInterval(guardCheck, 5 * 60000);
 setTimeout(guardCheck, 20000);   // первый прогон вскоре после запуска — запомнить состав персонала
 
+// ============ документы живут ограниченное время ============
+// после проверки фото хранится несколько дней и удаляется само.
+// в базе остаётся только отметка: кто проверил и когда.
+async function docsKeepDays() {
+  try {
+    const { data } = await db.from('settings').select('docs_keep_days').eq('id', 1).maybeSingle();
+    const n = data && data.docs_keep_days;
+    return Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : 3;
+  } catch (e) { return 3; }
+}
+
+// вытащить путь внутри хранилища из полной ссылки
+function storagePath(url, bucket) {
+  if (!url) return null;
+  const mark = '/object/public/' + bucket + '/';
+  const i = String(url).indexOf(mark);
+  if (i === -1) return null;
+  return decodeURIComponent(String(url).slice(i + mark.length).split('?')[0]);
+}
+
+async function wipeDocs() {
+  const nowIso = new Date().toISOString();
+  let wiped = 0;
+
+  try {
+    // машины
+    const { data: cars } = await db.from('cars')
+      .select('id,doc_pts,doc_license').lte('docs_wipe_at', nowIso).limit(200);
+    for (const c of cars || []) {
+      const paths = [storagePath(c.doc_pts, 'docs'), storagePath(c.doc_license, 'docs')].filter(Boolean);
+      if (paths.length) await db.storage.from('docs').remove(paths).catch(() => {});
+      await db.from('cars').update({ doc_pts: null, doc_license: null, docs_wipe_at: null }).eq('id', c.id);
+      wiped++;
+    }
+
+    // водители
+    const { data: us } = await db.from('users')
+      .select('id,doc_license,doc_pts,doc_car').lte('docs_wipe_at', nowIso).limit(200);
+    for (const u of us || []) {
+      const paths = [storagePath(u.doc_license, 'docs'), storagePath(u.doc_pts, 'docs'), storagePath(u.doc_car, 'docs')].filter(Boolean);
+      if (paths.length) await db.storage.from('docs').remove(paths).catch(() => {});
+      await db.from('users').update({ doc_license: null, doc_pts: null, doc_car: null, docs_wipe_at: null }).eq('id', u.id);
+      wiped++;
+    }
+  } catch (e) { console.error('wipeDocs', e.message); }
+
+  if (wiped) console.log('документы удалены у', wiped, 'записей');
+  setTimeout(wipeDocs, 60 * 60 * 1000);      // раз в час
+}
+setTimeout(wipeDocs, 90 * 1000);             // первый прогон вскоре после запуска
+
 // ============ ежедневная резервная копия ============
 // раз в сутки складываем все таблицы в один архив и шлём владельцу в Telegram.
 // это единственная копия — платных бэкапов на бесплатном тарифе нет.
@@ -2711,7 +2762,13 @@ http.createServer(async (req, res) => {
         const { data: c } = await db.from('cars').select('*').eq('id', body.car_id).maybeSingle();
         if (!c) return json(res, 404, { error: 'no_car' });
         // администратор мог поправить марку и номер
-        const upd2 = { approved: true };
+        const keepD = await docsKeepDays();
+        const upd2 = {
+          approved: true,
+          docs_checked_at: new Date().toISOString(),
+          docs_checked_by: me.name,
+          docs_wipe_at: new Date(Date.now() + keepD * 86400000).toISOString()
+        };
         if (body.brand) { upd2.brand = String(body.brand).slice(0, 60); c.brand = upd2.brand; }
         if (body.plate) { upd2.plate = String(body.plate).toUpperCase().slice(0, 15); c.plate = upd2.plate; }
         await db.from('cars').update(upd2).eq('id', c.id);
@@ -2852,7 +2909,7 @@ http.createServer(async (req, res) => {
       if (act === 'save-settings' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec'].forEach(k => {
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days'].forEach(k => {
           if (f[k] !== undefined) allowed[k] = f[k];
         });
         if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
@@ -3256,7 +3313,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
