@@ -883,7 +883,9 @@ function glog(msg) {
 }
 
 async function delLater(chatId, messageId, sec) {
-  setTimeout(() => { tg('deleteMessage', { chat_id: chatId, message_id: messageId }).catch(() => {}); }, sec * 1000);
+  const n = Number(sec);
+  if (!n || n <= 0) return;                    // 0 — сообщение остаётся навсегда
+  setTimeout(() => { tg('deleteMessage', { chat_id: chatId, message_id: messageId }).catch(() => {}); }, n * 1000);
 }
 
 async function groupSettings() {
@@ -931,7 +933,7 @@ async function onGroupMessage(m) {
         const r = await send(chatId,
           `👋 ${names.join(', ')}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте в боте — так быстрее и безопаснее.`,
           { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', url: `https://t.me/${BOT_USERNAME}` }]] } });
-        if (r && r.result) delLater(chatId, r.result.message_id, 120);
+        if (r && r.result) delLater(chatId, r.result.message_id, st.group_welcome_sec ?? 120);
       }
     }
     return;
@@ -969,7 +971,7 @@ async function onGroupMessage(m) {
   const txtReply = `🚗 ${name ? name + ', з' : 'З'}аказы принимаются только в боте Bombily.\n\nТам видно все свободные заявки, а поездка засчитается в ваш рейтинг. Договариваться в чате нельзя.`;
   const r = await send(chatId, isReply ? txtReply : txtOrder,
     { reply_markup: { inline_keyboard: [[{ text: isReply ? '🚗 Смотреть заявки' : '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] } });
-  if (r && r.result) delLater(chatId, r.result.message_id, 90);
+  if (r && r.result) delLater(chatId, r.result.message_id, st.group_del_sec ?? 90);
 }
 
 
@@ -2087,6 +2089,7 @@ http.createServer(async (req, res) => {
     if (req.url === '/api/me/update') {
       const ALLOWED = {
         name:        v => String(v).trim().slice(0, 60),
+        theme:       v => ['green','orange','light','mono','blue'].includes(v) ? v : 'green',
         phone:       v => {
           const d = String(v || '').replace(/\D/g, '');
           return d.length === 11 ? d : null;
@@ -2849,7 +2852,7 @@ http.createServer(async (req, res) => {
       if (act === 'save-settings' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours'].forEach(k => {
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec'].forEach(k => {
           if (f[k] !== undefined) allowed[k] = f[k];
         });
         if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
@@ -3253,7 +3256,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });

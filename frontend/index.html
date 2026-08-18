@@ -4025,7 +4025,16 @@ async function finCities(c){
    ? 'Сообщения вроде «кто свободен» удаляются, бот отвечает ссылкой на приложение.'
    : 'Выключено. Люди смогут договариваться о поездках прямо в чате, минуя приложение.'}</div></div><div class="tg ${SETTINGS.group_moderate?'on':''}" onclick="togGroup('group_moderate')"><b></b></div></div>
  <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Чистить «вступил / вышел»</div><div class="obhint">Служебные сообщения о входе и выходе удаляются сразу.</div></div><div class="tg ${SETTINGS.group_clean_service!==false?'on':''}" onclick="togGroup('group_clean_service')"><b></b></div></div>
- <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Приветствовать новичков</div><div class="obhint">Короткое приветствие с кнопкой на бота, само исчезает через две минуты.</div></div><div class="tg ${SETTINGS.group_welcome?'on':''}" onclick="togGroup('group_welcome')"><b></b></div></div>
+ <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Приветствовать новичков</div><div class="obhint">Короткое приветствие с кнопкой на бота.</div></div><div class="tg ${SETTINGS.group_welcome?'on':''}" onclick="togGroup('group_welcome')"><b></b></div></div>
+ <div class="head"><h2>Через сколько убирать сообщения бота</h2></div>
+ <div class="form">
+  <div class="fr"><label>Подсказка «заказывайте в боте», секунд</label>
+   <input id="gdel" type="number" min="0" max="3600" value="${SETTINGS.group_del_sec??90}"></div>
+  <div class="fr"><label>Приветствие новичкам, секунд</label>
+   <input id="gwel" type="number" min="0" max="3600" value="${SETTINGS.group_welcome_sec??120}"></div>
+  <div class="obhint" style="padding:2px 0 12px">Поставьте <b>0</b>, чтобы сообщение оставалось в чате навсегда. Обычно хватает 60–120 секунд: подсказку успевают прочитать, и чат не засоряется.</div>
+  <button class="btn" onclick="saveGroupTimers()">Сохранить время</button>
+ </div>
  <div class="note" style="margin:10px 14px 14px">Работает независимо от приглашений — только в группах, чей ID указан ниже. В чужие группы бот не вмешивается, администраторов не трогает.</div>
 
  <div class="sec">Подписка на группу</div>
@@ -4076,6 +4085,14 @@ async function pinNow(){
  const r=await api('/api/admin',{action:'pin-now'});
  if(r.error)return T(r.error==='no_groups'?'Ни у одного города не указан ID группы':'Ошибка');
  T('Закреп обновлён');
+}
+async function saveGroupTimers(){
+ const d=Math.max(0,Math.min(3600,parseInt(document.getElementById('gdel').value)||0));
+ const w=Math.max(0,Math.min(3600,parseInt(document.getElementById('gwel').value)||0));
+ const r=await api('/api/admin',{action:'settings-update',fields:{group_del_sec:d,group_welcome_sec:w}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Не удалось сохранить');
+ if(r.settings)SETTINGS=r.settings; else {SETTINGS.group_del_sec=d;SETTINGS.group_welcome_sec=w;}
+ T('Время сохранено');
 }
 async function togGroup(field){
  const v=!(field==='group_clean_service'?SETTINGS[field]!==false:SETTINGS[field]);
