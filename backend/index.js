@@ -287,8 +287,8 @@ async function onUpdate(u) {
 
       const busy = await driverStatusNow(drv);
       const car = drv.car || (drv.vehicle_type === 'moto' ? 'мотоцикл' : 'машина не указана');
-      const head = `🚗 <b>${esc(drv.name)}</b> · ⭐ ${Number(drv.rating || 5).toFixed(1)}\n${car}` +
-        (drv.spot ? `\n📍 Стоит: ${esc(drv.spot)}` : '');
+      const head = `🚗 <b>${safeName(drv.name)}</b> · ⭐ ${Number(drv.rating || 5).toFixed(1)}\n${car}` +
+        (drv.spot ? `\n📍 Стоит: ${safeName(drv.spot)}` : '');
 
       if (busy === 'offline')
         return send(chat, head + '\n\n⚫ Сейчас не на линии. Можно вызвать другого — откройте приложение.',
@@ -1245,10 +1245,10 @@ function driverCardText(d, state, reviews) {
              : '⚫ Не на линии';
 
   const lines = [
-    `🚗 <b>${esc(d.name || 'Водитель')}</b> · ⭐ ${rate}${cnt}`,
+    `🚗 <b>${safeName(d.name || 'Водитель')}</b> · ⭐ ${rate}${cnt}`,
     car
   ];
-  if (d.spot) lines.push(`📍 Стоит: ${esc(d.spot)}`);
+  if (d.spot) lines.push(`📍 Стоит: ${safeName(d.spot)}`);
   const extra = [];
   if (d.delivery) extra.push('берёт доставку');
   if (d.intercity) extra.push('возит в другие города');
