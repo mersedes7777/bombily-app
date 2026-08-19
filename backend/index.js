@@ -121,6 +121,34 @@ async function staffByTg(tgid) {
 }           // message_id у админа -> telegram_id пользователя
 
 async function onUpdate(u) {
+  // человек вступил в группу по ссылке — телеграм присылает это отдельным событием
+  if (u.chat_member) {
+    try {
+      const cm = u.chat_member;
+      const was = cm.old_chat_member && cm.old_chat_member.status;
+      const now = cm.new_chat_member && cm.new_chat_member.status;
+      const joined = now === 'member' && ['left', 'kicked'].includes(was);
+      if (!joined) return;
+
+      const who = cm.new_chat_member.user;
+      if (who.is_bot) return;
+
+      const city = await cityByGroup(cm.chat.id);
+      if (!city) return;
+
+      const st = await groupSettings();
+      if (!st.group_welcome) return;
+
+      const name = who.first_name || 'Гость';
+      glog(`${city.name}: вступил ${name}`);
+      const r = await send(cm.chat.id,
+        `👋 ${name}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте в боте — так быстрее и безопаснее.`,
+        { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', url: `https://t.me/${BOT_USERNAME}` }]] } });
+      if (r && r.result) delLater(cm.chat.id, r.result.message_id, st.group_welcome_sec ?? 120);
+    } catch (e) { glog('приветствие: ' + e.message); }
+    return;
+  }
+
   if (u.callback_query) {
     const cq = u.callback_query, chat = cq.from.id;
 
@@ -352,7 +380,12 @@ async function onUpdate(u) {
 let offset = 0;
 async function poll() {
   try {
-    const r = await fetch(API('getUpdates') + `?timeout=30&offset=${offset}`);
+    // chat_member нужен отдельно: без него телеграм не сообщает о людях,
+    // вступивших по ссылке-приглашению — а таких большинство
+    const allowed = encodeURIComponent(JSON.stringify([
+      'message', 'edited_message', 'callback_query', 'chat_member', 'my_chat_member'
+    ]));
+    const r = await fetch(API('getUpdates') + `?timeout=30&offset=${offset}&allowed_updates=${allowed}`);
     const j = await r.json();
     if (j.ok) for (const u of j.result) { offset = u.update_id + 1; await onUpdate(u); }
   } catch (e) { /* сеть моргнула — продолжаем */ }
