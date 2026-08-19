@@ -814,9 +814,37 @@ body[data-t="blue"]{
   --g:#4a85d6;--g2:#3a6fb8;--gs:rgba(74,133,214,.12);
   --am:#d99a3f;--gold:#dfae4a;--blue:#4a85d6;--onac:#02101f;
 }
-.cta,.btn,.ra .acc,.pick,.sa .o{color:var(--onac,#04140a)!important;}
-.cta svg{stroke:var(--onac,#04140a);}
+/* цвет «текста на зелёном» — только для сплошных кнопок.
+   у прозрачных фон обычный, там текст должен быть как везде */
+.cta:not(.ghost),.btn:not(.ghost):not(.dang),.ra .acc,.pick,.sa .o{color:var(--onac,#04140a)!important;}
+.cta:not(.ghost) svg{stroke:var(--onac,#04140a);}
 .avcam svg{stroke:var(--onac,#04140a)!important;}
+
+/* прозрачные и опасные кнопки */
+.btn.ghost,.cta.ghost{color:var(--ink)!important;background:transparent!important;
+ border:1px solid var(--line2)!important;}
+.btn.ghost svg,.cta.ghost svg{stroke:var(--ink)!important;}
+.btn.dang{color:var(--red)!important;background:transparent!important;
+ border:1px solid rgba(226,88,90,.35)!important;}
+.cta2{color:var(--ink)!important;}
+.cta2 .dic svg{stroke:var(--ink)!important;}
+.sa .c{color:var(--ink)!important;background:transparent!important;
+ border:1px solid var(--line2)!important;}
+.txtbtn,.second{color:var(--dim)!important;}
+
+/* галочка «водитель выехал» — контраст на любом фоне */
+.conf .ok{background:var(--g)!important;}
+.conf .ok svg{stroke:var(--onac,#06120b)!important;}
+
+/* значок непрочитанного на кнопке */
+.mbadge{background:var(--onac,#04140a);color:var(--g);}
+
+/* светлая тема: аватар и мелочи не должны сливаться */
+body[data-t="light"] .dbox .ava{background:var(--g);color:#fff;}
+body[data-t="light"] .fav{color:#c9cec7;}
+body[data-t="light"] .fav.on{color:var(--g);}
+body[data-t="light"] .plate{border-color:var(--line2);}
+body[data-t="mono"] .dbox .ava{background:var(--g);color:var(--onac);}
 body[data-t="light"] .device{background:var(--bg);}
 body[data-t="light"] .mask{background:rgba(20,24,22,.4);}
 body[data-t="light"] .pa,body[data-t="light"] .dcard .ava{background:#e7ebe6;}
