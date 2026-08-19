@@ -890,7 +890,7 @@ async function delLater(chatId, messageId, sec) {
 
 async function groupSettings() {
   try {
-    const { data } = await db.from('settings').select('group_moderate,group_clean_service,group_welcome').eq('id', 1).maybeSingle();
+    const { data } = await db.from('settings').select('group_moderate,group_clean_service,group_welcome,group_welcome_sec,group_del_sec').eq('id', 1).maybeSingle();
     return data || {};
   } catch (e) { return {}; }
 }
