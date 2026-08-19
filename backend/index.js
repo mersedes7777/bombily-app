@@ -276,6 +276,33 @@ async function onUpdate(u) {
     // реферальная ссылка: /start ref_CODE
     const parts = text.split(/\s+/);
     const param = parts[1] || '';
+
+    // вызов конкретного водителя из его карточки в группе: /start drv_UUID
+    if (param.startsWith('drv_')) {
+      const did = param.slice(4);
+      const { data: drv } = await db.from('users')
+        .select('id,name,car,vehicle_type,spot,rating,status,city')
+        .eq('id', did).eq('is_banned', false).maybeSingle();
+      if (!drv) return send(chat, 'Такого водителя не нашлось. Откройте приложение и выберите из списка.');
+
+      const busy = await driverStatusNow(drv);
+      const car = drv.car || (drv.vehicle_type === 'moto' ? 'мотоцикл' : 'машина не указана');
+      const head = `🚗 <b>${esc(drv.name)}</b> · ⭐ ${Number(drv.rating || 5).toFixed(1)}\n${car}` +
+        (drv.spot ? `\n📍 Стоит: ${esc(drv.spot)}` : '');
+
+      if (busy === 'offline')
+        return send(chat, head + '\n\n⚫ Сейчас не на линии. Можно вызвать другого — откройте приложение.',
+          { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', web_app: { url: appUrl('order', m.from) } }]] } });
+
+      if (busy === 'busy')
+        return send(chat, head + '\n\n🔴 Сейчас на заказе. Можно подождать или вызвать другого.',
+          { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', web_app: { url: appUrl('order', m.from) } }]] } });
+
+      return send(chat, head + '\n\n🟢 Свободен — можно вызывать.',
+        { reply_markup: { inline_keyboard: [[
+          { text: `🚖 Заказать у ${drv.name}`, web_app: { url: appUrl('order', m.from, { drv: drv.id }) } }
+        ]] } });
+    }
     if (param.startsWith('ref_')) {
       const code = param.slice(4).toUpperCase();
       try {
@@ -1194,6 +1221,125 @@ async function pinLoop() {
   setTimeout(pinLoop, mins * 60 * 1000);
 }
 
+
+/* ============ карточка водителя в группе города ============
+   водитель включает тумблер — его карточка появляется в чате.
+   раз в N минут публикуется заново (старая убирается),
+   между публикациями обновляется только статус: свободен / занят. */
+
+async function driverStatusNow(d) {
+  if (d.status !== 'online') return 'offline';
+  const { data: busy } = await db.from('rides')
+    .select('id').eq('driver_id', d.id).in('status', ['confirmed', 'in_progress']).limit(1);
+  return (busy && busy.length) ? 'busy' : 'free';
+}
+
+function driverCardText(d, state, reviews) {
+  const car = d.vehicle_type === 'moto'
+    ? (d.car ? d.car + ' · мотоцикл' : 'мотоцикл')
+    : (d.car || 'машина не указана');
+  const rate = Number(d.rating || 5).toFixed(1);
+  const cnt = reviews ? ` (${reviews} ${plural(reviews, ['отзыв', 'отзыва', 'отзывов'])})` : '';
+  const mark = state === 'free' ? '🟢 <b>Свободен</b>'
+             : state === 'busy' ? '🔴 <b>Занят</b> — сейчас на заказе'
+             : '⚫ Не на линии';
+
+  const lines = [
+    `🚗 <b>${esc(d.name || 'Водитель')}</b> · ⭐ ${rate}${cnt}`,
+    car
+  ];
+  if (d.spot) lines.push(`📍 Стоит: ${esc(d.spot)}`);
+  const extra = [];
+  if (d.delivery) extra.push('берёт доставку');
+  if (d.intercity) extra.push('возит в другие города');
+  if (extra.length) lines.push(extra.join(' · '));
+  lines.push('');
+  lines.push(mark);
+  return lines.join('\n');
+}
+
+function driverCardKb(d, state) {
+  if (state !== 'free') return {};
+  return { reply_markup: { inline_keyboard: [[
+    { text: `🚖 Вызвать ${d.name || 'водителя'}`, url: `https://t.me/${BOT_USERNAME}?start=drv_${d.id}` }
+  ]] } };
+}
+
+// сколько минут между публикациями
+async function dpostMinutes() {
+  try {
+    const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    const n = data && data.dpost_minutes;
+    return Number.isFinite(Number(n)) && Number(n) >= 5 ? Number(n) : 30;
+  } catch (e) { return 30; }
+}
+
+async function driverPostsLoop() {
+  try {
+    const everyMin = await dpostMinutes();
+    const { data: drivers } = await db.from('users')
+      .select('id,name,car,vehicle_type,spot,rating,city,status,delivery,intercity,show_in_group')
+      .eq('show_in_group', true).eq('is_banned', false);
+
+    for (const d of drivers || []) {
+      try {
+        const { data: city } = await db.from('cities')
+          .select('name,group_id').eq('name', d.city).maybeSingle();
+        if (!city || !city.group_id) continue;
+
+        const { data: post } = await db.from('driver_posts')
+          .select('*').eq('driver_id', d.id).maybeSingle();
+
+        const state = await driverStatusNow(d);
+
+        // ушёл с линии — карточку убираем
+        if (state === 'offline') {
+          if (post && post.message_id) {
+            await tg('deleteMessage', { chat_id: post.chat_id, message_id: post.message_id }).catch(() => {});
+            await db.from('driver_posts').delete().eq('driver_id', d.id);
+          }
+          continue;
+        }
+
+        const { count: reviews } = await db.from('reviews')
+          .select('id', { count: 'exact', head: true }).eq('driver_id', d.id);
+
+        const text = driverCardText(d, state, reviews || 0);
+        const kb = driverCardKb(d, state);
+        const nowMs = Date.now();
+        const lastMs = post && post.last_post_at ? new Date(post.last_post_at).getTime() : 0;
+        const needRepost = !post || !post.message_id || (nowMs - lastMs) >= everyMin * 60000;
+
+        if (needRepost) {
+          // публикуем заново, старую карточку убираем
+          if (post && post.message_id) {
+            await tg('deleteMessage', { chat_id: post.chat_id, message_id: post.message_id }).catch(() => {});
+          }
+          const r = await tg('sendMessage', {
+            chat_id: city.group_id, text, parse_mode: 'HTML',
+            disable_web_page_preview: true, ...kb
+          });
+          if (r && r.ok) {
+            await db.from('driver_posts').upsert({
+              driver_id: d.id, city: d.city, chat_id: city.group_id,
+              message_id: r.result.message_id,
+              last_post_at: new Date().toISOString(), last_status: state
+            });
+          }
+        } else if (post.last_status !== state) {
+          // между публикациями меняем только статус
+          const r = await tg('editMessageText', {
+            chat_id: post.chat_id, message_id: post.message_id,
+            text, parse_mode: 'HTML', disable_web_page_preview: true, ...kb
+          });
+          if (r && r.ok) await db.from('driver_posts').update({ last_status: state }).eq('driver_id', d.id);
+        }
+      } catch (e) { glog(`карточка ${d.name}: ${e.message}`); }
+    }
+  } catch (e) { console.error('driverPosts', e.message); }
+  setTimeout(driverPostsLoop, 60 * 1000);      // проверяем раз в минуту
+}
+setTimeout(driverPostsLoop, 45 * 1000);
 
 /* ================= рассылка ================= */
 
@@ -2260,6 +2406,7 @@ http.createServer(async (req, res) => {
       const ALLOWED = {
         name:        v => String(v).trim().slice(0, 60),
         theme:       v => ['green','orange','light','mono','blue'].includes(v) ? v : 'green',
+        show_in_group: v => !!v,
         phone:       v => {
           const d = String(v || '').replace(/\D/g, '');
           return d.length === 11 ? d : null;
@@ -3066,7 +3213,7 @@ http.createServer(async (req, res) => {
       if (act === 'save-settings' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days'].forEach(k => {
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes'].forEach(k => {
           if (f[k] !== undefined) allowed[k] = f[k];
         });
         if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
@@ -3470,7 +3617,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });

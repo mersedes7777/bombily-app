@@ -2608,6 +2608,10 @@ async function inbox(m){
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 18px 12px"><button class="btn ghost extbtn" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
  <div id="mo"></div>
  <div id="dplan"></div>
+ <div class="obar" style="margin-bottom:10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Показывать меня в группе</div>
+   <div class="obhint">В чате города появится ваша карточка: имя, машина, рейтинг и кнопка «Вызвать». Статус меняется сам — свободен или занят. Уйдёте с линии — карточка исчезнет.</div>
+  </div><div class="tg ${me.show_in_group?'on':''}" onclick="togShowGroup()"><b></b></div></div>
  <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
  drawDPlanned();
  drawMyOffs();syncOffs();
@@ -3142,6 +3146,14 @@ async function togIntercity(){
  const _ri=await api('/api/me/update',{intercity:v});const error=_ri.error?{message:'Не удалось изменить'}:null;if(error)T('Не удалось изменить');
  if(error)return;
  me.intercity=v;T(v?'Межгород включён — увидите заказы в другие города':'Межгород выключен — только поездки по городу');drawD();
+}
+async function togShowGroup(){
+ const v=!me.show_in_group;
+ const r=await api('/api/me/update',{show_in_group:v});
+ if(r.error)return T('Не удалось изменить');
+ if(r.me)me=r.me; else me.show_in_group=v;
+ T(v?'Карточка появится в группе в течение минуты':'Карточка убрана из группы');
+ drawD();
 }
 async function togDelivery(){
  const v=!me.delivery;
@@ -4094,6 +4106,13 @@ async function finCities(c){
   <div class="obhint" style="padding:2px 0 12px">Права и техпаспорт удаляются сами через указанный срок. В карточке водителя остаётся отметка: кто проверил и когда. Чем меньше срок — тем меньше риска, если базу попытаются украсть.</div>
   <button class="btn" onclick="saveDocsKeep()">Сохранить срок</button>
  </div>
+ <div class="head"><h2>Карточки водителей в группе</h2></div>
+ <div class="form">
+  <div class="fr"><label>Публиковать заново каждые, минут</label>
+   <input id="dpost" type="number" min="5" max="720" value="${SETTINGS.dpost_minutes??30}"></div>
+  <div class="obhint" style="padding:2px 0 12px">Водитель включает показ у себя в кабинете. Старая карточка убирается, чтобы чат не засорялся. Между публикациями обновляется только статус — свободен или занят.</div>
+  <button class="btn" onclick="saveDpost()">Сохранить</button>
+ </div>
  <div class="note" style="margin:10px 14px 14px">Работает независимо от приглашений — только в группах, чей ID указан ниже. В чужие группы бот не вмешивается, администраторов не трогает.</div>
 
  <div class="sec">Подписка на группу</div>
@@ -4144,6 +4163,13 @@ async function pinNow(){
  const r=await api('/api/admin',{action:'pin-now'});
  if(r.error)return T(r.error==='no_groups'?'Ни у одного города не указан ID группы':'Ошибка');
  T('Закреп обновлён');
+}
+async function saveDpost(){
+ const v=Math.max(5,Math.min(720,parseInt(document.getElementById('dpost').value)||30));
+ const r=await api('/api/admin',{action:'settings-update',fields:{dpost_minutes:v}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Не удалось сохранить');
+ if(r.settings)SETTINGS=r.settings; else SETTINGS.dpost_minutes=v;
+ T('Сохранено: каждые '+v+' мин');
 }
 async function saveDocsKeep(){
  const d=Math.max(1,Math.min(90,parseInt(document.getElementById('dkeep').value)||3));
