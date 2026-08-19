@@ -2618,6 +2618,8 @@ function drawD(){
  drawBar();
 }
 const dGo=t=>{dTab=t;drawD();};
+let dSetOpen=false;
+function togDSet(){dSetOpen=!dSetOpen;drawD();}
 async function inbox(m){
  const on=me.status==='online';
  if(on&&!curShift){
@@ -2626,6 +2628,14 @@ async function inbox(m){
   else{const _rs2=await api('/api/action',{action:'shift-open'});if(_rs2.shift)curShift=_rs2.shift;}
  }
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
+ ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 18px 12px"><button class="btn ghost extbtn" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
+
+ <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>
+ <div id="mo"></div>
+ <div id="dplan"></div>
+
+ <div class="head" style="padding-top:8px"><h2 onclick="togDSet()" style="cursor:pointer">Настройки смены <span style="color:var(--dim2);font-weight:400">${dSetOpen?'▲':'▼'}</span></h2></div>
+ ${dSetOpen?`
  <div class="card" style="margin:0 18px 10px" onclick="setSpot()"><div style="flex:1"><div class="nm">${me.spot?'<svg class="ii" viewBox="0 0 24 24"><path d="M12 21s-6-5.4-6-9.6a6 6 0 1 1 12 0C18 15.6 12 21 12 21Z"/><circle cx="12" cy="11" r="2.2"/></svg>'+esc(me.spot):'Где вы стоите?'}</div><div class="sub">${me.spot?'это видят пассажиры':'укажите место — так вас найдут быстрее'}</div></div><span class="go">${me.spot?'изменить':'указать'} →</span></div>
  ${me.vehicle_type==='moto'
   ? `<div class="motonote"><svg class="ii" viewBox="0 0 24 24"><circle cx="5.5" cy="17" r="3"/><circle cx="18.5" cy="17" r="3"/><path d="M8.5 17h7l-3-6h-3M14 8h3l1.5 3"/></svg>На мотоцикле · ${esc(me.car)||'мотоцикл'} — приходят только заказы на доставку</div>`
@@ -2633,14 +2643,10 @@ async function inbox(m){
   <button class="mode ${me.delivery?'on':''}" onclick="togDelivery()"><span class="mi2"><svg viewBox="0 0 24 24"><path d="M3.5 8.5 12 4l8.5 4.5v7L12 20l-8.5-4.5z"/><path d="M3.5 8.5 12 13l8.5-4.5M12 13v7"/></svg></span>Доставка<i>${me.delivery?'вкл':'выкл'}</i></button>
   <button class="mode ${me.intercity?'on':''}" onclick="togIntercity()"><span class="mi2"><svg viewBox="0 0 24 24"><path d="M6 3v18M18 3v18M12 4v3M12 10.5v3M12 17v3"/></svg></span>Межгород<i>${me.intercity?'вкл':'выкл'}</i></button>
  </div>`}
- ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 18px 12px"><button class="btn ghost extbtn" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
- <div id="mo"></div>
- <div id="dplan"></div>
  <div class="obar" style="margin-bottom:10px"><div style="flex:1;padding-right:10px">
    <div class="l">Показывать меня в группе</div>
-   <div class="obhint">В чате города появится ваша карточка: имя, машина, рейтинг и кнопка «Вызвать». Статус меняется сам — свободен или занят. Уйдёте с линии — карточка исчезнет.</div>
-  </div><div class="tg ${me.show_in_group?'on':''}" onclick="togShowGroup()"><b></b></div></div>
- <div class="head"><h2>Входящие заявки</h2></div><div id="il" class="list"><div class="empty">${on?'Ждём заявки…':'Выйдите на линию, чтобы получать заявки'}</div></div>`;
+   <div class="obhint">В чате города появится ваша карточка: имя, машина, рейтинг и кнопка «Вызвать». Уйдёте с линии — карточка исчезнет.</div>
+  </div><div class="tg ${me.show_in_group?'on':''}" onclick="togShowGroup()"><b></b></div></div>`:''}`;
  drawDPlanned();
  drawMyOffs();syncOffs();
  if(shiftTick)clearInterval(shiftTick);
