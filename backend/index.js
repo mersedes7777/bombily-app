@@ -890,7 +890,10 @@ async function delLater(chatId, messageId, sec) {
 
 async function groupSettings() {
   try {
-    const { data } = await db.from('settings').select('group_moderate,group_clean_service,group_welcome,group_welcome_sec,group_del_sec').eq('id', 1).maybeSingle();
+    // берём настройки целиком: если какой-то колонки ещё нет,
+    // запрос по списку полей падает и группа перестаёт работать вовсе
+    const { data, error } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (error) { glog('настройки группы не читаются — ' + error.message); return {}; }
     return data || {};
   } catch (e) { return {}; }
 }
