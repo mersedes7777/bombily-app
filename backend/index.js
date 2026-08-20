@@ -1341,6 +1341,54 @@ async function driverPostsLoop() {
 }
 setTimeout(driverPostsLoop, 45 * 1000);
 
+/* ============ доступ в водительскую группу ============
+   допуск сняли или человека забанили — убираем из группы.
+   допуск вернули — разбаниваем и присылаем ссылку обратно. */
+
+async function driverGroupsOf(cityName) {
+  const q = db.from('cities').select('driver_group_id').not('driver_group_id', 'is', null);
+  const { data } = cityName ? await q.eq('name', cityName) : await q;
+  const ids = [...new Set((data || []).map(c => c.driver_group_id).filter(Boolean))];
+  return ids;
+}
+
+async function kickFromDriverGroups(user, reason) {
+  if (!user || !user.telegram_id) return;
+  const groups = await driverGroupsOf(user.city);
+  for (const gid of groups) {
+    try {
+      await tg('banChatMember', { chat_id: gid, user_id: user.telegram_id });
+      glog(`группа водителей: ${safeName(user.name)} исключён (${reason})`);
+    } catch (e) { glog(`исключение ${safeName(user.name)}: ${e.message}`); }
+  }
+  if (groups.length) {
+    await send(user.telegram_id,
+      reason === 'ban'
+        ? '⛔ Ваш аккаунт заблокирован. Доступ в группу водителей закрыт.'
+        : '📕 Допуск к заказам снят — вы убраны из группы водителей.\n\nЕсли это ошибка, напишите нам через «Связь с админом».'
+    ).catch(() => {});
+  }
+}
+
+async function inviteToDriverGroups(user) {
+  if (!user || !user.telegram_id) return;
+  const groups = await driverGroupsOf(user.city);
+  for (const gid of groups) {
+    try {
+      await tg('unbanChatMember', { chat_id: gid, user_id: user.telegram_id, only_if_banned: true });
+      const inv = await tg('createChatInviteLink', {
+        chat_id: gid, member_limit: 1, name: `для ${String(user.name || '').slice(0, 20)}`
+      });
+      if (inv && inv.ok) {
+        await send(user.telegram_id,
+          '✅ Допуск открыт. Вот ссылка в группу водителей — там приходят уведомления о новых заказах.',
+          { reply_markup: { inline_keyboard: [[{ text: '👥 Вступить в группу', url: inv.result.invite_link }]] } }
+        ).catch(() => {});
+      }
+    } catch (e) { glog(`приглашение ${safeName(user.name)}: ${e.message}`); }
+  }
+}
+
 /* ============ лента заказов для водителей ============
    отдельная группа только для водителей. адресов там нет —
    только город, вид заказа и цена. подробности в приложении. */
@@ -1349,13 +1397,12 @@ function feedText(r, state) {
   const kind = r.kind === 'delivery' ? '📦 Доставка'
              : r.to_city ? '🛣 Межгород'
              : '🚕 Поездка';
-  const price = r.passenger_price ? `${r.passenger_price} ₽` : 'цена договорная';
-  if (state === 'taken') return `${kind} · ${price}\n<b>Заказ принят</b> — уже кто-то взял.`;
-  if (state === 'gone')  return `${kind} · ${price}\n<i>Заявка отменена.</i>`;
+  if (state === 'taken') return `${kind} · ${safeName(r.city)}\n<b>Заказ принят</b> — уже кто-то взял.`;
+  if (state === 'gone')  return `${kind} · ${safeName(r.city)}\n<i>Заявка отменена.</i>`;
   const when = r.scheduled_at
     ? `\n⏰ На ${new Date(r.scheduled_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
     : '';
-  return `${kind} · <b>${price}</b>\n📍 ${safeName(r.city)}${when}\n\nПодробности и адрес — в приложении.`;
+  return `<b>${kind}</b>\n📍 ${safeName(r.city)}${when}\n\nОткройте приложение, чтобы посмотреть.`;
 }
 
 async function feedPublish(ride) {
@@ -2780,6 +2827,11 @@ http.createServer(async (req, res) => {
         await audit(me, 'ban', tid, targetUser ? targetUser.name : null,
           body.value ? 'заблокировал' : 'разблокировал');
         await db.from('users').update({ is_banned: !!body.value, status: 'offline' }).eq('id', tid);
+        // заблокировали — из группы водителей вон; разблокировали — зовём обратно
+        if (targetUser) {
+          if (body.value) kickFromDriverGroups(targetUser, 'ban').catch(() => {});
+          else if (targetUser.driver_status === 'approved') inviteToDriverGroups(targetUser).catch(() => {});
+        }
         return json(res, 200, { ok: true });
       }
       if (act === 'set-role') {
@@ -2833,9 +2885,16 @@ http.createServer(async (req, res) => {
           }
           // снимаем его открытые предложения
           await db.from('offers').update({ status: 'cancelled' }).eq('driver_id', tid).eq('status', 'pending');
+          // и убираем из группы водителей
+          if (targetUser) kickFromDriverGroups(targetUser, 'revoke').catch(() => {});
         }
 
         await db.from('users').update(upd).eq('id', tid);
+
+        // допуск открыли — зовём в группу водителей
+        if (body.status === 'approved' && targetUser) {
+          inviteToDriverGroups({ ...targetUser, ...upd }).catch(() => {});
+        }
 
         // сообщаем человеку
         const utid = await tgIdOf(tid);
