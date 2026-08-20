@@ -1341,6 +1341,96 @@ async function driverPostsLoop() {
 }
 setTimeout(driverPostsLoop, 45 * 1000);
 
+/* ============ лента заказов для водителей ============
+   отдельная группа только для водителей. адресов там нет —
+   только город, вид заказа и цена. подробности в приложении. */
+
+function feedText(r, state) {
+  const kind = r.kind === 'delivery' ? '📦 Доставка'
+             : r.to_city ? '🛣 Межгород'
+             : '🚕 Поездка';
+  const price = r.passenger_price ? `${r.passenger_price} ₽` : 'цена договорная';
+  if (state === 'taken') return `${kind} · ${price}\n<b>Заказ принят</b> — уже кто-то взял.`;
+  if (state === 'gone')  return `${kind} · ${price}\n<i>Заявка отменена.</i>`;
+  const when = r.scheduled_at
+    ? `\n⏰ На ${new Date(r.scheduled_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+    : '';
+  return `${kind} · <b>${price}</b>\n📍 ${safeName(r.city)}${when}\n\nПодробности и адрес — в приложении.`;
+}
+
+async function feedPublish(ride) {
+  try {
+    const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (st && st.driver_feed_enabled === false) return;
+
+    const { data: city } = await db.from('cities')
+      .select('driver_group_id').eq('name', ride.city).maybeSingle();
+    if (!city || !city.driver_group_id) return;
+
+    const r = await tg('sendMessage', {
+      chat_id: city.driver_group_id,
+      text: feedText(ride, 'open'),
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[
+        { text: '🚗 Открыть Бомбилы', url: `https://t.me/${BOT_USERNAME}` }
+      ]] }
+    });
+    if (r && r.ok) {
+      await db.from('ride_feed').upsert({
+        ride_id: ride.id, chat_id: city.driver_group_id,
+        message_id: r.result.message_id, state: 'open'
+      });
+    }
+  } catch (e) { glog('лента водителей: ' + e.message); }
+}
+
+async function feedUpdate(rideId, state) {
+  try {
+    const { data: f } = await db.from('ride_feed').select('*').eq('ride_id', rideId).maybeSingle();
+    if (!f || f.state === state) return;
+    const { data: ride } = await db.from('rides').select('*').eq('id', rideId).maybeSingle();
+    if (!ride) return;
+    await tg('editMessageText', {
+      chat_id: f.chat_id, message_id: f.message_id,
+      text: feedText(ride, state), parse_mode: 'HTML', disable_web_page_preview: true
+    }).catch(() => {});
+    await db.from('ride_feed').update({ state }).eq('ride_id', rideId);
+  } catch (e) { glog('лента водителей: ' + e.message); }
+}
+
+// следим за заявками: новые публикуем, принятые и отменённые правим
+let feedSeen = new Set();
+let feedStarted = 0;
+
+async function feedLoop() {
+  try {
+    const since = new Date(Date.now() - 20 * 60000).toISOString();
+    const { data: rides } = await db.from('rides')
+      .select('id,city,kind,to_city,passenger_price,scheduled_at,status,created_at')
+      .gte('created_at', since).order('created_at', { ascending: true }).limit(100);
+
+    for (const r of rides || []) {
+      // первый прогон после запуска — просто запоминаем, чтобы не спамить старым
+      if (!feedStarted) { feedSeen.add(r.id); continue; }
+
+      if (!feedSeen.has(r.id)) {
+        feedSeen.add(r.id);
+        if (r.status === 'created') await feedPublish(r);
+        continue;
+      }
+      if (['confirmed', 'in_progress', 'completed'].includes(r.status)) await feedUpdate(r.id, 'taken');
+      else if (String(r.status).startsWith('cancel')) await feedUpdate(r.id, 'gone');
+    }
+    feedStarted = 1;
+
+    // чистим память, чтобы не росла бесконечно
+    if (feedSeen.size > 2000) feedSeen = new Set([...feedSeen].slice(-500));
+  } catch (e) { console.error('feedLoop', e.message); }
+  setTimeout(feedLoop, 10 * 1000);
+}
+setTimeout(feedLoop, 30 * 1000);
+
 /* ================= рассылка ================= */
 
 // кому пойдёт сообщение
@@ -2984,6 +3074,7 @@ http.createServer(async (req, res) => {
           slug: String(body.slug || '').trim().slice(0, 40) || null,
           group_link: String(body.group_link || '').trim().slice(0, 200) || null,
           group_id: body.group_id ? -Math.abs(Number(body.group_id)) : null,  // у групп ID всегда отрицательный
+          driver_group_id: body.driver_group_id ? -Math.abs(Number(body.driver_group_id)) : null,
           description: String(body.description || '').trim().slice(0, 500) || null,
           active: body.active !== false,
           sort: Number(body.sort) || 100
@@ -3213,7 +3304,7 @@ http.createServer(async (req, res) => {
       if (act === 'save-settings' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes'].forEach(k => {
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled'].forEach(k => {
           if (f[k] !== undefined) allowed[k] = f[k];
         });
         if (!Object.keys(allowed).length) return json(res, 400, { error: 'nothing' });
@@ -3617,7 +3708,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });

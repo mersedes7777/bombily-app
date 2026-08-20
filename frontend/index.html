@@ -4147,6 +4147,10 @@ async function finCities(c){
   <div class="obhint" style="padding:2px 0 12px">Водитель включает показ у себя в кабинете. Старая карточка убирается, чтобы чат не засорялся. Между публикациями обновляется только статус — свободен или занят.</div>
   <button class="btn" onclick="saveDpost()">Сохранить</button>
  </div>
+ <div class="obar" style="margin:14px 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Лента заказов для водителей</div>
+   <div class="obhint">Присылать в водительскую группу уведомления о новых заказах. Адресов там нет — только вид заказа и цена. Когда заказ берут, сообщение меняется на «принят».</div>
+  </div><div class="tg ${SETTINGS.driver_feed_enabled!==false?'on':''}" onclick="togGroup('driver_feed_enabled')"><b></b></div></div>
  <div class="note" style="margin:10px 14px 14px">Работает независимо от приглашений — только в группах, чей ID указан ниже. В чужие группы бот не вмешивается, администраторов не трогает.</div>
 
  <div class="sec">Подписка на группу</div>
@@ -4243,7 +4247,9 @@ function cityEdit(x){
  <div class="s">Ссылка нужна, чтобы предлагать вступить. ID группы — чтобы видеть, подписан человек или нет; для этого добавьте бота в группу администратором.</div>
  <div class="fr"><label>Название</label><input id="ci_name" value="${esc(x.name)}" placeholder="Енакиево"></div>
  <div class="fr"><label>Ссылка на группу</label><input id="ci_link" value="${esc(x.group_link)}" placeholder="https://t.me/..."></div>
- <div class="fr"><label>ID группы · не обязательно</label><input id="ci_gid" value="${x.group_id||''}" placeholder="-1001234567890" inputmode="numeric"></div>
+ <div class="fr"><label>ID группы города · не обязательно</label><input id="ci_gid" value="${x.group_id||''}" placeholder="-1001234567890" inputmode="numeric"></div>
+ <div class="fr"><label>ID группы водителей · не обязательно</label><input id="ci_dgid" value="${x.driver_group_id||''}" placeholder="-1001234567890" inputmode="numeric"></div>
+ <div class="obhint" style="padding:0 0 12px">В группу водителей приходят уведомления о новых заказах — без адресов, только вид заказа и цена. Бот должен быть там администратором.</div>
  <div class="fr"><label>Описание · не обязательно</label><input id="ci_desc" value="${esc(x.description)}" placeholder="О чём эта группа"></div>
  <div class="fr"><label>Порядок в списке</label><input id="ci_sort" value="${x.sort||100}" inputmode="numeric"></div>
  <div class="obar" style="margin:0 0 12px"><div><div class="l">Показывать в приложении</div></div><div class="tg ${x.active===false?'':'on'}" id="ci_act" onclick="this.classList.toggle('on')"><b></b></div></div>
@@ -4257,7 +4263,7 @@ async function citySave(id){
  const name=g('name');
  if(!name)return T('Впишите название');
  const r=await api('/api/admin',{action:'city-save',id:id||null,name,
-  group_link:g('link'),group_id:g('gid')||null,description:g('desc'),
+  group_link:g('link'),group_id:g('gid')||null,driver_group_id:g('dgid')||null,description:g('desc'),
   sort:parseInt(g('sort'))||100,
   active:document.getElementById('ci_act').classList.contains('on')});
  if(r.error)return T(r.error==='duplicate'?'Такой город уже есть':r.error==='forbidden'?'Нет прав':'Ошибка');
