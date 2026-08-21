@@ -220,6 +220,24 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .stars span{font-size:32px;cursor:pointer;color:var(--line2);line-height:1;}
 .stars span.on{color:var(--am);}
 .ta{width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:11px;color:var(--ink);font-family:Golos Text,sans-serif;font-size:14px;outline:none;resize:none;min-height:70px;}
+/* --- график по дням --- */
+.chw{padding:6px 14px 0;}
+.chbox{background:var(--surf);border:1px solid var(--line);border-radius:16px;padding:14px 12px 10px;box-shadow:var(--sh);}
+.chbars{display:flex;align-items:flex-end;gap:3px;height:132px;padding:0 2px;}
+.chb{flex:1 1 0;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;cursor:pointer;}
+.chb .bar{width:100%;border-radius:5px 5px 2px 2px;background:var(--g);min-height:2px;transition:height .25s;opacity:.85;}
+.chb.we .bar{opacity:.45;}
+.chb.zero .bar{background:var(--line2);opacity:.6;}
+.chb.sel .bar{opacity:1;box-shadow:0 0 0 2px var(--gs);}
+.chb .bv{font-family:'Roboto Mono',monospace;font-size:9px;color:var(--dim);margin-bottom:3px;line-height:1;}
+.chax{display:flex;gap:3px;padding:6px 2px 0;}
+.chax div{flex:1 1 0;min-width:0;text-align:center;font-size:8.5px;color:var(--dim2);line-height:1.3;overflow:hidden;}
+.chax div.we{color:var(--am);}
+.chtip{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.chtip b{color:var(--ink);font-family:'Roboto Mono',monospace;}
+.dlt{font-size:11px;font-family:'Roboto Mono',monospace;padding:2px 7px;border-radius:100px;background:var(--gs);color:var(--g);white-space:nowrap;}
+.dlt.dn{background:rgba(226,88,90,.13);color:var(--red);}
+.dlt.fl{background:var(--line);color:var(--dim);}
 .sec{padding:14px 18px 4px;font-family:Golos Text,sans-serif;font-weight:600;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);}
 .opt{display:flex;align-items:center;gap:11px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;cursor:pointer;background:var(--bg);}
 .opt.sel{border-color:var(--g);background:var(--gs);}
@@ -3707,29 +3725,108 @@ async function aStatDrivers(m){
   </div>`).join(''):'<div class="empty">Нет данных за период</div>'}
  <div style="height:20px"></div>`;
 }
+let dayMetric='taken',dayRows=[],daySel=null;
+
+function dayShift(n){
+ const a=new Date(statFrom+'T12:00:00'),b=new Date(statTo+'T12:00:00');
+ const len=Math.round((b-a)/864e5)+1;
+ const pb=new Date(a.getTime()-864e5),pa=new Date(a.getTime()-len*864e5);
+ return {len,pfrom:dstr(pa),pto:dstr(pb)};
+}
+function dayMet(v){dayMetric=v;daySel=null;aStatDays(document.getElementById('main'));}
+function daySelect(i){daySel=(daySel===i?null:i);drawDayChart();}
+
+function drawDayChart(){
+ const box=document.getElementById('daych');
+ if(!box)return;
+ const key=dayMetric;
+ const mx=Math.max(1,...dayRows.map(d=>d[key]||0));
+ const unit=key==='money'?' ₽':'';
+ const few=dayRows.length<=16;
+ box.innerHTML=`<div class="chbars">${dayRows.map((d,i)=>{
+   const v=d[key]||0,h=Math.round(v/mx*100);
+   const dt=new Date(d.day+'T12:00:00'),wd=dt.getDay();
+   const cls=(wd===0||wd===6?'we ':'')+(v?'':'zero ')+(daySel===i?'sel':'');
+   return `<div class="chb ${cls}" onclick="daySelect(${i})" title="${d.day}">${few&&v?`<div class="bv">${v}</div>`:''}<div class="bar" style="height:${h}%"></div></div>`;
+  }).join('')}</div>
+ <div class="chax">${dayRows.map(d=>{
+   const dt=new Date(d.day+'T12:00:00'),wd=dt.getDay();
+   const lbl=few?dt.toLocaleDateString('ru',{day:'2-digit',month:'2-digit'}):String(dt.getDate());
+   return `<div class="${wd===0||wd===6?'we':''}">${lbl}</div>`;
+  }).join('')}</div>
+ ${daySel!==null&&dayRows[daySel]?(()=>{const d=dayRows[daySel];const dt=new Date(d.day+'T12:00:00');
+   return `<div class="chtip"><span>${dt.toLocaleDateString('ru',{day:'2-digit',month:'long'})}, ${['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'][dt.getDay()]}</span><span><b>${d.taken}</b> заявок · <b>${d.done}</b> готово · <b>${d.money}</b> ₽</span></div>`;})()
+  :`<div class="chtip"><span>нажми на столбик — покажу день</span><span>макс <b>${mx}</b>${unit}</span></div>`}`;
+}
+
 async function aStatDays(m){
  m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
- const r=await api('/api/admin',{action:'days-stats',from:statFrom,to:statTo,driver_id:statDrv});
+ const {len,pfrom,pto}=dayShift();
+ const [r,pr]=await Promise.all([
+   api('/api/admin',{action:'days-stats',from:statFrom,to:statTo,driver_id:statDrv}),
+   api('/api/admin',{action:'days-stats',from:pfrom,to:pto,driver_id:statDrv}).catch(()=>null)
+ ]);
  if(r.error){m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Не удалось загрузить</div>`;return;}
- const days=r.days||[];
- const tot=days.reduce((a,x)=>({taken:a.taken+x.taken,done:a.done+x.done,money:a.money+x.money}),{taken:0,done:0,money:0});
- m.innerHTML=`<div class="head"><h2>${r.name?esc(r.name):'По дням'}</h2><span class="m">${statFrom} — ${statTo}</span></div>
+
+ // дни по возрастанию + пустые дни, чтобы график не врал про провалы
+ const got={};(r.days||[]).forEach(d=>{got[d.day]=d;});
+ const rows=[];const st=new Date(statFrom+'T12:00:00');
+ for(let i=0;i<len&&i<120;i++){
+  const dt=new Date(st.getTime()+i*864e5),k=dstr(dt);
+  rows.push(got[k]||{day:k,taken:0,done:0,cancelled:0,money:0});
+ }
+ dayRows=rows;daySel=null;
+
+ const sum=a=>a.reduce((x,y)=>({taken:x.taken+y.taken,done:x.done+y.done,cancelled:x.cancelled+y.cancelled,money:x.money+y.money}),{taken:0,done:0,cancelled:0,money:0});
+ const tot=sum(rows);
+ const ptot=pr&&!pr.error?sum(pr.days||[]):null;
+ const pct=(now,was)=>{
+  if(!ptot)return '';
+  if(!was)return now?`<span class="dlt">новое</span>`:'';
+  const p=Math.round((now-was)/was*100);
+  if(p===0)return `<span class="dlt fl">без изменений</span>`;
+  return `<span class="dlt ${p<0?'dn':''}">${p>0?'+':''}${p}%</span>`;
+ };
+ const workDays=rows.filter(d=>d.taken>0).length;
+ const conv=tot.taken?Math.round(tot.done/tot.taken*100):0;
+ const best=rows.slice().sort((a,b)=>b.taken-a.taken)[0];
+
+ m.innerHTML=`<div class="head"><h2>${r.name?esc(r.name):'По дням'}</h2><span class="m">${len} дн.</span></div>
  ${rangeBar()}
  ${statDrv?`<div style="padding:0 14px 10px"><button class="rolebtn" onclick="statGo('drivers')">‹ ко всем водителям</button></div>`:''}
- <div class="agrid" style="padding:0 14px">
-  <div class="ac"><div class="n g">${tot.taken}</div><div class="l">заявок</div></div>
-  <div class="ac"><div class="n">${tot.done}</div><div class="l">завершено</div></div>
-  <div class="ac"><div class="n a">${tot.money}</div><div class="l">оборот, ₽</div></div>
+
+ <div class="agrid" style="padding:0 14px 4px">
+  <div class="ac"><div class="n g">${tot.taken}</div><div class="l">заявок ${pct(tot.taken,ptot?ptot.taken:0)}</div></div>
+  <div class="ac"><div class="n">${tot.done}</div><div class="l">завершено ${pct(tot.done,ptot?ptot.done:0)}</div></div>
+  <div class="ac"><div class="n a">${tot.money}</div><div class="l">оборот, ₽ ${pct(tot.money,ptot?ptot.money:0)}</div></div>
   <div class="ac"><div class="n">${tot.done?Math.round(tot.money/tot.done):0}</div><div class="l">средний чек</div></div>
  </div>
- <div class="sec">Дни</div>
+ ${ptot?`<div style="padding:0 18px 6px;font-size:11px;color:var(--dim2)">сравнение с ${pfrom} — ${pto}</div>`:''}
+
+ <div class="seg" style="padding-top:6px">
+  <div class="${dayMetric==='taken'?'on':''}" onclick="dayMet('taken')">Заявки</div>
+  <div class="${dayMetric==='done'?'on':''}" onclick="dayMet('done')">Завершено</div>
+  <div class="${dayMetric==='money'?'on':''}" onclick="dayMet('money')">Оборот</div>
+ </div>
+ <div class="chw"><div class="chbox" id="daych"></div></div>
+
+ <div class="sec">Коротко</div>
+ <div style="padding:0 18px 4px;font-size:13px;color:var(--dim);line-height:1.9">
+  Доводим до конца <b style="color:var(--ink)">${conv}%</b> заявок${tot.cancelled?`, отменено <b style="color:var(--red)">${tot.cancelled}</b>`:''}.<br>
+  Заказы были в <b style="color:var(--ink)">${workDays}</b> из ${len} дней.
+  ${best&&best.taken?`<br>Лучший день — <b style="color:var(--ink)">${new Date(best.day+'T12:00:00').toLocaleDateString('ru',{day:'2-digit',month:'long'})}</b>, ${best.taken} заявок.`:''}
+ </div>
+
+ <div class="sec">Дни подробно</div>
  <div class="sthead"><div class="sl">дата</div><div class="sv2">всего</div><div class="sv2">готово</div><div class="sv2">отмен</div><div class="sv2">₽</div></div>
- ${days.length?days.map(d=>{
+ ${rows.some(d=>d.taken)?rows.slice().reverse().filter(d=>d.taken||d.money).map(d=>{
    const dt=new Date(d.day+'T12:00:00');
    const lbl=dt.toLocaleDateString('ru',{day:'2-digit',month:'2-digit'})+' '+['вс','пн','вт','ср','чт','пт','сб'][dt.getDay()];
-   return `<div class="strow"><div class="sl">${lbl}</div><div class="sv2">${d.taken}</div><div class="sv2">${d.done}</div><div class="sv2" style="color:${d.cancelled?'var(--red)':'inherit'}">${d.cancelled}</div><div class="sv2" style="color:var(--am)">${d.money}</div></div>`;
+   const we=dt.getDay()===0||dt.getDay()===6;
+   return `<div class="strow"><div class="sl" style="${we?'color:var(--am)':''}">${lbl}</div><div class="sv2">${d.taken}</div><div class="sv2">${d.done}</div><div class="sv2" style="color:${d.cancelled?'var(--red)':'inherit'}">${d.cancelled}</div><div class="sv2" style="color:var(--am)">${d.money}</div></div>`;
   }).join(''):'<div class="empty">Нет данных за период</div>'}
  <div style="height:20px"></div>`;
+ drawDayChart();
 }
 async function aStat(m){
  initStatRange();
