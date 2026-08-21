@@ -3477,6 +3477,16 @@ http.createServer(async (req, res) => {
           if (r.to_city) a2.intercity++;
         });
         const list = Object.values(agg).sort((x, y) => y.money - x.money || y.done - x.done);
+
+        // когда водитель последний раз брал заказ (шире периода — чтобы
+        // понимать, молчит он неделю или вообще с весны)
+        const { data: lastRows } = await db.from('rides')
+          .select('driver_id,created_at').not('driver_id', 'is', null)
+          .order('created_at', { ascending: false }).limit(4000);
+        const lastBy = {};
+        (lastRows || []).forEach(r => { if (!lastBy[r.driver_id]) lastBy[r.driver_id] = r.created_at; });
+        list.forEach(d => { d.last = lastBy[d.id] || null; });
+
         return json(res, 200, { ok: true, items: list, from, to });
       }
 

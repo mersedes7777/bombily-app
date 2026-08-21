@@ -3720,30 +3720,101 @@ async function aStatRides(m){
   ${cities.map(([c,v])=>`<div class="card"><div style="flex:1"><div class="nm" style="font-size:14px">${esc(c)}</div><div class="sub">${v.done} из ${v.total} доехали</div></div><div class="price">${v.money} ₽</div></div>`).join('')}`:''}
  <div style="height:20px"></div>`;
 }
+let drvSort='money',drvGrp='all';
+function drvSet(k,v){if(k==='s')drvSort=v;else drvGrp=v;aStatDrivers(document.getElementById('main'));}
+
 async function aStatDrivers(m){
  m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
  const r=await api('/api/admin',{action:'drivers-stats',from:statFrom,to:statTo,vehicle:statVeh});
  if(r.error){m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Не удалось загрузить</div>`;return;}
- const items=r.items||[];
- const tot=items.reduce((a,x)=>({taken:a.taken+x.taken,done:a.done+x.done,money:a.money+x.money}),{taken:0,done:0,money:0});
- m.innerHTML=`<div class="head"><h2>Отчёт</h2><span class="m">${statFrom} — ${statTo}</span></div>
+ const all=r.items||[];
+ const tot=all.reduce((a,x)=>({taken:a.taken+x.taken,done:a.done+x.done,money:a.money+x.money,canc:a.canc+x.cancelled}),{taken:0,done:0,money:0,canc:0});
+
+ const now=Date.now();
+ const daysAgo=t=>t?Math.floor((now-new Date(t).getTime())/864e5):null;
+ all.forEach(d=>{
+  d.ago=daysAgo(d.last);
+  d.fail=d.taken?Math.round(d.cancelled/d.taken*100):0;
+  d.chek=d.done?Math.round(d.money/d.done):0;
+ });
+
+ const work=all.filter(d=>d.taken>0);
+ const mute=all.filter(d=>!d.taken);
+ const dead=mute.filter(d=>d.ago===null||d.ago>=30);
+ const badFail=work.filter(d=>d.taken>=3&&d.fail>=40);
+
+ let list=drvGrp==='work'?work:drvGrp==='mute'?mute:all;
+ const sorters={money:(a,b)=>b.money-a.money||b.done-a.done,done:(a,b)=>b.done-a.done||b.money-a.money,
+  fail:(a,b)=>b.fail-a.fail||b.cancelled-a.cancelled,chek:(a,b)=>b.chek-a.chek,
+  ago:(a,b)=>(a.ago===null?1e9:a.ago)-(b.ago===null?1e9:b.ago)};
+ list=list.slice().sort(sorters[drvSort]||sorters.money);
+
+ const mmax=Math.max(1,...all.map(d=>d.money));
+ const share=d=>tot.money?Math.round(d.money/tot.money*100):0;
+ const agoTxt=d=>{
+  if(d.ago===null)return '<span style="color:var(--red)">ни одного заказа</span>';
+  if(d.ago===0)return '<span style="color:var(--g)">брал сегодня</span>';
+  if(d.ago===1)return 'брал вчера';
+  if(d.ago<7)return `${d.ago} дн. назад`;
+  if(d.ago<30)return `<span style="color:var(--am)">${d.ago} дн. назад</span>`;
+  return `<span style="color:var(--red)">${d.ago} дн. назад</span>`;
+ };
+
+ // сколько людей делают основную выручку
+ const bym=all.slice().sort((a,b)=>b.money-a.money);
+ let acc=0,core=0;
+ for(const d of bym){if(acc>=tot.money*0.8)break;acc+=d.money;core++;}
+
+ const al=[];
+ if(dead.length)al.push(['warn','💤',`${dead.length} ${plural(dead.length,['водитель','водителя','водителей'])} не берут заказы больше месяца`,'Числятся на линии, но заявки не берут — стоит написать или снять допуск']);
+ if(badFail.length)al.push(['bad','↩️',`${badFail.length} ${plural(badFail.length,['водитель отказывается','водителя отказываются','водителей отказываются'])} чаще, чем в 40% случаев`,badFail.slice(0,3).map(d=>esc(d.name)+' — '+d.fail+'%').join(', ')]);
+ if(tot.money&&core&&core<=3&&work.length>4)al.push(['warn','⚖️',`Почти всю выручку делают ${core} ${plural(core,['человек','человека','человек'])}`,'Если они уйдут — сервис встанет']);
+ if(!work.length)al.push(['bad','🚫','За период никто не взял ни одного заказа','Проверьте, доходят ли уведомления до водителей']);
+
+ m.innerHTML=`<div class="head"><h2>Водители</h2><span class="m">${statFrom} — ${statTo}</span></div>
  ${rangeBar()}
- <div class="agrid" style="padding:0 14px">
-  <div class="ac"><div class="n g">${tot.taken}</div><div class="l">заказов взято</div></div>
-  <div class="ac"><div class="n">${tot.done}</div><div class="l">завершено</div></div>
+
+ <div class="agrid" style="padding:0 14px 4px">
+  <div class="ac"><div class="n g">${work.length}</div><div class="l">работали из ${all.length}</div></div>
+  <div class="ac"><div class="n">${tot.done}</div><div class="l">поездок</div></div>
   <div class="ac"><div class="n a">${tot.money}</div><div class="l">оборот, ₽</div></div>
-  <div class="ac"><div class="n">${items.filter(x=>x.taken>0).length}</div><div class="l">работали</div></div>
+  <div class="ac"><div class="n" style="color:${tot.taken&&tot.canc/tot.taken>=.3?'var(--red)':'inherit'}">${tot.taken?Math.round(tot.canc/tot.taken*100):0}%</div><div class="l">отказов</div></div>
  </div>
- <div class="sec">Водители · нажмите для разбивки по дням</div>
- ${items.length?items.map(d=>`<div class="card" onclick="statGo('days','${d.id}')" style="cursor:pointer">
+ <div style="padding:6px 18px 2px;font-size:12px;color:var(--dim);line-height:1.8">
+  ${work.length?`В среднем <b style="color:var(--ink)">${(tot.done/work.length).toFixed(1)}</b> ${plural(Math.round(tot.done/work.length),['поездка','поездки','поездок'])} на работавшего.`:''}
+  ${mute.length?`<br><b style="color:var(--am)">${mute.length}</b> ${plural(mute.length,['водитель','водителя','водителей'])} за период не взяли ничего.`:''}
+ </div>
+
+ ${al.length?`<div class="sec">Требует внимания</div>${al.map(a=>`<div class="alrt ${a[0]}"><div class="ai">${a[1]}</div><div class="at">${a[2]}<s>${a[3]}</s></div></div>`).join('')}`:''}
+
+ <div class="seg" style="padding-top:8px">
+  <div class="${drvGrp==='all'?'on':''}" onclick="drvSet('g','all')">Все ${all.length}</div>
+  <div class="${drvGrp==='work'?'on':''}" onclick="drvSet('g','work')">Работают ${work.length}</div>
+  <div class="${drvGrp==='mute'?'on':''}" onclick="drvSet('g','mute')">Молчат ${mute.length}</div>
+ </div>
+ <div class="seg">
+  <div class="${drvSort==='money'?'on':''}" onclick="drvSet('s','money')">₽</div>
+  <div class="${drvSort==='done'?'on':''}" onclick="drvSet('s','done')">Поездки</div>
+  <div class="${drvSort==='fail'?'on':''}" onclick="drvSet('s','fail')">Отказы</div>
+  <div class="${drvSort==='chek'?'on':''}" onclick="drvSet('s','chek')">Чек</div>
+  <div class="${drvSort==='ago'?'on':''}" onclick="drvSet('s','ago')">Свежесть</div>
+ </div>
+
+ <div class="sec">Нажми на человека — покажу по дням</div>
+ ${list.length?list.map((d,i)=>`<div class="card" onclick="statGo('days','${d.id}')" style="cursor:pointer;${!d.taken?'opacity:.62':''}">
    <div class="ava">${esc(d.name)[0]||'?'}</div>
    <div style="flex:1;min-width:0">
-    <div class="nm">${d.moto?'🏍 ':''}${esc(d.name)} <span class="idtag">#${d.tag}</span>${d.online?' <span style="color:var(--g);font-size:10px">на линии</span>':''}</div>
-    <div class="sub">${esc(d.car)||'—'}${d.moto?' · мотокурьер':''}</div>
-    <div class="sub" style="margin-top:3px">взял ${d.taken} · выполнил ${d.done}${d.cancelled?' · отказов '+d.cancelled:''}${d.delivery?' · доставок '+d.delivery:''}${d.intercity?' · межгород '+d.intercity:''}</div>
+    <div class="nm">${drvSort==='money'&&drvGrp==='all'&&d.money?`<span style="color:var(--dim2);font-family:'Roboto Mono',monospace;font-size:11px">${i+1}.</span> `:''}${d.moto?'🏍 ':''}${esc(d.name)} <span class="idtag">#${d.tag}</span>${d.online?' <span style="color:var(--g);font-size:10px">на линии</span>':''}</div>
+    <div class="sub">${esc(d.car)||'—'}${d.moto?' · мотокурьер':''} · ${agoTxt(d)}</div>
+    ${d.taken?`<div class="sub" style="margin-top:3px">взял ${d.taken} · выполнил ${d.done}${d.cancelled?` · <span style="color:${d.fail>=40?'var(--red)':'var(--am)'}">отказов ${d.cancelled} (${d.fail}%)</span>`:''}${d.delivery?' · доставок '+d.delivery:''}${d.intercity?' · межгород '+d.intercity:''}</div>
+    <div class="ct" style="margin-top:6px"><i style="width:${Math.max(2,Math.round(d.money/mmax*100))}%"></i></div>`
+    :`<div class="sub" style="margin-top:3px;color:var(--dim2)">за период заказов не брал</div>`}
    </div>
-   <div style="text-align:right"><div class="price">${d.money} ₽</div><div class="sub" style="font-size:10px">${d.done?Math.round(d.money/d.done):0} ₽ средний</div></div>
-  </div>`).join(''):'<div class="empty">Нет данных за период</div>'}
+   <div style="text-align:right;flex-shrink:0">
+    <div class="price">${d.money} ₽</div>
+    <div class="sub" style="font-size:10px">${d.done?d.chek+' ₽ чек':''}${d.money&&tot.money?`<br>${share(d)}% выручки`:''}</div>
+   </div>
+  </div>`).join(''):'<div class="empty">Никого нет в этой группе</div>'}
  <div style="height:20px"></div>`;
 }
 let dayMetric='taken',dayRows=[],daySel=null;
