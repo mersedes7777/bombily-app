@@ -3709,7 +3709,7 @@ http.createServer(async (req, res) => {
 
         const [ridesToday, ridesYest, ridesWeek, ridesMonth, ridesAll,
                doneToday, doneYest, doneWeek, doneMonth, doneAll,
-               cancToday, cancYest, cancWeek, cancMonth,
+               cancToday, cancWeek,
                usersToday, usersYest, usersWeek, usersMonth, usersAll,
                driversAll, driversOnline, pendingApps, deliveryDrivers] = await Promise.all([
           cnt('rides', q => q.gte('created_at', today)),
@@ -3723,9 +3723,7 @@ http.createServer(async (req, res) => {
           cnt('rides', q => q.eq('status', 'completed').gte('created_at', month)),
           cnt('rides', q => q.eq('status', 'completed')),
           cnt('rides', q => q.like('status', 'cancelled%').gte('created_at', today)),
-          cnt('rides', q => q.like('status', 'cancelled%').gte('created_at', yest).lt('created_at', today)),
           cnt('rides', q => q.like('status', 'cancelled%').gte('created_at', week)),
-          cnt('rides', q => q.like('status', 'cancelled%').gte('created_at', month)),
           cnt('users', q => q.gte('created_at', today)),
           cnt('users', q => q.gte('created_at', yest).lt('created_at', today)),
           cnt('users', q => q.gte('created_at', week)),
@@ -3752,7 +3750,7 @@ http.createServer(async (req, res) => {
           ok: true,
           rides: { today: ridesToday, yest: ridesYest, week: ridesWeek, month: ridesMonth, all: ridesAll },
           done: { today: doneToday, yest: doneYest, week: doneWeek, month: doneMonth, all: doneAll },
-          cancelled: { today: cancToday, yest: cancYest, week: cancWeek, month: cancMonth },
+          cancelled: { today: cancToday, week: cancWeek },
           users: { today: usersToday, yest: usersYest, week: usersWeek, month: usersMonth, all: usersAll },
           drivers: { all: driversAll, online: driversOnline, pending: pendingApps, delivery: deliveryDrivers },
           money: { today: sum(mToday), week: sum(mWeek), month: sum(money || []) },
