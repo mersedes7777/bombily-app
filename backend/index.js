@@ -1432,6 +1432,9 @@ async function feedPublish(ride) {
   } catch (e) { glog('лента водителей: ' + e.message); }
 }
 
+// через сколько секунд после закрытия убирать заявку из канала водителей
+const FEED_DEL_SEC = 120;
+
 async function feedUpdate(rideId, state) {
   try {
     const { data: f } = await db.from('ride_feed').select('*').eq('ride_id', rideId).maybeSingle();
@@ -1443,6 +1446,16 @@ async function feedUpdate(rideId, state) {
       text: feedText(ride, state), parse_mode: 'HTML', disable_web_page_preview: true
     }).catch(() => {});
     await db.from('ride_feed').update({ state }).eq('ride_id', rideId);
+
+    // заказ закрыт — через FEED_DEL_SEC убираем сообщение совсем,
+    // чтобы канал не зарастал мёртвыми заявками
+    const chatId = f.chat_id, msgId = f.message_id;
+    setTimeout(async () => {
+      try {
+        await tg('deleteMessage', { chat_id: chatId, message_id: msgId }).catch(() => {});
+        await db.from('ride_feed').delete().eq('ride_id', rideId);
+      } catch (e) { /* уже удалено — не страшно */ }
+    }, FEED_DEL_SEC * 1000);
   } catch (e) { glog('лента водителей: ' + e.message); }
 }
 
