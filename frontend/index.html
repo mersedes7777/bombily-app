@@ -3658,6 +3658,22 @@ async function aStatRides(m){
  const maxH=Math.max(1,...hours);
  const cities=Object.entries(s.byCity||{}).sort((a,b)=>b[1].total-a[1].total);
 
+ // часы пик и провалы — словами, а не только столбиками
+ const hSum=hours.reduce((a,b)=>a+b,0);
+ const peakH=hours.indexOf(maxH);
+ const nightSum=hours.slice(0,6).reduce((a,b)=>a+b,0);
+ const evenSum=hours.slice(17,23).reduce((a,b)=>a+b,0);
+ const hName=h=>String(h).padStart(2,'0')+':00';
+
+ // что требует внимания
+ const al=[];
+ if(s.noOffers)al.push(['bad','🔇',`${s.noOffers} ${plural(s.noOffers,['заявка осталась','заявки остались','заявок остались'])} без единого предложения`,'Люди хотели уехать и не смогли — самая дорогая потеря']);
+ if(s.cancelDriver>=2)al.push(['bad','↩️',`Водители отказались от ${s.cancelDriver} ${plural(s.cancelDriver,['заказа','заказов','заказов'])} после принятия`,'Пассажир уже ждал машину — бьёт по доверию сильнее всего']);
+ if(s.hadOffersNotTaken>=3)al.push(['warn','🤷',`${s.hadOffersNotTaken} ${plural(s.hadOffersNotTaken,['раз пассажир','раза пассажиры','раз пассажиры'])} не выбрали никого из откликнувшихся`,'Возможно, не устроила цена или долго ждали']);
+ if(s.avgWait!==null&&s.avgWait>15)al.push(['warn','⏱',`Машину ждут в среднем ${s.avgWait} минут`,'Дольше 15 минут — люди начинают уходить к конкурентам']);
+ if(s.avgOffers<1&&s.total>=5)al.push(['warn','📭',`На заявку приходится всего ${s.avgOffers} ${plural(Math.round(s.avgOffers),['предложение','предложения','предложений'])}`,'Водителей на линии мало или уведомления не доходят']);
+ if(!al.length&&s.total)al.push(['ok','✅','Серьёзных потерь не вижу','Заявки доходят до водителей нормально']);
+
  m.innerHTML=`<div class="head"><h2>Судьба заявок</h2><span class="m">${statFrom} — ${statTo}</span></div>
  ${rangeBar()}
 
@@ -3667,6 +3683,8 @@ async function aStatRides(m){
   <div class="ac"><div class="n" style="color:var(--red)">${lost}</div><div class="l">потеряно · ${p(lost)}%</div></div>
   <div class="ac"><div class="n a">${s.money}</div><div class="l">оборот, ₽</div></div>
  </div>
+
+ ${al.length?`<div class="sec">Требует внимания</div>${al.map(a=>`<div class="alrt ${a[0]}"><div class="ai">${a[1]}</div><div class="at">${a[2]}<s>${a[3]}</s></div></div>`).join('')}`:''}
 
  <div class="sec">Что стало с заявками</div>
  <div style="padding:0 14px">
@@ -3687,8 +3705,6 @@ async function aStatRides(m){
   <button class="rolebtn" style="color:var(--red)" onclick="ridesList('lost')">только потерянные</button>
  </div>
 
- <div style="padding:10px 14px 0"><button class="rolebtn" onclick="ridesList('all','Все заявки')">показать все заявки списком</button></div>
-
  <div class="sec">Качество работы</div>
  <div class="agrid" style="padding:0 14px">
   <div class="ac"><div class="n">${s.avgWait!==null?s.avgWait:'—'}</div><div class="l">мин до водителя</div></div>
@@ -3707,6 +3723,11 @@ async function aStatRides(m){
 
  <div class="sec">В какие часы заказывают</div>
  <div class="hours">${hours.map((v,i)=>`<div class="hb" title="${i}:00 — ${v}"><i style="height:${Math.round(v/maxH*100)}%"></i><span>${i%3===0?i:''}</span></div>`).join('')}</div>
+ ${hSum?`<div style="padding:8px 18px 0;font-size:12px;color:var(--dim);line-height:1.8">
+  Больше всего заказов в <b style="color:var(--ink)">${hName(peakH)}</b> — ${maxH} ${plural(maxH,['заявка','заявки','заявок'])}.<br>
+  Вечером с 17 до 23 — <b style="color:var(--ink)">${Math.round(evenSum/hSum*100)}%</b> всех заказов${nightSum?`, ночью с 0 до 6 — <b style="color:var(--ink)">${Math.round(nightSum/hSum*100)}%</b>`:''}.<br>
+  <span style="color:var(--dim2)">В пиковые часы на линии должно быть больше машин — иначе заявки повиснут.</span>
+ </div>`:''}
 
  <div class="sec">По дням</div>
  <div class="sthead"><div class="sl">дата</div><div class="sv2">всего</div><div class="sv2">доехали</div><div class="sv2">потеряно</div><div class="sv2">₽</div></div>
