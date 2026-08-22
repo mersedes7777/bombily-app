@@ -427,11 +427,11 @@ async function notifyLoop() {
       // новая заявка -> водителям
       const { data: rides } = await db.from('rides').select('*').eq('status', 'created').eq('notified', false);
       for (const r of rides || []) {
-        let q = db.from('users').select('telegram_id').eq('status', 'online').in('role', ['driver', 'both']);
+        let q = db.from('users').select('id,telegram_id').eq('status', 'online').in('role', ['driver', 'both']);
         if (r.kind === 'delivery') q = q.or('delivery.eq.true,vehicle_type.eq.moto'); // мотокурьеры получают доставку всегда
         else q = q.or('vehicle_type.is.null,vehicle_type.eq.car');  // мотоциклы возят только доставку
         if (r.to_city) q = q.eq('intercity', true);
-        if (r.target_driver_id) q = db.from('users').select('telegram_id').eq('id', r.target_driver_id);
+        if (r.target_driver_id) q = db.from('users').select('id,telegram_id').eq('id', r.target_driver_id);
         const { data: drv } = await q;
         const isDel = r.kind === 'delivery';
         const isInter = !!r.to_city;
@@ -442,9 +442,19 @@ async function notifyLoop() {
         ? `\n🕒 <b>На ${new Date(r.scheduled_at).toLocaleString('ru', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</b>`
         : '';
       const extra = `${schedLine}${r.to_city ? `\n🛣 Город назначения: <b>${r.to_city}</b>` : ''}${r.passenger_price ? `\n💰 Пассажир предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
-        for (const d of drv || [])
-          if (d.telegram_id) await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
+        // рассылаем и сразу запоминаем, кому ушло — иначе потом не понять,
+        // кто заявку видел и промолчал, а кто вообще её не получал
+        const notifRows = [];
+        for (const d of drv || []) {
+          if (!d.telegram_id) continue;
+          const ok = await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
             { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'driver')]] } });
+          notifRows.push({ ride_id: r.id, driver_id: d.id, delivered: !!(ok && ok.ok) });
+        }
+        if (notifRows.length) {
+          await db.from('ride_notify').upsert(notifRows, { onConflict: 'ride_id,driver_id', ignoreDuplicates: true })
+            .then(() => {}, () => {});
+        }
         await db.from('rides').update({ notified: true }).eq('id', r.id);
       }
 
@@ -1789,7 +1799,7 @@ const ACT_PERM = {
   'car-approve':'drivers','car-edit':'drivers','car-remove':'drivers',
   'car-add-admin':'drivers','cars-of-user':'drivers','doc-urls':'drivers',
 
-  'rides-list':'rides','del-review':'rides',
+  'rides-list':'rides','del-review':'rides','ride-notify-list':'rides',
 
   'complaint-resolve':'complaints','resolve-complaint':'complaints',
 
@@ -2693,6 +2703,10 @@ http.createServer(async (req, res) => {
           car: me.car, price, eta_minutes: 5
         });
         if (error) return json(res, 500, { error: 'offer_failed' });
+        // отмечаем, что водитель на заявку откликнулся — по этому потом
+        // считаем процент отклика и вычисляем мёртвые аккаунты
+        db.from('ride_notify').update({ responded: true, responded_at: new Date().toISOString() })
+          .eq('ride_id', ride.id).eq('driver_id', me.id).then(() => {}, () => {});
         return json(res, 200, { ok: true });
       }
 
@@ -2807,7 +2821,7 @@ http.createServer(async (req, res) => {
       // запись в журнал — всё, кроме чтения
       const readOnly = new Set(['promo-list','support-list','support-count','winback-list','cars-of-user',
         'cars-pending','cars-pending-list','doc-urls','user-phone','apps-phones','admin-counts','stats',
-        'drivers-stats','days-stats','user-search','avatars','avatar-fetch',
+        'drivers-stats','days-stats','user-search','avatars','avatar-fetch','ride-notify-list',
         'audit-list','audit-actors','activity','broadcast-count','broadcast-list','rides-stats','rides-list','src-list','rides-list',
         'city-list','group-check']);
       const customLog = new Set(['edit-user', 'adjust-balance', 'driver-status', 'ban', 'car-edit']);
@@ -3455,6 +3469,36 @@ http.createServer(async (req, res) => {
       }
 
       // статистика по водителям за период
+      // кому уходила заявка и кто на неё откликнулся
+      if (act === 'ride-notify-list') {
+        const rid = body.ride_id;
+        if (!rid) return json(res, 400, { error: 'no_ride' });
+        const { data: rows } = await db.from('ride_notify')
+          .select('driver_id,sent_at,delivered,responded,responded_at')
+          .eq('ride_id', rid).order('sent_at', { ascending: true });
+        const ids = [...new Set((rows || []).map(x => x.driver_id))];
+        let who = {};
+        if (ids.length) {
+          const { data: us } = await db.from('users')
+            .select('id,name,car,telegram_id,status,vehicle_type').in('id', ids);
+          (us || []).forEach(u => {
+            who[u.id] = {
+              name: u.name, car: u.car, online: u.status === 'online',
+              moto: u.vehicle_type === 'moto', tag: String(u.telegram_id || '').slice(-4)
+            };
+          });
+        }
+        const items = (rows || []).map(x => ({
+          ...x, ...(who[x.driver_id] || { name: 'водитель удалён', car: '', tag: '????' })
+        }));
+        return json(res, 200, {
+          ok: true, items,
+          sent: items.length,
+          got: items.filter(x => x.delivered).length,
+          answered: items.filter(x => x.responded).length
+        });
+      }
+
       if (act === 'drivers-stats') {
         const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 29 * 864e5).toISOString();
         const to = body.to ? new Date(body.to + 'T23:59:59').toISOString() : new Date().toISOString();
@@ -3486,6 +3530,22 @@ http.createServer(async (req, res) => {
         const lastBy = {};
         (lastRows || []).forEach(r => { if (!lastBy[r.driver_id]) lastBy[r.driver_id] = r.created_at; });
         list.forEach(d => { d.last = lastBy[d.id] || null; });
+
+        // сколько уведомлений получил и на сколько ответил — так видно
+        // мёртвые аккаунты: числится online, заявки приходят, откликов нет
+        const { data: nt } = await db.from('ride_notify')
+          .select('driver_id,responded,delivered').gte('sent_at', from).lte('sent_at', to).limit(20000);
+        const ntBy = {};
+        (nt || []).forEach(x => {
+          const a3 = ntBy[x.driver_id] || (ntBy[x.driver_id] = { got: 0, ans: 0 });
+          if (x.delivered) a3.got++;
+          if (x.responded) a3.ans++;
+        });
+        list.forEach(d => {
+          const a3 = ntBy[d.id] || { got: 0, ans: 0 };
+          d.got = a3.got; d.ans = a3.ans;
+          d.react = a3.got ? Math.round(a3.ans / a3.got * 100) : null;
+        });
 
         return json(res, 200, { ok: true, items: list, from, to });
       }

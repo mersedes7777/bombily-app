@@ -3590,9 +3590,53 @@ async function ridesList(fate,title){
      ${wait!==null?` · ждал ${wait} мин`:''}
      ${x.city?` · ${esc(x.city)}`:''}
     </div>
+    <div style="padding-top:7px"><button class="rolebtn" onclick="event.stopPropagation();notifyList('${x.id}')">кому ушла заявка ›</button></div>
    </div>`;
   }).join(''):'<div class="empty">Заявок нет</div>'}
  <div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div>`;
+}
+// кому уходило уведомление о заявке и кто промолчал
+async function notifyList(rideId){
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Кому ушла заявка</h3><div class="empty">Загрузка…</div></div>`;
+ document.getElementById('device').appendChild(m);
+ const r=await api('/api/admin',{action:'ride-notify-list',ride_id:rideId});
+ const sh=m.querySelector('.sheet');
+ const close=`<div class="sa"><button class="o" onclick="document.getElementById('sh2').remove()">Закрыть</button></div>`;
+ if(!r||r.error){sh.innerHTML=`<h3>Кому ушла заявка</h3><div class="empty">Не удалось загрузить</div>${close}`;return;}
+ const items=r.items||[];
+ if(!items.length){
+  sh.innerHTML=`<h3>Кому ушла заявка</h3>
+  <div class="note" style="margin:10px 0">По этой заявке записей нет.<br><span style="color:var(--dim2)">Учёт рассылки включился недавно — по заявкам, созданным раньше, данных не осталось. Новые будут записываться полностью.</span></div>${close}`;
+  return;
+ }
+ const ans=items.filter(x=>x.responded),sil=items.filter(x=>!x.responded&&x.delivered),fail=items.filter(x=>!x.delivered);
+ const one=x=>`<div class="card" style="cursor:pointer" onclick="document.getElementById('sh2').remove();userCard('${x.driver_id}')">
+   <div class="ava">${esc(x.name)[0]||'?'}</div>
+   <div style="flex:1;min-width:0">
+    <div class="nm">${x.moto?'🏍 ':''}${esc(x.name)} <span class="idtag">#${x.tag}</span>${x.online?' <span style="color:var(--g);font-size:10px">на линии</span>':''}</div>
+    <div class="sub">${esc(x.car)||'—'}</div>
+   </div>
+   <div style="text-align:right;flex-shrink:0;font-size:11px">
+    ${!x.delivered?'<span style="color:var(--red)">не дошло</span>'
+     :x.responded?`<span style="color:var(--g)">откликнулся</span><br><span class="dim">${x.responded_at?new Date(x.responded_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>`
+     :'<span style="color:var(--am)">промолчал</span>'}
+   </div>
+  </div>`;
+ sh.innerHTML=`<h3>Кому ушла заявка</h3>
+ <div class="agrid" style="padding:8px 0 4px">
+  <div class="ac"><div class="n">${r.got}</div><div class="l">получили</div></div>
+  <div class="ac"><div class="n g">${r.answered}</div><div class="l">откликнулись</div></div>
+  <div class="ac"><div class="n" style="color:var(--am)">${sil.length}</div><div class="l">промолчали</div></div>
+  <div class="ac"><div class="n" style="color:${fail.length?'var(--red)':'var(--dim2)'}">${fail.length}</div><div class="l">не дошло</div></div>
+ </div>
+ ${!r.got?`<div class="note" style="margin:8px 0;border-color:rgba(226,88,90,.3);background:rgba(226,88,90,.07);color:#e8a0a1">Заявку не получил никто — на линии не было ни одного подходящего водителя.</div>`
+  :!r.answered?`<div class="note" style="margin:8px 0;border-color:rgba(226,88,90,.3);background:rgba(226,88,90,.07);color:#e8a0a1">Заявку увидели ${r.got} ${plural(r.got,['водитель','водителя','водителей'])}, но не ответил никто.</div>`:''}
+ ${ans.length?`<div class="sec" style="padding-left:0">Откликнулись · ${ans.length}</div>${ans.map(one).join('')}`:''}
+ ${sil.length?`<div class="sec" style="padding-left:0">Промолчали · ${sil.length}</div>${sil.map(one).join('')}`:''}
+ ${fail.length?`<div class="sec" style="padding-left:0">Не дошло · ${fail.length}</div>${fail.map(one).join('')}
+  <div class="note" style="margin:6px 0">Скорее всего, эти люди заблокировали бота — заявки до них не доходят вообще.</div>`:''}
+ ${close}`;
 }
 const RST={completed:['✅','доехал','var(--g)'],confirmed:['🚗','в пути','var(--g)'],
  in_progress:['🚗','в пути','var(--g)'],created:['⏳','без ответа','var(--am)']};
@@ -3767,6 +3811,7 @@ async function aStatDrivers(m){
  let list=drvGrp==='work'?work:drvGrp==='mute'?mute:all;
  const sorters={money:(a,b)=>b.money-a.money||b.done-a.done,done:(a,b)=>b.done-a.done||b.money-a.money,
   fail:(a,b)=>b.fail-a.fail||b.cancelled-a.cancelled,chek:(a,b)=>b.chek-a.chek,
+  react:(a,b)=>(a.react===null?101:a.react)-(b.react===null?101:b.react)||b.got-a.got,
   ago:(a,b)=>(a.ago===null?1e9:a.ago)-(b.ago===null?1e9:b.ago)};
  list=list.slice().sort(sorters[drvSort]||sorters.money);
 
@@ -3787,6 +3832,8 @@ async function aStatDrivers(m){
  for(const d of bym){if(acc>=tot.money*0.8)break;acc+=d.money;core++;}
 
  const al=[];
+ const zombie=all.filter(d=>d.got>=5&&d.ans===0);
+ if(zombie.length)al.push(['bad','🧟',`${zombie.length} ${plural(zombie.length,['водитель получает','водителя получают','водителей получают'])} заявки и не отвечает вообще`,`${zombie.slice(0,3).map(d=>esc(d.name)+' — '+d.got+' уведомлений, 0 ответов').join('; ')}`]);
  if(dead.length)al.push(['warn','💤',`${dead.length} ${plural(dead.length,['водитель','водителя','водителей'])} не берут заказы больше месяца`,'Числятся на линии, но заявки не берут — стоит написать или снять допуск']);
  if(badFail.length)al.push(['bad','↩️',`${badFail.length} ${plural(badFail.length,['водитель отказывается','водителя отказываются','водителей отказываются'])} чаще, чем в 40% случаев`,badFail.slice(0,3).map(d=>esc(d.name)+' — '+d.fail+'%').join(', ')]);
  if(tot.money&&core&&core<=3&&work.length>4)al.push(['warn','⚖️',`Почти всю выручку делают ${core} ${plural(core,['человек','человека','человек'])}`,'Если они уйдут — сервис встанет']);
@@ -3819,6 +3866,7 @@ async function aStatDrivers(m){
   <div class="${drvSort==='fail'?'on':''}" onclick="drvSet('s','fail')">Отказы</div>
   <div class="${drvSort==='chek'?'on':''}" onclick="drvSet('s','chek')">Чек</div>
   <div class="${drvSort==='ago'?'on':''}" onclick="drvSet('s','ago')">Свежесть</div>
+  <div class="${drvSort==='react'?'on':''}" onclick="drvSet('s','react')">Отклик</div>
  </div>
 
  <div class="sec">Нажми на человека — покажу по дням</div>
@@ -3830,6 +3878,7 @@ async function aStatDrivers(m){
     ${d.taken?`<div class="sub" style="margin-top:3px">взял ${d.taken} · выполнил ${d.done}${d.cancelled?` · <span style="color:${d.fail>=40?'var(--red)':'var(--am)'}">отказов ${d.cancelled} (${d.fail}%)</span>`:''}${d.delivery?' · доставок '+d.delivery:''}${d.intercity?' · межгород '+d.intercity:''}</div>
     <div class="ct" style="margin-top:6px"><i style="width:${Math.max(2,Math.round(d.money/mmax*100))}%"></i></div>`
     :`<div class="sub" style="margin-top:3px;color:var(--dim2)">за период заказов не брал</div>`}
+    ${d.got?`<div class="sub" style="margin-top:3px">получил ${d.got} ${plural(d.got,['уведомление','уведомления','уведомлений'])} · ответил на ${d.ans} · <span style="color:${d.react>=30?'var(--g)':d.react>0?'var(--am)':'var(--red)'}">отклик ${d.react}%</span></div>`:''}
    </div>
    <div style="text-align:right;flex-shrink:0">
     <div class="price">${d.money} ₽</div>
