@@ -1426,12 +1426,12 @@ function feedText(r, state) {
 
   if (state === 'taken') {
     const m = mins(r.created_at, r.confirmed_at);
-    return `${kind} · ${safeName(r.city)}${at ? `\n🕐 ${at}` : ''}\n\n<b>✅ Заказ забрали</b>${fast(m)}.\n<i>Кто был в приложении — тот и взял.</i>`;
+    return `${kind} · ${safeName(r.city)}${at ? `\n🕐 ${at}` : ''}\n\n<b>✅ Заказ взяли</b>${fast(m)}.\n<i>Кто был в приложении — тот и взял.</i>`;
   }
   if (state === 'gone') {
     const noOne = String(r.status || '').startsWith('cancelled') && !r.driver_id;
     const m = mins(r.created_at, Date.now());
-    return `${kind} · ${safeName(r.city)}${at ? `\n🕐 ${at}` : ''}\n\n<b>❌ Заказ не состоялся</b>${m !== null ? ` — висел ${m} мин` : ''}.\n<i>${noOne ? 'Никто не откликнулся — человек уехал на другом.' : 'Заявка отменена.'}</i>`;
+    return `${kind} · ${safeName(r.city)}${at ? `\n🕐 ${at}` : ''}\n\n<b>❌ Заказ не состоялся</b>${m !== null ? ` — висел ${m} мин` : ''}.\n<i>${noOne ? 'Никто не откликнулся.' : 'Заявка отменена.'}</i>`;
   }
 
   const when = r.scheduled_at
