@@ -1407,8 +1407,33 @@ function feedText(r, state) {
   const kind = r.kind === 'delivery' ? '📦 Доставка'
              : r.to_city ? '🛣 Межгород'
              : '🚕 Поездка';
-  if (state === 'taken') return `${kind} · ${safeName(r.city)}\n<b>Заказ принят</b> — уже кто-то взял.`;
-  if (state === 'gone')  return `${kind} · ${safeName(r.city)}\n<i>Заявка отменена.</i>`;
+
+  // во сколько заявку создали — чтобы зашедший позже видел, что он пропустил
+  const at = r.created_at
+    ? new Date(r.created_at).toLocaleString('ru', {
+        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+      })
+    : '';
+  // как быстро разобрали
+  const mins = (a, b) => {
+    if (!a || !b) return null;
+    const m = Math.floor((new Date(b) - new Date(a)) / 60000);
+    return m >= 0 && m < 1440 ? m : null;
+  };
+  const fast = m => m === null ? ''
+    : m < 1 ? ' — меньше чем за минуту'
+    : ` — за ${m} ${m % 10 === 1 && m % 100 !== 11 ? 'минуту' : (m % 10 >= 2 && m % 10 <= 4 && (m % 100 < 10 || m % 100 >= 20)) ? 'минуты' : 'минут'}`;
+
+  if (state === 'taken') {
+    const m = mins(r.created_at, r.confirmed_at);
+    return `${kind} · ${safeName(r.city)}${at ? `\n🕐 ${at}` : ''}\n\n<b>✅ Заказ забрали</b>${fast(m)}.\n<i>Кто был в приложении — тот и взял.</i>`;
+  }
+  if (state === 'gone') {
+    const noOne = String(r.status || '').startsWith('cancelled') && !r.driver_id;
+    const m = mins(r.created_at, Date.now());
+    return `${kind} · ${safeName(r.city)}${at ? `\n🕐 ${at}` : ''}\n\n<b>❌ Заказ не состоялся</b>${m !== null ? ` — висел ${m} мин` : ''}.\n<i>${noOne ? 'Никто не откликнулся — человек уехал на другом.' : 'Заявка отменена.'}</i>`;
+  }
+
   const when = r.scheduled_at
     ? `\n⏰ На ${new Date(r.scheduled_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
     : '';
@@ -1442,9 +1467,6 @@ async function feedPublish(ride) {
   } catch (e) { glog('лента водителей: ' + e.message); }
 }
 
-// через сколько секунд после закрытия убирать заявку из канала водителей
-const FEED_DEL_SEC = 120;
-
 async function feedUpdate(rideId, state) {
   try {
     const { data: f } = await db.from('ride_feed').select('*').eq('ride_id', rideId).maybeSingle();
@@ -1453,19 +1475,10 @@ async function feedUpdate(rideId, state) {
     if (!ride) return;
     await tg('editMessageText', {
       chat_id: f.chat_id, message_id: f.message_id,
-      text: feedText(ride, state), parse_mode: 'HTML', disable_web_page_preview: true
+      text: feedText(ride, state), parse_mode: 'HTML', disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [] }   // кнопку убираем: тыкать уже некуда
     }).catch(() => {});
     await db.from('ride_feed').update({ state }).eq('ride_id', rideId);
-
-    // заказ закрыт — через FEED_DEL_SEC убираем сообщение совсем,
-    // чтобы канал не зарастал мёртвыми заявками
-    const chatId = f.chat_id, msgId = f.message_id;
-    setTimeout(async () => {
-      try {
-        await tg('deleteMessage', { chat_id: chatId, message_id: msgId }).catch(() => {});
-        await db.from('ride_feed').delete().eq('ride_id', rideId);
-      } catch (e) { /* уже удалено — не страшно */ }
-    }, FEED_DEL_SEC * 1000);
   } catch (e) { glog('лента водителей: ' + e.message); }
 }
 
