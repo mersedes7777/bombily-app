@@ -2980,7 +2980,7 @@ function schedBlock(){
    ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
    ${r.passenger_price?`<div class="rprice"><div class="rpt">Пассажир предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
    <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div>
-   <div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Взять на это время'}</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div>
+   <div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Взять на это время'}</button><button class="skip" onclick="askRide('${r.id}')">💬 Связаться</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div>
   </div>`;
  }).join('');
 }
@@ -3004,6 +3004,12 @@ function focusReq(rideId){
  };
  setTimeout(tick,500);
 }
+// «Связаться» — уводим водителя в бота, там он пишет вопрос пассажиру
+function askRide(rideId){
+ const link=`https://t.me/${BOT_USERNAME}?start=ask_${rideId}`;
+ try{ if(tg&&tg.openTelegramLink)tg.openTelegramLink(link); else window.open(link,'_blank'); }
+ catch(e){ window.open(link,'_blank'); }
+}
 function drawReqs(){
  const l=document.getElementById('il');if(!l)return;
  const sb=schedBlock();
@@ -3011,7 +3017,7 @@ function drawReqs(){
  l.innerHTML=sb+reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(90,169,240,.14);color:var(--blue)"><svg class="ii" viewBox="0 0 24 24"><path d="M3.5 8.5 12 4l8.5 4.5v7L12 20l-8.5-4.5z"/><path d="M3.5 8.5 12 13l8.5-4.5M12 13v7"/></svg>доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(237,161,58,.14);color:var(--am)"><svg class="ii" viewBox="0 0 24 24"><path d="M6 3v18M18 3v18M12 4v3M12 10.5v3M12 17v3"/></svg>в ${esc(r.to_city)}</span> `:''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
  ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
  ${r.passenger_price?`<div class="rprice"><div class="rpt">Пассажир предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
- <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div><div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Отправить цену'}</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div></div>`).join('');
+ <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div><div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Отправить цену'}</button><button class="skip" onclick="askRide('${r.id}')">💬 Связаться</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div></div>`).join('');
 }
 function subIn(){
  if(inCh)db.removeChannel(inCh);

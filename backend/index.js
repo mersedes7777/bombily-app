@@ -168,6 +168,14 @@ async function onUpdate(u) {
     }
 
     await tg('answerCallbackQuery', { callback_query_id: cq.id });
+
+    // «Ответить» под сообщением по заявке
+    if (cq.data && cq.data.startsWith('ask:')) {
+      const p = cq.data.split(':');
+      await askReplyBtn(chat, p[1], Number(p[2]));
+      return;
+    }
+
     if (cq.data && cq.data.startsWith('rep:')) {
       const staff = await staffByTg(chat);
       if (!staff) { await send(chat, '⛔ Отвечать могут только администраторы.'); return; }
@@ -222,6 +230,13 @@ async function onUpdate(u) {
   }
 
   // сотрудник нажал «Ответить» и теперь пишет ответ
+  // человек пишет сообщение по заявке (кнопка «Связаться» или «Ответить»)
+  const askW = await askGetWait(chat);
+  if (askW && !text.startsWith('/')) {
+    await askDeliver(chat, askW, text);
+    return;
+  }
+
   const pending = await getStaffReply(chat);
   if (pending && pending.target_tg && !text.startsWith('/')) {
     await clearStaffReply(chat);
@@ -278,6 +293,13 @@ async function onUpdate(u) {
     const param = parts[1] || '';
 
     // вызов конкретного водителя из его карточки в группе: /start drv_UUID
+    // «Связаться» из заявки: /start ask_UUID — уточнить детали до принятия
+    if (param.startsWith('ask_')) {
+      const rid = param.slice(4);
+      const r = await askStart(chat, rid);
+      if (r) return;
+    }
+
     if (param.startsWith('drv_')) {
       const did = param.slice(4);
       const { data: drv } = await db.from('users')
@@ -401,6 +423,136 @@ async function onUpdate(u) {
 
   await send(chat, 'Кнопки внизу экрана 👇 Если нужна помощь — «💬 Связь с админом».', { reply_markup: kbFor(m.from) });
   return send(chat, 'Или откройте приложение:', { reply_markup: mainKbFor(m.from) });
+}
+
+
+/* ---------- переписка по заявке до её принятия ----------
+   Водитель жмёт «Связаться» в приложении → попадает в бота и пишет вопрос.
+   Пассажиру приходит сообщение с кнопкой «Ответить» — отвечать можно,
+   не открывая приложение. Телефоны при этом не раскрываются. */
+
+const ASK_LIMIT = 5;   // сколько сообщений по одной заявке может отправить один человек
+
+async function askSetWait(tg, rideId, peerTg, role) {
+  try {
+    await db.from('ask_wait').upsert({
+      tg, ride_id: rideId, peer_tg: peerTg, role,
+      created_at: new Date().toISOString()
+    });
+  } catch (e) {}
+}
+async function askGetWait(tg) {
+  try {
+    const { data } = await db.from('ask_wait').select('*').eq('tg', tg).maybeSingle();
+    if (!data) return null;
+    // просроченные ожидания не держим — человек мог уйти и вернуться через час
+    if (Date.now() - new Date(data.created_at).getTime() > 30 * 60000) {
+      await askClearWait(tg); return null;
+    }
+    return data;
+  } catch (e) { return null; }
+}
+async function askClearWait(tg) {
+  try { await db.from('ask_wait').delete().eq('tg', tg); } catch (e) {}
+}
+
+const askKb = (rideId, peerTg) => ({
+  reply_markup: { inline_keyboard: [[
+    { text: '✍️ Ответить', callback_data: `ask:${rideId}:${peerTg}` }
+  ]] }
+});
+
+// водитель нажал «Связаться» и пришёл в бота
+async function askStart(chat, rideId) {
+  const { data: ride } = await db.from('rides')
+    .select('id,status,driver_id,passenger_id,kind,from_address,to_address,city')
+    .eq('id', rideId).maybeSingle();
+  if (!ride) { await send(chat, 'Заявка не найдена — возможно, её уже отменили.'); return true; }
+  if (ride.driver_id || !String(ride.status || '').startsWith('created')) {
+    await send(chat, 'По этой заявке уже нельзя писать — её либо взяли, либо отменили.');
+    return true;
+  }
+
+  const { data: me } = await db.from('users')
+    .select('id,name,role,status,is_banned').eq('telegram_id', chat).maybeSingle();
+  if (!me || me.is_banned) { await send(chat, 'Нет доступа.'); return true; }
+  if (!['driver', 'both'].includes(me.role)) {
+    await send(chat, 'Писать по чужим заявкам могут только водители.'); return true;
+  }
+
+  const { count } = await db.from('ride_ask')
+    .select('id', { count: 'exact', head: true })
+    .eq('ride_id', rideId).eq('from_id', me.id);
+  if ((count || 0) >= ASK_LIMIT) {
+    await send(chat, `По этой заявке вы уже отправили ${ASK_LIMIT} сообщений. Дождитесь ответа.`);
+    return true;
+  }
+
+  const { data: pas } = await db.from('users')
+    .select('telegram_id').eq('id', ride.passenger_id).maybeSingle();
+  if (!pas || !pas.telegram_id) { await send(chat, 'Пассажир недоступен.'); return true; }
+
+  await askSetWait(chat, rideId, pas.telegram_id, 'driver');
+  const kind = ride.kind === 'delivery' ? '📦 Доставка' : ride.to_city ? '🛣 Межгород' : '🚕 Поездка';
+  await send(chat,
+    `${kind}\n📍 ${safeName(ride.from_address)} → ${safeName(ride.to_address)}\n\n` +
+    `<b>Напишите сообщение пассажиру</b> — оно придёт ему сюда же, в бота.\n` +
+    `<i>Например: «подъезд со двора?», «поместится ли коляска?»</i>\n\n` +
+    `Просто отправьте текст следующим сообщением.`,
+    { reply_markup: { force_reply: true, input_field_placeholder: 'ваш вопрос пассажиру' } });
+  return true;
+}
+
+// нажали кнопку «Ответить» под сообщением
+async function askReplyBtn(chat, rideId, peerTg) {
+  const { data: ride } = await db.from('rides')
+    .select('id,status,driver_id').eq('id', rideId).maybeSingle();
+  if (!ride) { await send(chat, 'Заявка не найдена.'); return; }
+  if (ride.driver_id || !String(ride.status || '').startsWith('created')) {
+    await send(chat, 'По этой заявке переписка закрыта — её уже взяли или отменили.');
+    return;
+  }
+  const { data: me } = await db.from('users').select('id,role').eq('telegram_id', chat).maybeSingle();
+  const role = me && ['driver', 'both'].includes(me.role) ? 'driver' : 'passenger';
+  await askSetWait(chat, rideId, peerTg, role);
+  await send(chat, '<b>Напишите ответ</b> — отправлю его следующим сообщением.',
+    { reply_markup: { force_reply: true, input_field_placeholder: 'ваш ответ' } });
+}
+
+// человек написал текст, пока мы ждали от него сообщение
+async function askDeliver(chat, wait, text) {
+  await askClearWait(chat);
+  if (!text || !text.trim()) { await send(chat, 'Пустое сообщение не отправил.'); return; }
+  const body = text.trim().slice(0, 600);
+
+  const { data: ride } = await db.from('rides')
+    .select('id,status,driver_id,kind,from_address,to_address').eq('id', wait.ride_id).maybeSingle();
+  if (!ride || ride.driver_id || !String(ride.status || '').startsWith('created')) {
+    await send(chat, 'Не отправил: заявку уже взяли или отменили.');
+    return;
+  }
+
+  const { data: me } = await db.from('users').select('id,name').eq('telegram_id', chat).maybeSingle();
+  const { data: peer } = await db.from('users').select('id,name').eq('telegram_id', wait.peer_tg).maybeSingle();
+
+  const who = wait.role === 'driver'
+    ? `🚗 <b>Водитель ${safeName(me && me.name)}</b> спрашивает по вашей заявке:`
+    : `👤 <b>${safeName(me && me.name)}</b> ответил${wait.role === 'passenger' ? 'а' : ''} по заявке:`;
+  const head = wait.role === 'driver'
+    ? `${who}\n📍 ${safeName(ride.from_address)} → ${safeName(ride.to_address)}`
+    : who;
+
+  const ok = await send(wait.peer_tg, `${head}\n\n«${safeName(body)}»`, askKb(wait.ride_id, chat));
+
+  if (ok && ok.ok) {
+    await db.from('ride_ask').insert({
+      ride_id: wait.ride_id, from_id: me ? me.id : null, to_id: peer ? peer.id : null,
+      from_role: wait.role, text: body
+    }).then(() => {}, () => {});
+    await send(chat, '✅ Отправлено. Ответ придёт сюда же.');
+  } else {
+    await send(chat, 'Не получилось отправить — возможно, человек заблокировал бота.');
+  }
 }
 
 /* ---------- long polling ---------- */
