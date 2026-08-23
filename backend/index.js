@@ -527,7 +527,7 @@ async function askReplyBtn(chat, rideId, peerTg) {
 async function askDeliver(chat, wait, text) {
   await askClearWait(chat);
   if (!text || !text.trim()) { await send(chat, 'Пустое сообщение не отправил.'); return; }
-  const body = text.trim().slice(0, 600);
+  const body = text.trim().slice(0, 2000);
 
   const { data: ride } = await db.from('rides')
     .select('id,status,driver_id,kind,from_address,to_address').eq('id', wait.ride_id).maybeSingle();
@@ -557,7 +557,13 @@ async function askDeliver(chat, wait, text) {
   // чтобы после договорённости не искать заявку в приложении
   const toDriver = wait.role === 'passenger';
   const shortName = String((me && me.name) || '').split(/\s+/)[0].slice(0, 14);
-  const ok = await send(wait.peer_tg, `${head}\n\n«${safeName(body)}»`,
+  // длинное сообщение сворачиваем: телеграм умеет раскрывающиеся цитаты,
+  // иначе полотно текста закроет собой всё остальное в переписке
+  const shown = body.length > 220
+    ? `<blockquote expandable>${safeName(body)}</blockquote>`
+    : `«${safeName(body)}»`;
+
+  const ok = await send(wait.peer_tg, `${head}\n\n${shown}`,
     askKb(wait.ride_id, chat, toDriver, toDriver ? null : shortName));
 
   if (ok && ok.ok) {
