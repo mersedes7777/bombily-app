@@ -136,9 +136,10 @@ body{background:#070a09;font-family:Golos Text,sans-serif;color:var(--ink);displ
 .req .rm{font-size:12.5px;color:var(--dim);margin-top:4px;}
 .req .rp{display:flex;align-items:center;gap:8px;margin-top:12px;}
 .req .rp input{width:100px;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:10px;color:var(--ink);font-family:'Roboto Mono',monospace;font-weight:700;font-size:15px;text-align:center;outline:none;}
-.ra{display:flex;gap:8px;margin-top:10px;}
-.ra .acc{flex:1;background:var(--g);color:#06120b;border:none;border-radius:11px;padding:12px;font-weight:700;font-size:13.5px;cursor:pointer;}
-.ra .skip{background:transparent;color:var(--dim);border:1px solid var(--line2);border-radius:11px;padding:12px 16px;font-weight:600;font-size:13.5px;cursor:pointer;}
+.ra{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+.ra .acc{flex:1 1 100%;background:var(--g);color:#06120b;border:none;border-radius:11px;padding:12px;font-weight:700;font-size:13.5px;cursor:pointer;}
+.ra .skip{flex:1 1 0;min-width:0;background:transparent;color:var(--dim);border:1px solid var(--line2);border-radius:11px;padding:12px 10px;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap;}
+.ra .skip.ask{color:var(--g);border-color:var(--gs);}
 .badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:100px;text-transform:uppercase;letter-spacing:.3px;}
 .badge.am{background:rgba(242,167,59,.2);color:var(--am);}
 .agrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px;}
@@ -2980,7 +2981,7 @@ function schedBlock(){
    ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
    ${r.passenger_price?`<div class="rprice"><div class="rpt">Пассажир предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
    <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div>
-   <div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Взять на это время'}</button><button class="skip" onclick="askRide('${r.id}')">💬 Связаться</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div>
+   <div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Взять на это время'}</button><button class="skip ask" onclick="askRide('${r.id}')">💬 Связаться</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div>
   </div>`;
  }).join('');
 }
@@ -3007,8 +3008,15 @@ function focusReq(rideId){
 // «Связаться» — уводим водителя в бота, там он пишет вопрос пассажиру
 function askRide(rideId){
  const link=`https://t.me/${BOT_USERNAME}?start=ask_${rideId}`;
- try{ if(tg&&tg.openTelegramLink)tg.openTelegramLink(link); else window.open(link,'_blank'); }
- catch(e){ window.open(link,'_blank'); }
+ try{
+  if(tg&&tg.openTelegramLink){
+   tg.openTelegramLink(link);
+   // сворачиваем окно приложения, иначе оно остаётся поверх чата с ботом
+   setTimeout(()=>{try{if(tg.close)tg.close();}catch(e){}},250);
+   return;
+  }
+  window.open(link,'_blank');
+ }catch(e){ window.open(link,'_blank'); }
 }
 function drawReqs(){
  const l=document.getElementById('il');if(!l)return;
@@ -3017,7 +3025,7 @@ function drawReqs(){
  l.innerHTML=sb+reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(90,169,240,.14);color:var(--blue)"><svg class="ii" viewBox="0 0 24 24"><path d="M3.5 8.5 12 4l8.5 4.5v7L12 20l-8.5-4.5z"/><path d="M3.5 8.5 12 13l8.5-4.5M12 13v7"/></svg>доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(237,161,58,.14);color:var(--am)"><svg class="ii" viewBox="0 0 24 24"><path d="M6 3v18M18 3v18M12 4v3M12 10.5v3M12 17v3"/></svg>в ${esc(r.to_city)}</span> `:''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}<div class="rt" style="margin-top:${r.target_driver_id?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>
  ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
  ${r.passenger_price?`<div class="rprice"><div class="rpt">Пассажир предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
- <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div><div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Отправить цену'}</button><button class="skip" onclick="askRide('${r.id}')">💬 Связаться</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div></div>`).join('');
+ <div class="rp"><input type="number" id="p${r.id}" placeholder="цена"><span style="color:var(--dim);font-size:14px">₽ — ${r.passenger_price?'своя цена':'ваша цена'}</span></div><div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Отправить цену'}</button><button class="skip ask" onclick="askRide('${r.id}')">💬 Связаться</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div></div>`).join('');
 }
 function subIn(){
  if(inCh)db.removeChannel(inCh);
