@@ -577,10 +577,13 @@ async function askDeliver(chat, wait, text) {
       ride_id: wait.ride_id, from_id: me ? me.id : null, to_id: peer ? peer.id : null,
       from_role: wait.role, text: body
     }).then(() => {}, () => {});
+    // даём сразу написать следующее сообщение — иначе, пока собеседник
+    // молчит, написать второй раз было нельзя
+    const again = { text: '✍️ Написать ещё', callback_data: `ask:${wait.ride_id}:${wait.peer_tg}` };
     await send(chat, '✅ Отправлено. Ответ придёт сюда же.',
-      wait.role === 'driver'
-        ? { reply_markup: { inline_keyboard: [[{ text: '✅ Взять заказ', callback_data: `take:${wait.ride_id}` }]] } }
-        : {});
+      { reply_markup: { inline_keyboard: wait.role === 'driver'
+        ? [[again], [{ text: '✅ Взять заказ', callback_data: `take:${wait.ride_id}` }]]
+        : [[again]] } });
   } else {
     await send(chat, 'Не получилось отправить — возможно, человек заблокировал бота.');
   }
@@ -588,10 +591,11 @@ async function askDeliver(chat, wait, text) {
 
 
 // после отправки цены даём поправить, если ошибся нулём
-const priceKb = rideId => ({
-  reply_markup: { inline_keyboard: [[
-    { text: '✏️ Изменить цену', callback_data: `take:${rideId}` }
-  ]] }
+const priceKb = (rideId, peerTg) => ({
+  reply_markup: { inline_keyboard: [
+    [{ text: '✏️ Изменить цену', callback_data: `take:${rideId}` }],
+    ...(peerTg ? [[{ text: '✍️ Написать пассажиру', callback_data: `ask:${rideId}:${peerTg}` }]] : [])
+  ] }
 });
 
 // водитель нажал «Взять заказ» прямо в боте — спрашиваем цену
@@ -633,7 +637,7 @@ async function takePrice(chat, wait, text) {
     return;
   }
   const { data: ride } = await db.from('rides')
-    .select('id,status,driver_id,to_address').eq('id', wait.ride_id).maybeSingle();
+    .select('id,status,driver_id,to_address,passenger_id').eq('id', wait.ride_id).maybeSingle();
   if (!ride || ride.driver_id || !String(ride.status || '').startsWith('created')) {
     await send(chat, 'Не отправил: заказ уже взяли или отменили.'); return;
   }
@@ -641,21 +645,35 @@ async function takePrice(chat, wait, text) {
     .select('id,name,car').eq('telegram_id', chat).maybeSingle();
   if (!me) { await send(chat, 'Нет доступа.'); return; }
 
+  // телеграм пассажира — чтобы дать кнопку «написать» рядом с ценой
+  const pasTg = await tgIdOf(ride.passenger_id);
+
   // если цена уже была — правим её, а не плодим второе предложение.
   // notified сбрасываем, чтобы пассажиру ушла новая сумма
   const { data: was } = await db.from('offers')
-    .select('id,price').eq('ride_id', ride.id).eq('driver_id', me.id).eq('status', 'pending').maybeSingle();
+    .select('id,price,notify_msg_id,notify_chat').eq('ride_id', ride.id).eq('driver_id', me.id).eq('status', 'pending').maybeSingle();
 
   if (was) {
     if (was.price === price) {
-      await send(chat, `Цена и так ${price} ₽ — ничего не менял.`, priceKb(ride.id));
+      await send(chat, `Цена и так ${price} ₽ — ничего не менял.`, priceKb(ride.id, pasTg));
       return;
     }
     const { error: e2 } = await db.from('offers')
-      .update({ price, notified: false }).eq('id', was.id);
+      .update({ price, notified: false, notify_msg_id: null, notify_chat: null }).eq('id', was.id);
     if (e2) { await send(chat, 'Не получилось изменить цену, попробуйте в приложении.'); return; }
+
+    // старое сообщение с прежней суммой гасим, чтобы пассажир не согласился
+    // на цену, которой уже нет — кнопки убираем, текст перечёркиваем
+    if (was.notify_msg_id && was.notify_chat) {
+      await tg('editMessageText', {
+        chat_id: was.notify_chat, message_id: was.notify_msg_id,
+        text: `<s>💰 ${safeName(me.name) || 'Водитель'} назвал цену: ${was.price} ₽</s>\n\n<i>Цена изменена — смотрите сообщение ниже.</i>`,
+        parse_mode: 'HTML', reply_markup: { inline_keyboard: [] }
+      }).catch(() => {});
+    }
+
     await send(chat, `✏️ <b>Цена изменена: было ${was.price} ₽, стало ${price} ₽.</b>\nПассажир увидит новую сумму.`,
-      priceKb(ride.id));
+      priceKb(ride.id, pasTg));
     return;
   }
 
@@ -672,7 +690,7 @@ async function takePrice(chat, wait, text) {
   await send(chat,
     `✅ <b>Цена ${price} ₽ отправлена.</b>\nПассажир увидит её и выберет водителя. ` +
     `Если выберет вас — пришлю адрес и телефон.`,
-    priceKb(ride.id));
+    priceKb(ride.id, pasTg));
 }
 
 
@@ -702,9 +720,34 @@ async function acceptOffer(chat, offerId) {
   if (ride.scheduled_at) { upd.driver_notified = false; upd.remind_sent = false; upd.early_sent = false; }
   await db.from('rides').update(upd).eq('id', ride.id);
   await db.from('offers').update({ status: 'accepted' }).eq('id', o.id);
+
+  // у остальных предложений гасим кнопки — заказ уже занят,
+  // иначе пассажир может случайно согласиться второй раз
+  const { data: rest } = await db.from('offers')
+    .select('id,price,driver_name,notify_msg_id,notify_chat')
+    .eq('ride_id', ride.id).neq('id', o.id);
   await db.from('offers').update({ status: 'declined' }).eq('ride_id', ride.id).neq('id', o.id);
+  for (const x of rest || []) {
+    if (!x.notify_msg_id || !x.notify_chat) continue;
+    await tg('editMessageText', {
+      chat_id: x.notify_chat, message_id: x.notify_msg_id,
+      text: `<s>💰 ${safeName(x.driver_name) || 'Водитель'}: ${x.price} ₽</s>\n\n<i>Вы выбрали другого водителя.</i>`,
+      parse_mode: 'HTML', reply_markup: { inline_keyboard: [] }
+    }).catch(() => {});
+  }
 
   await send(chat, `✅ <b>${safeName(o.driver_name)} назначен, цена ${o.price} ₽.</b>\nСейчас пришлю его контакты.`);
+
+  // своё же сообщение с кнопкой согласия тоже гасим
+  const { data: mine } = await db.from('offers')
+    .select('notify_msg_id,notify_chat').eq('id', o.id).maybeSingle();
+  if (mine && mine.notify_msg_id && mine.notify_chat) {
+    await tg('editMessageText', {
+      chat_id: mine.notify_chat, message_id: mine.notify_msg_id,
+      text: `✅ <b>${safeName(o.driver_name) || 'Водитель'} — ${o.price} ₽</b>\n<i>Вы выбрали этого водителя.</i>`,
+      parse_mode: 'HTML', reply_markup: { inline_keyboard: [] }
+    }).catch(() => {});
+  }
   // контакты обеим сторонам разошлёт обычный notifyLoop
 }
 
@@ -858,12 +901,19 @@ async function notifyLoop() {
           const tid = await tgIdOf(ride.passenger_id);
           const dtg = await tgIdOf(o.driver_id);
           const carTxt = o.car ? `\n🚗 ${safeName(o.car)}` : '';
-          if (tid) await send(tid, `💰 <b>${safeName(o.driver_name) || 'Водитель'} назвал цену: ${o.price} ₽</b>${carTxt}\nМаршрут: ${safeName(ride.to_address)}`,
+          let sent = null;
+          if (tid) sent = await send(tid, `💰 <b>${safeName(o.driver_name) || 'Водитель'} назвал цену: ${o.price} ₽</b>${carTxt}\nМаршрут: ${safeName(ride.to_address)}`,
             { reply_markup: { inline_keyboard: [
               [{ text: `✅ Согласен, ${o.price} ₽`, callback_data: `acc:${o.id}` }],
               ...(dtg ? [[{ text: '✍️ Написать водителю', callback_data: `ask:${o.ride_id}:${dtg}` }]] : []),
               [wa('Посмотреть все предложения', 'order')]
             ] } });
+          // запоминаем сообщение — если водитель поправит цену, погасим его
+          if (sent && sent.ok && sent.result) {
+            await db.from('offers')
+              .update({ notify_msg_id: sent.result.message_id, notify_chat: tid })
+              .eq('id', o.id).then(() => {}, () => {});
+          }
         }
         await db.from('offers').update({ notified: true }).eq('id', o.id);
       }
@@ -3079,8 +3129,30 @@ http.createServer(async (req, res) => {
         await db.from('rides').update(upd).eq('id', ride.id);
         if (body.offer_id) {
           await db.from('offers').update({ status: body.offer_status || 'selected' }).eq('id', body.offer_id);
+          // гасим кнопки согласия у остальных — иначе они висят в боте
+          const { data: rest } = await db.from('offers')
+            .select('id,price,driver_name,notify_msg_id,notify_chat')
+            .eq('ride_id', ride.id).neq('id', body.offer_id);
           await db.from('offers').update({ status: 'declined' })
             .eq('ride_id', ride.id).neq('id', body.offer_id);
+          for (const x of rest || []) {
+            if (!x.notify_msg_id || !x.notify_chat) continue;
+            tg('editMessageText', {
+              chat_id: x.notify_chat, message_id: x.notify_msg_id,
+              text: `<s>💰 ${safeName(x.driver_name) || 'Водитель'}: ${x.price} ₽</s>\n\n<i>Вы выбрали другого водителя.</i>`,
+              parse_mode: 'HTML', reply_markup: { inline_keyboard: [] }
+            }).catch(() => {});
+          }
+          // и у выбранного тоже — заказ уже подтверждён
+          const { data: win } = await db.from('offers')
+            .select('notify_msg_id,notify_chat,price,driver_name').eq('id', body.offer_id).maybeSingle();
+          if (win && win.notify_msg_id && win.notify_chat) {
+            tg('editMessageText', {
+              chat_id: win.notify_chat, message_id: win.notify_msg_id,
+              text: `✅ <b>${safeName(win.driver_name) || 'Водитель'} — ${win.price} ₽</b>\n<i>Вы выбрали этого водителя.</i>`,
+              parse_mode: 'HTML', reply_markup: { inline_keyboard: [] }
+            }).catch(() => {});
+          }
         }
         return json(res, 200, { ok: true });
       }
