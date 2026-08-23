@@ -188,6 +188,12 @@ async function onUpdate(u) {
       return;
     }
 
+    // «Завершить поездку» прямо из бота
+    if (cq.data && cq.data.startsWith('done:')) {
+      await rideDone(chat, cq.data.slice(5));
+      return;
+    }
+
     if (cq.data && cq.data.startsWith('rep:')) {
       const staff = await staffByTg(chat);
       if (!staff) { await send(chat, '⛔ Отвечать могут только администраторы.'); return; }
@@ -702,6 +708,88 @@ async function acceptOffer(chat, offerId) {
   // контакты обеим сторонам разошлёт обычный notifyLoop
 }
 
+
+/* ---------- завершение поездки ----------
+   Водитель может закрыть заказ прямо из бота, не открывая приложение.
+   Если забыл — бот закрывает сам через RIDE_AUTOCLOSE_MIN минут,
+   но помечает такую поездку как закрытую автоматически, чтобы
+   в отчётах было видно разницу. */
+
+const RIDE_AUTOCLOSE_MIN = 40;
+
+const doneKb = rideId => ({
+  reply_markup: { inline_keyboard: [[
+    { text: '🏁 Завершить поездку', callback_data: `done:${rideId}` }
+  ]] }
+});
+
+// нажали «Завершить поездку»
+async function rideDone(chat, rideId) {
+  const { data: ride } = await db.from('rides')
+    .select('id,status,driver_id,passenger_id,price,from_address,to_address')
+    .eq('id', rideId).maybeSingle();
+  if (!ride) { await send(chat, 'Заказ не найден.'); return; }
+
+  if (ride.status === 'completed') { await send(chat, 'Поездка уже завершена.'); return; }
+  if (!['confirmed', 'in_progress'].includes(ride.status)) {
+    await send(chat, 'Этот заказ уже закрыт или отменён.'); return;
+  }
+
+  const { data: me } = await db.from('users').select('id').eq('telegram_id', chat).maybeSingle();
+  if (!me) { await send(chat, 'Нет доступа.'); return; }
+  const isDriver = String(me.id) === String(ride.driver_id);
+  const isPass = String(me.id) === String(ride.passenger_id);
+  if (!isDriver && !isPass) { await send(chat, 'Это не ваш заказ.'); return; }
+
+  await db.from('rides').update({
+    status: 'completed', auto_closed: false, completed_at: new Date().toISOString()
+  }).eq('id', ride.id);
+
+  const sum = ride.price ? ` Сумма: ${ride.price} ₽.` : '';
+  await send(chat, `✅ <b>Поездка завершена.</b>${sum}`);
+
+  // вторую сторону тоже уведомим
+  const otherId = isDriver ? ride.passenger_id : ride.driver_id;
+  const otg = await tgIdOf(otherId);
+  if (otg) {
+    await send(otg, `✅ <b>Поездка завершена.</b>${sum}\n<i>Закрыл ${isDriver ? 'водитель' : 'пассажир'}.</i>`,
+      { reply_markup: { inline_keyboard: [[wa('Оценить поездку', 'order')]] } });
+  }
+}
+
+// закрываем забытые поездки
+async function autoCloseLoop() {
+  try {
+    const { data: open } = await db.from('rides')
+      .select('id,status,driver_id,passenger_id,price,confirmed_at,scheduled_at')
+      .in('status', ['confirmed', 'in_progress']).limit(200);
+
+    const now = Date.now();
+    for (const r of open || []) {
+      // для заказов на время считаем от назначенного часа, а не от подтверждения
+      const base = r.scheduled_at ? new Date(r.scheduled_at).getTime()
+                 : r.confirmed_at ? new Date(r.confirmed_at).getTime() : null;
+      if (!base) continue;
+      if (now - base < RIDE_AUTOCLOSE_MIN * 60000) continue;
+
+      await db.from('rides').update({
+        status: 'completed', auto_closed: true, completed_at: new Date().toISOString()
+      }).eq('id', r.id);
+
+      const sum = r.price ? ` Сумма: ${r.price} ₽.` : '';
+      for (const uid of [r.driver_id, r.passenger_id]) {
+        const tid = await tgIdOf(uid);
+        if (tid) await send(tid,
+          `🏁 <b>Поездка закрыта автоматически.</b>${sum}\n` +
+          `<i>Прошло больше ${RIDE_AUTOCLOSE_MIN} минут, никто не нажал «Завершить».</i>`,
+          { reply_markup: { inline_keyboard: [[wa('Открыть приложение', 'order')]] } });
+      }
+    }
+  } catch (e) { console.error('autoclose', e.message); }
+  setTimeout(autoCloseLoop, 5 * 60000);
+}
+setTimeout(autoCloseLoop, 60 * 1000);
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -797,7 +885,10 @@ async function notifyLoop() {
           if (tid) {
             const card = await contactCard(r.passenger_id, 'Пассажир');
             await send(tid, `${r.scheduled_at ? '🕒 <b>Вас выбрали на определённое время</b>\n<i>Приезжайте к назначенному часу, не сейчас.</i>' : '✅ <b>Вас выбрали!</b>'}\n\n${route}${card}`,
-              { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
+              { reply_markup: { inline_keyboard: [
+                [wa('Открыть заказ', 'driver')],
+                [{ text: '🏁 Завершить поездку', callback_data: `done:${r.id}` }]
+              ] } });
           }
         }
         // пассажиру — контакты водителя
@@ -806,7 +897,10 @@ async function notifyLoop() {
           if (tid) {
             const card = await contactCard(r.driver_id, 'Водитель');
             await send(tid, `${r.scheduled_at ? '🕒 <b>Водитель принял заказ на время</b>' : '🚕 <b>Водитель принял заказ</b>'}\n\n${route}${card}`,
-              { reply_markup: { inline_keyboard: [[wa('Открыть поездку', 'order')]] } });
+              { reply_markup: { inline_keyboard: [
+                [wa('Открыть поездку', 'order')],
+                [{ text: '🏁 Завершить поездку', callback_data: `done:${r.id}` }]
+              ] } });
           }
         }
         await db.from('rides').update({ driver_notified: true }).eq('id', r.id);
@@ -3936,7 +4030,7 @@ http.createServer(async (req, res) => {
         const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 29 * 864e5).toISOString();
         const to   = body.to   ? new Date(body.to   + 'T23:59:59').toISOString() : new Date().toISOString();
 
-        let q = db.from('rides').select('id,status,price,city,kind,to_city,created_at,confirmed_at,driver_id,passenger_id,passenger_price')
+        let q = db.from('rides').select('id,status,price,city,kind,to_city,created_at,confirmed_at,driver_id,passenger_id,passenger_price,auto_closed')
           .gte('created_at', from).lte('created_at', to).limit(10000);
         if (body.city && body.city !== 'all') q = q.eq('city', body.city);
         const { data: rides } = await q;
@@ -3958,6 +4052,7 @@ http.createServer(async (req, res) => {
           total: list.length,
           // что стало с заявкой
           completed: 0,        // доехал
+          autoClosed: 0,       // из них закрыл бот по времени, а не человек
           inProgress: 0,       // едет прямо сейчас
           waitingNow: 0,       // ищет машину сейчас
           noOffers: 0,         // никто не откликнулся
@@ -3999,6 +4094,7 @@ http.createServer(async (req, res) => {
 
           if (st === 'completed') {
             res2.completed++;
+            if (r.auto_closed) res2.autoClosed++;
             res2.money += Number(r.price) || 0;
             res2.byCity[c].done++; res2.byCity[c].money += Number(r.price) || 0;
             res2.byDay[day].done++; res2.byDay[day].money += Number(r.price) || 0;
