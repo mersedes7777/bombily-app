@@ -444,8 +444,6 @@ async function onUpdate(u) {
    Пассажиру приходит сообщение с кнопкой «Ответить» — отвечать можно,
    не открывая приложение. Телефоны при этом не раскрываются. */
 
-const ASK_LIMIT = 5;   // сколько сообщений по одной заявке может отправить один человек
-
 async function askSetWait(tg, rideId, peerTg, role) {
   try {
     await db.from('ask_wait').upsert({
@@ -469,11 +467,11 @@ async function askClearWait(tg) {
   try { await db.from('ask_wait').delete().eq('tg', tg); } catch (e) {}
 }
 
-const askKb = (rideId, peerTg, forDriver) => ({
+const askKb = (rideId, peerTg, forDriver, whoName) => ({
   reply_markup: { inline_keyboard: forDriver
     ? [[{ text: '✍️ Ответить', callback_data: `ask:${rideId}:${peerTg}` }],
        [{ text: '✅ Взять заказ', callback_data: `take:${rideId}` }]]
-    : [[{ text: '✍️ Ответить', callback_data: `ask:${rideId}:${peerTg}` }]] }
+    : [[{ text: whoName ? `✍️ Ответить (${whoName})` : '✍️ Ответить', callback_data: `ask:${rideId}:${peerTg}` }]] }
 });
 
 // водитель нажал «Связаться» и пришёл в бота
@@ -492,14 +490,6 @@ async function askStart(chat, rideId) {
   if (!me || me.is_banned) { await send(chat, 'Нет доступа.'); return true; }
   if (!['driver', 'both'].includes(me.role)) {
     await send(chat, 'Писать по чужим заявкам могут только водители.'); return true;
-  }
-
-  const { count } = await db.from('ride_ask')
-    .select('id', { count: 'exact', head: true })
-    .eq('ride_id', rideId).eq('from_id', me.id);
-  if ((count || 0) >= ASK_LIMIT) {
-    await send(chat, `По этой заявке вы уже отправили ${ASK_LIMIT} сообщений. Дождитесь ответа.`);
-    return true;
   }
 
   const { data: pas } = await db.from('users')
@@ -546,20 +536,29 @@ async function askDeliver(chat, wait, text) {
     return;
   }
 
-  const { data: me } = await db.from('users').select('id,name').eq('telegram_id', chat).maybeSingle();
+  const { data: me } = await db.from('users')
+    .select('id,name,car,vehicle_type,rating,telegram_id').eq('telegram_id', chat).maybeSingle();
   const { data: peer } = await db.from('users').select('id,name').eq('telegram_id', wait.peer_tg).maybeSingle();
 
-  const who = wait.role === 'driver'
-    ? `🚗 <b>Водитель ${safeName(me && me.name)}</b> спрашивает по вашей заявке:`
-    : `👤 <b>${safeName(me && me.name)}</b> ответил${wait.role === 'passenger' ? 'а' : ''} по заявке:`;
-  const head = wait.role === 'driver'
-    ? `${who}\n📍 ${safeName(ride.from_address)} → ${safeName(ride.to_address)}`
-    : who;
+  // пассажиру может писать несколько водителей — поэтому в каждом сообщении
+  // подписываем, кто именно: имя, машина и метка, чтобы не путались
+  let head;
+  if (wait.role === 'driver') {
+    const car = (me && me.car) || (me && me.vehicle_type === 'moto' ? 'мотоцикл' : 'машина не указана');
+    const tag = String((me && me.telegram_id) || '').slice(-4);
+    const rate = me && me.rating ? ` · ⭐ ${Number(me.rating).toFixed(1)}` : '';
+    head = `🚗 <b>${safeName(me && me.name)}</b> <code>#${tag}</code>${rate}\n${safeName(car)}\n` +
+           `<i>пишет по вашей заявке:</i> ${safeName(ride.from_address)} → ${safeName(ride.to_address)}`;
+  } else {
+    head = `👤 <b>${safeName(me && me.name)}</b> отвечает по заявке:`;
+  }
 
   // если сообщение уходит водителю — даём ему кнопку сразу взять заказ,
   // чтобы после договорённости не искать заявку в приложении
   const toDriver = wait.role === 'passenger';
-  const ok = await send(wait.peer_tg, `${head}\n\n«${safeName(body)}»`, askKb(wait.ride_id, chat, toDriver));
+  const shortName = String((me && me.name) || '').split(/\s+/)[0].slice(0, 14);
+  const ok = await send(wait.peer_tg, `${head}\n\n«${safeName(body)}»`,
+    askKb(wait.ride_id, chat, toDriver, toDriver ? null : shortName));
 
   if (ok && ok.ok) {
     await db.from('ride_ask').insert({
@@ -576,6 +575,13 @@ async function askDeliver(chat, wait, text) {
 }
 
 
+// после отправки цены даём поправить, если ошибся нулём
+const priceKb = rideId => ({
+  reply_markup: { inline_keyboard: [[
+    { text: '✏️ Изменить цену', callback_data: `take:${rideId}` }
+  ]] }
+});
+
 // водитель нажал «Взять заказ» прямо в боте — спрашиваем цену
 async function takeStart(chat, rideId) {
   const { data: ride } = await db.from('rides')
@@ -590,13 +596,9 @@ async function takeStart(chat, rideId) {
   if (!me || me.is_banned || !['driver', 'both'].includes(me.role)) {
     await send(chat, 'Брать заказы могут только водители с допуском.'); return;
   }
-  // уже отправлял цену по этой заявке?
+  // уже называл цену — значит хочет её поменять, это нормально
   const { data: was } = await db.from('offers')
     .select('id,price').eq('ride_id', rideId).eq('driver_id', me.id).eq('status', 'pending').maybeSingle();
-  if (was) {
-    await send(chat, `Вы уже назвали цену ${was.price} ₽ по этому заказу. Ждём ответа пассажира.`);
-    return;
-  }
 
   await askSetWait(chat, rideId, 0, 'price');
   const hint = ride.passenger_price
@@ -604,7 +606,9 @@ async function takeStart(chat, rideId) {
     : 'Пассажир цену не называл.';
   await send(chat,
     `📍 ${safeName(ride.from_address)} → ${safeName(ride.to_address)}\n${hint}\n\n` +
-    `<b>Напишите вашу цену числом</b> — например: 300`,
+    (was
+      ? `Сейчас у вас стоит <b>${was.price} ₽</b>.\n<b>Пришлите новую цену числом</b> — я её заменю.`
+      : `<b>Напишите вашу цену числом</b> — например: 300`),
     { reply_markup: { force_reply: true, input_field_placeholder: 'цена в рублях' } });
 }
 
@@ -625,6 +629,24 @@ async function takePrice(chat, wait, text) {
     .select('id,name,car').eq('telegram_id', chat).maybeSingle();
   if (!me) { await send(chat, 'Нет доступа.'); return; }
 
+  // если цена уже была — правим её, а не плодим второе предложение.
+  // notified сбрасываем, чтобы пассажиру ушла новая сумма
+  const { data: was } = await db.from('offers')
+    .select('id,price').eq('ride_id', ride.id).eq('driver_id', me.id).eq('status', 'pending').maybeSingle();
+
+  if (was) {
+    if (was.price === price) {
+      await send(chat, `Цена и так ${price} ₽ — ничего не менял.`, priceKb(ride.id));
+      return;
+    }
+    const { error: e2 } = await db.from('offers')
+      .update({ price, notified: false }).eq('id', was.id);
+    if (e2) { await send(chat, 'Не получилось изменить цену, попробуйте в приложении.'); return; }
+    await send(chat, `✏️ <b>Цена изменена: было ${was.price} ₽, стало ${price} ₽.</b>\nПассажир увидит новую сумму.`,
+      priceKb(ride.id));
+    return;
+  }
+
   const { error } = await db.from('offers').insert({
     ride_id: ride.id, driver_id: me.id, driver_name: me.name,
     car: me.car, price, eta_minutes: 5
@@ -637,7 +659,8 @@ async function takePrice(chat, wait, text) {
 
   await send(chat,
     `✅ <b>Цена ${price} ₽ отправлена.</b>\nПассажир увидит её и выберет водителя. ` +
-    `Если выберет вас — пришлю адрес и телефон.`);
+    `Если выберет вас — пришлю адрес и телефон.`,
+    priceKb(ride.id));
 }
 
 
@@ -740,7 +763,8 @@ async function notifyLoop() {
         if (ride) {
           const tid = await tgIdOf(ride.passenger_id);
           const dtg = await tgIdOf(o.driver_id);
-          if (tid) await send(tid, `💰 <b>${o.driver_name || 'Водитель'} назвал цену: ${o.price} ₽</b>\nМаршрут: ${ride.to_address}`,
+          const carTxt = o.car ? `\n🚗 ${safeName(o.car)}` : '';
+          if (tid) await send(tid, `💰 <b>${safeName(o.driver_name) || 'Водитель'} назвал цену: ${o.price} ₽</b>${carTxt}\nМаршрут: ${safeName(ride.to_address)}`,
             { reply_markup: { inline_keyboard: [
               [{ text: `✅ Согласен, ${o.price} ₽`, callback_data: `acc:${o.id}` }],
               ...(dtg ? [[{ text: '✍️ Написать водителю', callback_data: `ask:${o.ride_id}:${dtg}` }]] : []),
