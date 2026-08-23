@@ -176,6 +176,18 @@ async function onUpdate(u) {
       return;
     }
 
+    // «Взять заказ» прямо из переписки
+    if (cq.data && cq.data.startsWith('take:')) {
+      await takeStart(chat, cq.data.slice(5));
+      return;
+    }
+
+    // пассажир согласился с ценой
+    if (cq.data && cq.data.startsWith('acc:')) {
+      await acceptOffer(chat, cq.data.slice(4));
+      return;
+    }
+
     if (cq.data && cq.data.startsWith('rep:')) {
       const staff = await staffByTg(chat);
       if (!staff) { await send(chat, '⛔ Отвечать могут только администраторы.'); return; }
@@ -233,7 +245,8 @@ async function onUpdate(u) {
   // человек пишет сообщение по заявке (кнопка «Связаться» или «Ответить»)
   const askW = await askGetWait(chat);
   if (askW && !text.startsWith('/')) {
-    await askDeliver(chat, askW, text);
+    if (askW.role === 'price') await takePrice(chat, askW, text);
+    else await askDeliver(chat, askW, text);
     return;
   }
 
@@ -456,10 +469,11 @@ async function askClearWait(tg) {
   try { await db.from('ask_wait').delete().eq('tg', tg); } catch (e) {}
 }
 
-const askKb = (rideId, peerTg) => ({
-  reply_markup: { inline_keyboard: [[
-    { text: '✍️ Ответить', callback_data: `ask:${rideId}:${peerTg}` }
-  ]] }
+const askKb = (rideId, peerTg, forDriver) => ({
+  reply_markup: { inline_keyboard: forDriver
+    ? [[{ text: '✍️ Ответить', callback_data: `ask:${rideId}:${peerTg}` }],
+       [{ text: '✅ Взять заказ', callback_data: `take:${rideId}` }]]
+    : [[{ text: '✍️ Ответить', callback_data: `ask:${rideId}:${peerTg}` }]] }
 });
 
 // водитель нажал «Связаться» и пришёл в бота
@@ -542,17 +556,121 @@ async function askDeliver(chat, wait, text) {
     ? `${who}\n📍 ${safeName(ride.from_address)} → ${safeName(ride.to_address)}`
     : who;
 
-  const ok = await send(wait.peer_tg, `${head}\n\n«${safeName(body)}»`, askKb(wait.ride_id, chat));
+  // если сообщение уходит водителю — даём ему кнопку сразу взять заказ,
+  // чтобы после договорённости не искать заявку в приложении
+  const toDriver = wait.role === 'passenger';
+  const ok = await send(wait.peer_tg, `${head}\n\n«${safeName(body)}»`, askKb(wait.ride_id, chat, toDriver));
 
   if (ok && ok.ok) {
     await db.from('ride_ask').insert({
       ride_id: wait.ride_id, from_id: me ? me.id : null, to_id: peer ? peer.id : null,
       from_role: wait.role, text: body
     }).then(() => {}, () => {});
-    await send(chat, '✅ Отправлено. Ответ придёт сюда же.');
+    await send(chat, '✅ Отправлено. Ответ придёт сюда же.',
+      wait.role === 'driver'
+        ? { reply_markup: { inline_keyboard: [[{ text: '✅ Взять заказ', callback_data: `take:${wait.ride_id}` }]] } }
+        : {});
   } else {
     await send(chat, 'Не получилось отправить — возможно, человек заблокировал бота.');
   }
+}
+
+
+// водитель нажал «Взять заказ» прямо в боте — спрашиваем цену
+async function takeStart(chat, rideId) {
+  const { data: ride } = await db.from('rides')
+    .select('id,status,driver_id,passenger_id,from_address,to_address,passenger_price,kind')
+    .eq('id', rideId).maybeSingle();
+  if (!ride) { await send(chat, 'Заявка не найдена.'); return; }
+  if (ride.driver_id || !String(ride.status || '').startsWith('created')) {
+    await send(chat, 'Заказ уже взяли или отменили.'); return;
+  }
+  const { data: me } = await db.from('users')
+    .select('id,name,role,is_banned,driver_status').eq('telegram_id', chat).maybeSingle();
+  if (!me || me.is_banned || !['driver', 'both'].includes(me.role)) {
+    await send(chat, 'Брать заказы могут только водители с допуском.'); return;
+  }
+  // уже отправлял цену по этой заявке?
+  const { data: was } = await db.from('offers')
+    .select('id,price').eq('ride_id', rideId).eq('driver_id', me.id).eq('status', 'pending').maybeSingle();
+  if (was) {
+    await send(chat, `Вы уже назвали цену ${was.price} ₽ по этому заказу. Ждём ответа пассажира.`);
+    return;
+  }
+
+  await askSetWait(chat, rideId, 0, 'price');
+  const hint = ride.passenger_price
+    ? `Пассажир предлагает <b>${ride.passenger_price} ₽</b>.`
+    : 'Пассажир цену не называл.';
+  await send(chat,
+    `📍 ${safeName(ride.from_address)} → ${safeName(ride.to_address)}\n${hint}\n\n` +
+    `<b>Напишите вашу цену числом</b> — например: 300`,
+    { reply_markup: { force_reply: true, input_field_placeholder: 'цена в рублях' } });
+}
+
+// водитель прислал цену
+async function takePrice(chat, wait, text) {
+  await askClearWait(chat);
+  const price = Math.max(0, Math.min(100000, parseInt(String(text).replace(/\D+/g, ''), 10) || 0));
+  if (!price) {
+    await send(chat, 'Не понял цену. Нажмите «Взять заказ» ещё раз и пришлите число, например 300.');
+    return;
+  }
+  const { data: ride } = await db.from('rides')
+    .select('id,status,driver_id,to_address').eq('id', wait.ride_id).maybeSingle();
+  if (!ride || ride.driver_id || !String(ride.status || '').startsWith('created')) {
+    await send(chat, 'Не отправил: заказ уже взяли или отменили.'); return;
+  }
+  const { data: me } = await db.from('users')
+    .select('id,name,car').eq('telegram_id', chat).maybeSingle();
+  if (!me) { await send(chat, 'Нет доступа.'); return; }
+
+  const { error } = await db.from('offers').insert({
+    ride_id: ride.id, driver_id: me.id, driver_name: me.name,
+    car: me.car, price, eta_minutes: 5
+  });
+  if (error) { await send(chat, 'Не получилось отправить цену, попробуйте в приложении.'); return; }
+
+  // тот же учёт отклика, что и при предложении из приложения
+  db.from('ride_notify').update({ responded: true, responded_at: new Date().toISOString() })
+    .eq('ride_id', ride.id).eq('driver_id', me.id).then(() => {}, () => {});
+
+  await send(chat,
+    `✅ <b>Цена ${price} ₽ отправлена.</b>\nПассажир увидит её и выберет водителя. ` +
+    `Если выберет вас — пришлю адрес и телефон.`);
+}
+
+
+// пассажир принял цену прямо в боте
+async function acceptOffer(chat, offerId) {
+  const { data: o } = await db.from('offers')
+    .select('id,ride_id,driver_id,driver_name,price,status').eq('id', offerId).maybeSingle();
+  if (!o) { await send(chat, 'Предложение не найдено.'); return; }
+
+  const { data: ride } = await db.from('rides')
+    .select('id,status,driver_id,passenger_id,scheduled_at').eq('id', o.ride_id).maybeSingle();
+  if (!ride) { await send(chat, 'Заявка не найдена.'); return; }
+
+  const { data: me } = await db.from('users').select('id').eq('telegram_id', chat).maybeSingle();
+  if (!me || String(me.id) !== String(ride.passenger_id)) {
+    await send(chat, 'Это не ваша заявка.'); return;
+  }
+  if (ride.driver_id) {
+    await send(chat, 'Водитель по этому заказу уже выбран.'); return;
+  }
+  if (o.status !== 'pending') { await send(chat, 'Это предложение уже неактуально.'); return; }
+
+  const upd = {
+    driver_id: String(o.driver_id), status: 'confirmed',
+    price: o.price, confirmed_at: new Date().toISOString()
+  };
+  if (ride.scheduled_at) { upd.driver_notified = false; upd.remind_sent = false; upd.early_sent = false; }
+  await db.from('rides').update(upd).eq('id', ride.id);
+  await db.from('offers').update({ status: 'accepted' }).eq('id', o.id);
+  await db.from('offers').update({ status: 'declined' }).eq('ride_id', ride.id).neq('id', o.id);
+
+  await send(chat, `✅ <b>${safeName(o.driver_name)} назначен, цена ${o.price} ₽.</b>\nСейчас пришлю его контакты.`);
+  // контакты обеим сторонам разошлёт обычный notifyLoop
 }
 
 /* ---------- long polling ---------- */
@@ -621,8 +739,13 @@ async function notifyLoop() {
         const { data: ride } = await db.from('rides').select('passenger_id,to_address').eq('id', o.ride_id).maybeSingle();
         if (ride) {
           const tid = await tgIdOf(ride.passenger_id);
+          const dtg = await tgIdOf(o.driver_id);
           if (tid) await send(tid, `💰 <b>${o.driver_name || 'Водитель'} назвал цену: ${o.price} ₽</b>\nМаршрут: ${ride.to_address}`,
-            { reply_markup: { inline_keyboard: [[wa('Посмотреть', 'order')]] } });
+            { reply_markup: { inline_keyboard: [
+              [{ text: `✅ Согласен, ${o.price} ₽`, callback_data: `acc:${o.id}` }],
+              ...(dtg ? [[{ text: '✍️ Написать водителю', callback_data: `ask:${o.ride_id}:${dtg}` }]] : []),
+              [wa('Посмотреть все предложения', 'order')]
+            ] } });
         }
         await db.from('offers').update({ notified: true }).eq('id', o.id);
       }
