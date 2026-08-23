@@ -448,7 +448,9 @@ async function notifyLoop() {
         for (const d of drv || []) {
           if (!d.telegram_id) continue;
           const ok = await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
-            { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'driver')]] } });
+            { reply_markup: { inline_keyboard: [[
+              { text: 'Открыть заявку', web_app: { url: appUrl('driver', null, { ride: r.id }) } }
+            ]] } });
           notifRows.push({ ride_id: r.id, driver_id: d.id, delivered: !!(ok && ok.ok) });
         }
         if (notifRows.length) {

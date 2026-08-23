@@ -220,6 +220,8 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .stars span{font-size:32px;cursor:pointer;color:var(--line2);line-height:1;}
 .stars span.on{color:var(--am);}
 .ta{width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:11px;padding:11px;color:var(--ink);font-family:Golos Text,sans-serif;font-size:14px;outline:none;resize:none;min-height:70px;}
+.req.focus{animation:reqpop 2.4s ease-out;}
+@keyframes reqpop{0%{box-shadow:0 0 0 0 var(--gs);transform:scale(1)}12%{box-shadow:0 0 0 3px var(--g);transform:scale(1.015)}100%{box-shadow:0 0 0 0 transparent;transform:scale(1)}}
 /* --- итоги: блок внимания, живая сводка, города --- */
 .alrt{margin:0 14px 8px;padding:12px 14px;border-radius:14px;background:var(--surf);border:1px solid var(--line2);display:flex;gap:11px;align-items:flex-start;}
 .alrt.warn{border-color:rgba(237,161,58,.35);background:rgba(237,161,58,.07);}
@@ -1335,7 +1337,7 @@ async function boot(){
   if(pendingShift){const ps=pendingShift;pendingShift=null;setTimeout(()=>{if(ps.sid)try{localStorage.setItem('bmb_shift_seen',ps.sid);}catch(e){}shiftDone(ps.mins,ps.from,ps.to);},500);}
   if(START==='order'){targetDrv=null;pTab=active?'ride':'order';drawP();}
   if(START==='profile'){pTab='profile';drawP();}
-  if(START==='driver'){ if(isDrv()){setRole('driver');} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
+  if(START==='driver'){ if(isDrv()){setRole('driver');focusReq(qs.get('ride'));} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
   window.__booted=true;
   if(HOME_ON)setTimeout(checkHome,1200);
   if(START==='chat'){
@@ -2981,6 +2983,26 @@ function schedBlock(){
    <div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Взять на это время'}</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div>
   </div>`;
  }).join('');
+}
+// водитель пришёл из уведомления — доводим его прямо до нужной заявки,
+// список грузится не мгновенно, поэтому ждём появления карточки
+function focusReq(rideId){
+ if(!rideId)return;
+ let tries=0;
+ const tick=()=>{
+  const inp=document.getElementById('p'+rideId);
+  const card=inp&&inp.closest('.req');
+  if(card){
+   card.scrollIntoView({behavior:'smooth',block:'center'});
+   card.classList.add('focus');
+   setTimeout(()=>card.classList.remove('focus'),2600);
+   return;
+  }
+  if(++tries<14)return setTimeout(tick,400);
+  // карточки нет — заявку уже разобрали или отменили
+  T('Эту заявку уже взяли');
+ };
+ setTimeout(tick,500);
 }
 function drawReqs(){
  const l=document.getElementById('il');if(!l)return;
