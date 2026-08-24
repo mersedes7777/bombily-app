@@ -4494,6 +4494,20 @@ async function finCities(c){
   <div class="obhint" style="padding:2px 0 12px">Водитель включает показ у себя в кабинете. Старая карточка убирается, чтобы чат не засорялся. Между публикациями обновляется только статус — свободен или занят.</div>
   <button class="btn" onclick="saveDpost()">Сохранить</button>
  </div>
+ <div class="head"><h2>Напоминания уснувшим</h2></div>
+ <div class="form">
+  <div class="fr"><label>Первое напоминание через, дней тишины</label>
+   <input id="wbf" type="number" min="3" max="120" value="${SETTINGS.winback_first_days??14}"></div>
+  <div class="fr"><label>Потом повторять раз в, дней</label>
+   <input id="wbn" type="number" min="7" max="180" value="${SETTINGS.winback_next_days??30}"></div>
+  <div class="obhint" style="padding:2px 0 12px">Пассажирам, которые давно не заходили. Кто зашёл в приложение — отсчёт начинается заново, лишнего не получит. Всего не больше четырёх напоминаний на человека, потом бот замолкает навсегда. Чаще двух недель ставить не стоит: люди начнут блокировать бота, а вернуть заблокировавшего невозможно.</div>
+  <button class="btn" onclick="saveWinback()">Сохранить</button>
+ </div>
+ <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Напоминания включены</div>
+   <div class="obhint">Выключите, если не хотите писать уснувшим совсем.</div>
+  </div><div class="tg ${SETTINGS.winback_users_on!==false?'on':''}" onclick="togGroup('winback_users_on')"><b></b></div></div>
+
  <div class="obar" style="margin:14px 18px 10px"><div style="flex:1;padding-right:10px">
    <div class="l">Лента заказов для водителей</div>
    <div class="obhint">Присылать в водительскую группу уведомления о новых заказах. Адресов там нет — только вид заказа и цена. Когда заказ берут, сообщение меняется на «принят».</div>
@@ -4548,6 +4562,14 @@ async function pinNow(){
  const r=await api('/api/admin',{action:'pin-now'});
  if(r.error)return T(r.error==='no_groups'?'Ни у одного города не указан ID группы':'Ошибка');
  T('Закреп обновлён');
+}
+async function saveWinback(){
+ const f=Math.max(3,Math.min(120,parseInt(document.getElementById('wbf').value)||14));
+ const n=Math.max(7,Math.min(180,parseInt(document.getElementById('wbn').value)||30));
+ const r=await api('/api/admin',{action:'settings-update',fields:{winback_first_days:f,winback_next_days:n}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Не удалось сохранить');
+ if(r.settings)SETTINGS=r.settings; else {SETTINGS.winback_first_days=f;SETTINGS.winback_next_days=n;}
+ T('Сохранено: через '+f+' дн., потом раз в '+n);
 }
 async function saveDpost(){
  const v=Math.max(5,Math.min(720,parseInt(document.getElementById('dpost').value)||30));
