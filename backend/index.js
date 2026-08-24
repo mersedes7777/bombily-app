@@ -1562,16 +1562,42 @@ async function onGroupMessage(m) {
   if (del && del.ok) glog(`${city.name}: УДАЛЕНО · «${preview}»`);
   else glog(`${city.name}: удалить не вышло (${del && del.description ? del.description : 'нет прав?'}) · «${preview}»`);
 
+  const name = m.from && m.from.first_name ? m.from.first_name : '';
+  const fromId = m.from && m.from.id;
+
+  // сначала пробуем написать человеку лично — так он не чувствует себя
+  // отчитанным при всех, и сразу получает кнопку, куда идти.
+  // Личка возможна, только если он раньше запускал бота.
+  let dmOk = false;
+  if (fromId) {
+    const quoted = text.length > 300 ? text.slice(0, 300) + '…' : text;
+    const dmText = isReply
+      ? `🚗 ${name ? name + ', в' : 'В'}ы ответили на заказ в чате — я убрал сообщение.\n\n` +
+        `<blockquote expandable>${safeName(quoted)}</blockquote>\n\n` +
+        `Заявки принимаются только в приложении: там видно все свободные заказы, ` +
+        `а поездка попадёт в ваш рейтинг. В чате договариваться нельзя — ни вам, ни пассажиру не будет защиты.`
+      : `🚖 ${name ? name + ', я' : 'Я'} убрал ваше сообщение из чата — заказы там не работают.\n\n` +
+        `<blockquote expandable>${safeName(quoted)}</blockquote>\n\n` +
+        `Давайте оформлю как заявку: её сразу увидят все свободные водители, ` +
+        `они назовут цену, а вы выберете подходящую. Ваш номер и адрес не увидит никто, кроме того, кто возьмёт заказ.`;
+    const dm = await send(fromId, dmText, {
+      reply_markup: { inline_keyboard: [[wa(isReply ? '🚗 Смотреть заявки' : '🚖 Оформить заказ', isReply ? 'driver' : 'order')]] }
+    });
+    dmOk = !!(dm && dm.ok);
+    glog(`${city.name}: ${dmOk ? 'написал в личку' : 'в личку не дошло (не запускал бота)'} · ${name}`);
+  }
+  // дошло лично — в чате не пишем, чтобы не позорить человека и не сорить
+  if (dmOk) return;
+
   // не частим с ответами: не чаще раза в минуту на группу
   const last = groupReplyAt.get(chatId) || 0;
   if (Date.now() - last < 60 * 1000) return;
   groupReplyAt.set(chatId, Date.now());
 
-  const name = m.from && m.from.first_name ? m.from.first_name : '';
   const txtOrder = `🚖 ${name ? name + ', з' : 'З'}аказы такси — в боте Bombily, а не в чате.\n\nТам заявку сразу видят все свободные водители, и вы выбираете цену. Ваш номер и адрес не видит никто, кроме того, кто взял заказ.`;
   const txtReply = `🚗 ${name ? name + ', з' : 'З'}аказы принимаются только в боте Bombily.\n\nТам видно все свободные заявки, а поездка засчитается в ваш рейтинг. Договариваться в чате нельзя.`;
   const r = await send(chatId, isReply ? txtReply : txtOrder,
-    { reply_markup: { inline_keyboard: [[{ text: isReply ? '🚗 Смотреть заявки' : '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] } });
+    { reply_markup: { inline_keyboard: [[{ text: isReply ? '🚗 Смотреть заявки' : '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}?start=order` }]] } });
   if (r && r.result) delLater(chatId, r.result.message_id, st.group_del_sec ?? 90);
 }
 
