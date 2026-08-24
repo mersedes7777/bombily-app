@@ -833,6 +833,83 @@ async function autoCloseLoop() {
 }
 setTimeout(autoCloseLoop, 60 * 1000);
 
+
+/* ---------- напоминания уснувшим пассажирам ----------
+   Человек зашёл, посмотрел и пропал — таких большинство.
+   Пишем через 14 дней тишины, потом раз в месяц, но не бесконечно.
+   Как только человек зашёл в приложение — отсчёт начинается заново,
+   и лишних сообщений он не получает. */
+
+const WINBACK_MAX = 4;        // больше четырёх напоминаний не шлём никому
+const WINBACK_PER_RUN = 25;   // за один проход, чтобы не упереться в лимиты телеграма
+
+async function winbackUsersLoop() {
+  try {
+    const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (st && st.winback_users_on === false) { setTimeout(winbackUsersLoop, 6 * 3600 * 1000); return; }
+
+    const firstDays = (st && st.winback_first_days) || 14;
+    const nextDays  = (st && st.winback_next_days) || 30;
+    const now = Date.now();
+    const sleepCut = new Date(now - firstDays * 864e5).toISOString();
+    const repeatCut = new Date(now - nextDays * 864e5).toISOString();
+
+    const { data: sleepers } = await db.from('users').select('*')
+      .lt('last_active', sleepCut)
+      .lt('winback_count', WINBACK_MAX)
+      .limit(400);
+
+    let sent = 0;
+    for (const u of sleepers || []) {
+      if (sent >= WINBACK_PER_RUN) break;
+      if (!u.telegram_id || u.is_banned) continue;
+      // водителями занимается отдельная очередь с ручным одобрением
+      if (['driver', 'both'].includes(u.role)) continue;
+      // уже писали недавно — ждём
+      if (u.winback_sent && u.winback_sent > repeatCut) continue;
+
+      // сколько машин прямо сейчас в его городе — это убеждает лучше слов
+      let cars = 0;
+      if (u.city) {
+        const { count } = await db.from('users')
+          .select('id', { count: 'exact', head: true })
+          .eq('city', u.city).eq('status', 'online').in('role', ['driver', 'both']);
+        cars = count || 0;
+      }
+
+      // заказывал раньше или только смотрел — тексты разные
+      const { count: rides } = await db.from('rides')
+        .select('id', { count: 'exact', head: true }).eq('passenger_id', u.id);
+
+      const carsLine = cars
+        ? `\nСейчас на линии ${cars} ${plural(cars, ['машина', 'машины', 'машин'])}${u.city ? ' в городе ' + safeName(u.city) : ''}.`
+        : '';
+
+      const text = rides
+        ? `👋 <b>Давно вас не было!</b>${carsLine}\n\nЕсли нужно куда-то доехать или что-то передать — мы на месте.`
+        : `👋 <b>Вы заходили к нам, но так и не заказали</b>${carsLine}\n\n` +
+          `Это просто: указываете откуда и куда, водители называют цену, вы выбираете подходящую. ` +
+          `Никакой предоплаты, договариваетесь напрямую.`;
+
+      const ok = await send(u.telegram_id, text, {
+        reply_markup: { inline_keyboard: [[wa('Заказать машину', 'order')]] }
+      });
+
+      // заблокировал бота — больше не пытаемся
+      await db.from('users').update({
+        winback_sent: new Date().toISOString(),
+        winback_count: (u.winback_count || 0) + (ok && ok.ok ? 1 : WINBACK_MAX)
+      }).eq('id', u.id);
+
+      if (ok && ok.ok) sent++;
+      await new Promise(r => setTimeout(r, 120));   // не частим
+    }
+    if (sent) glog(`напоминания уснувшим: отправлено ${sent}`);
+  } catch (e) { console.error('winbackUsers', e.message); }
+  setTimeout(winbackUsersLoop, 6 * 3600 * 1000);
+}
+setTimeout(winbackUsersLoop, 3 * 60000);
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -4340,7 +4417,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
