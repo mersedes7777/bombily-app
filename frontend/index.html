@@ -3252,21 +3252,21 @@ async function _saveCar(){
 }
 async function togIntercity(){
  const v=!me.intercity;
- const _ri=await api('/api/me/update',{intercity:v});const error=_ri.error?{message:'Не удалось изменить'}:null;if(error)T('Не удалось изменить');
+ const _ri=await api('/api/me/update',{intercity:v});const error=_ri.error?{message:'Не удалось изменить'}:null;if(error)T(_ri.detail?('Ошибка: '+_ri.detail).slice(0,120):'Не удалось изменить');
  if(error)return;
  me.intercity=v;T(v?'Межгород включён — увидите заказы в другие города':'Межгород выключен — только поездки по городу');drawD();
 }
 async function togShowGroup(){
  const v=!me.show_in_group;
  const r=await api('/api/me/update',{show_in_group:v});
- if(r.error)return T('Не удалось изменить');
+ if(r.error)return T(r.detail?('Ошибка: '+r.detail).slice(0,120):'Не удалось изменить');
  if(r.me)me=r.me; else me.show_in_group=v;
  T(v?'Карточка появится в группе в течение минуты':'Карточка убрана из группы');
  drawD();
 }
 async function togDelivery(){
  const v=!me.delivery;
- const _rd=await api('/api/me/update',{delivery:v});const error=_rd.error?{message:'Не удалось изменить'}:null;if(error)T('Не удалось изменить');
+ const _rd=await api('/api/me/update',{delivery:v});const error=_rd.error?{message:'Не удалось изменить'}:null;if(error)T(_rd.detail?('Ошибка: '+_rd.detail).slice(0,120):'Не удалось изменить');
  if(error)return;
  me.delivery=v;T(v?'Доставка включена — придут и посылки, и пассажиры':'Доставка выключена — только обычные заказы');drawD();
 }
@@ -4494,6 +4494,15 @@ async function finCities(c){
   <div class="obhint" style="padding:2px 0 12px">Водитель включает показ у себя в кабинете. Старая карточка убирается, чтобы чат не засорялся. Между публикациями обновляется только статус — свободен или занят.</div>
   <button class="btn" onclick="saveDpost()">Сохранить</button>
  </div>
+ <div class="obar" style="margin:14px 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Чистить спам в группах</div>
+   <div class="obhint">Убирает рекламу запрещённого, «знакомства» и лёгкий заработок. Считает по сочетанию признаков, а не по одному слову — обычные сообщения не трогает. Каждая сработка приходит вам в бота, там же кнопка вернуть человека, если ошиблись.</div>
+  </div><div class="tg ${SETTINGS.antispam_on!==false?'on':''}" onclick="togGroup('antispam_on')"><b></b></div></div>
+ <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Банить спамеров, а не только удалять</div>
+   <div class="obhint">При явном спаме человек вылетает из группы. Если признаков мало — сообщение просто удаляется.</div>
+  </div><div class="tg ${SETTINGS.antispam_ban!==false?'on':''}" onclick="togGroup('antispam_ban')"><b></b></div></div>
+
  <div class="head"><h2>Напоминания уснувшим</h2></div>
  <div class="form">
   <div class="fr"><label>Первое напоминание через, дней тишины</label>

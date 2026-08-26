@@ -132,6 +132,7 @@ async function onUpdate(u) {
 
       const who = cm.new_chat_member.user;
       if (who.is_bot) return;
+      markJoin(cm.chat.id, who.id);   // новичок — час под присмотром антиспама
 
       const city = await cityByGroup(cm.chat.id);
       if (!city) return;
@@ -168,6 +169,15 @@ async function onUpdate(u) {
     }
 
     await tg('answerCallbackQuery', { callback_query_id: cq.id });
+
+    // ошиблись — владелец возвращает человека одной кнопкой
+    if (cq.data && cq.data.startsWith('unspam:')) {
+      const p = cq.data.split(':');
+      if (String(chat) !== String(OWNER_ID)) { await send(chat, 'Только владелец.'); return; }
+      const r = await tg('unbanChatMember', { chat_id: Number(p[1]), user_id: Number(p[2]), only_if_banned: true });
+      await send(chat, r && r.ok ? '✅ Разбанен. Слово из его сообщения стоит убрать из фильтра — напишите разработчику.' : 'Не получилось разбанить.');
+      return;
+    }
 
     // «Ответить» под сообщением по заявке
     if (cq.data && cq.data.startsWith('ask:')) {
@@ -910,6 +920,127 @@ async function winbackUsersLoop() {
 }
 setTimeout(winbackUsersLoop, 3 * 60000);
 
+
+// кто вступил в группу за последний час — новичок со ссылкой почти всегда спамер
+const recentJoin = new Map();
+function markJoin(chatId, uid) {
+  if (!uid) return;
+  recentJoin.set(`${chatId}:${uid}`, Date.now());
+  if (recentJoin.size > 3000) recentJoin.clear();
+}
+setInterval(() => {
+  const cut = Date.now() - 3600 * 1000;
+  for (const [k, v] of recentJoin) if (v < cut) recentJoin.delete(k);
+}, 10 * 60000);
+
+/* ---------- защита группы от спама ----------
+   Ловим рекламу запрещённого, «знакомства» и лёгкий заработок.
+   Считаем очки, а не ищем одно слово: обычные слова вроде «соль»
+   или «работа» сами по себе безобидны, опасны их сочетания
+   со ссылками и призывом писать в личку. */
+
+// нормализуем: спамеры разбавляют буквы точками, цифрами и латиницей
+function spamNorm(s) {
+  let t = String(s || '').toLowerCase();
+  const lat = { a: 'а', b: 'в', c: 'с', e: 'е', h: 'н', k: 'к', m: 'м', o: 'о', p: 'р', t: 'т', x: 'х', y: 'у' };
+  t = t.replace(/[abcehkmoptxy]/g, c => lat[c] || c);
+  t = t.replace(/[0о]/g, 'о').replace(/1/g, 'и').replace(/3/g, 'з').replace(/4/g, 'ч');
+  t = t.replace(/[^а-яё@\s]/g, ' ').replace(/\s+/g, ' ');
+  return ' ' + t.trim() + ' ';
+}
+
+const SPAM_GOODS = [
+  'закладк', 'клад ', 'миксы', 'реагент', 'гашиш', 'марихуан', 'амфетамин',
+  'мефедрон', 'экстази', 'лсд ', 'спайс', 'соли ', 'шишки', 'бошки', 'стафф',
+  'дурь', 'травка', 'план ', 'меф ', 'скорость '
+];
+const SPAM_JOB = [
+  'работа курьером', 'нужны курьеры', 'ищем курьеров', 'высокий доход',
+  'от 5000 в день', 'от 10000 в день', 'ежедневные выплаты', 'без опыта',
+  'быстрый заработок', 'лёгкий заработок', 'легкий заработок', 'подработка от',
+  'оплата сразу', 'дневная оплата', 'вакансия курьер'
+];
+const SPAM_DATE = [
+  'познакомлюсь', 'интим', 'для встреч', 'без обязательств', 'мои фото',
+  'мой профиль', 'пишите в лс', 'напиши мне', 'ищу мужчину', 'ищу спонсора',
+  'приватные фото', 'скучаю одна', 'девушки онлайн'
+];
+const SPAM_MONEY = [
+  'ставки на спорт', 'казино', 'бонус за регистрацию', 'схема заработка',
+  'криптовалют', 'инвестиции от', 'удвоим ваш', 'проверенный способ'
+];
+
+function spamScore(text, opts) {
+  const t = spamNorm(text);
+  const raw = String(text || '');
+  let score = 0;
+  const why = [];
+  const hit = (list, pts, label) => {
+    const found = list.filter(w => t.includes(w));
+    if (found.length) { score += pts * Math.min(found.length, 3); why.push(label + ': ' + found.slice(0, 3).join(', ')); }
+  };
+
+  hit(SPAM_GOODS, 5, 'запрещённое');
+  hit(SPAM_JOB, 3, 'заработок');
+  hit(SPAM_DATE, 3, 'знакомства');
+  hit(SPAM_MONEY, 3, 'деньги');
+
+  // ссылки и приглашения в личку
+  const links = (raw.match(/https?:\/\/|t\.me\/|@[a-zA-Z_]{4,}/g) || []).length;
+  if (links) { score += 2 * Math.min(links, 3); why.push('ссылок: ' + links); }
+
+  // сообщение от имени канала — почти всегда реклама
+  if (opts && opts.senderChat) { score += 4; why.push('пишет от имени канала'); }
+  // переслано из канала
+  if (opts && opts.forwarded) { score += 2; why.push('пересланное'); }
+  // новичок сразу со ссылкой
+  if (opts && opts.isNew && links) { score += 3; why.push('новичок со ссылкой'); }
+  // сплошной капс длиннее двадцати знаков
+  const caps = raw.replace(/[^А-ЯA-Z]/g, '').length;
+  if (raw.length > 20 && caps / raw.length > 0.6) { score += 2; why.push('капс'); }
+
+  return { score, why: why.join('; ') };
+}
+
+// нашли спам — убираем и, если велено, баним
+async function spamHandle(m, chatId, city, st, res) {
+  const text = String(m.text || m.caption || '');
+  const uid = m.from && m.from.id;
+  const uname = (m.from && m.from.first_name) || '';
+  const ban = st.antispam_ban !== false && res.score >= 8;
+
+  await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
+
+  if (ban) {
+    if (m.sender_chat) {
+      await tg('banChatSenderChat', { chat_id: chatId, sender_chat_id: m.sender_chat.id }).catch(() => {});
+    } else if (uid) {
+      await tg('banChatMember', { chat_id: chatId, user_id: uid }).catch(() => {});
+    }
+  }
+
+  db.from('spam_log').insert({
+    chat_id: chatId, city: city.name, tg_id: uid || null, user_name: uname,
+    text: text.slice(0, 500), score: res.score, reasons: res.why,
+    action: ban ? 'banned' : 'deleted'
+  }).then(() => {}, () => {});
+
+  glog(`${city.name}: СПАМ ${res.score} (${res.why}) — ${ban ? 'удалено и забанен' : 'удалено'} · ${uname}`);
+
+  // владельцу — чтобы видел и мог вернуть, если ошиблись
+  if (OWNER_ID) {
+    await send(OWNER_ID,
+      `🚫 <b>Спам в группе ${safeName(city.name)}</b>\n` +
+      `От: ${safeName(uname)}${uid ? ` <code>${uid}</code>` : ''}${m.sender_chat ? ' (канал)' : ''}\n` +
+      `Очки: ${res.score} — ${safeName(res.why)}\n` +
+      `Действие: ${ban ? 'удалено, забанен' : 'удалено'}\n\n` +
+      `<blockquote expandable>${safeName(text.slice(0, 600))}</blockquote>`,
+      ban && uid ? { reply_markup: { inline_keyboard: [[
+        { text: '↩️ Разбанить — это не спам', callback_data: `unspam:${chatId}:${uid}` }
+      ]] } } : {});
+  }
+}
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -1540,19 +1671,29 @@ async function onGroupMessage(m) {
     return;
   }
 
-  if (!st.group_moderate) { glog(`${city.name}: приходят сообщения, но «убирать заказы» выключено`); return; }
   const text = String(m.text || m.caption || '');
-  if (!text) return;
   if (m.from && m.from.is_bot) return;
 
   // администраторов группы не трогаем
+  let isAdminHere = false;
   try {
-    const cm = await tg('getChatMember', { chat_id: chatId, user_id: m.from.id });
-    if (cm && cm.ok && ['creator', 'administrator'].includes(cm.result.status)) {
-      glog(`${city.name}: писал администратор — пропускаем · «${preview}»`);
-      return;
-    }
+    const cm = await tg('getChatMember', { chat_id: chatId, user_id: m.from && m.from.id });
+    if (cm && cm.ok && ['creator', 'administrator'].includes(cm.result.status)) isAdminHere = true;
   } catch (e) {}
+
+  // спам ловим первым делом — до всякой модерации заказов
+  if (st.antispam_on !== false && !isAdminHere && (text || m.sender_chat)) {
+    const res = spamScore(text, {
+      senderChat: !!m.sender_chat,
+      forwarded: !!(m.forward_origin || m.forward_from || m.forward_from_chat),
+      isNew: recentJoin.has(`${chatId}:${m.from && m.from.id}`)
+    });
+    if (res.score >= 5) { await spamHandle(m, chatId, city, st, res); return; }
+  }
+
+  if (!st.group_moderate) { glog(`${city.name}: приходят сообщения, но «убирать заказы» выключено`); return; }
+  if (!text) return;
+  if (isAdminHere) { glog(`${city.name}: писал администратор — пропускаем · «${preview}»`); return; }
 
   const isOrder = looksLikeOrder(text);
   const isReply = !isOrder && looksLikeDriverReply(text);
@@ -3173,7 +3314,18 @@ http.createServer(async (req, res) => {
 
       const { data: fresh, error } = await db.from('users')
         .update(upd).eq('id', me.id).select().single();
-      if (error) return json(res, 500, { error: 'update_failed' });
+      if (error) {
+        // без подробностей такие сбои не поймать: у одного человека
+        // не работает, у остальных всё хорошо
+        console.error('me/update', me.id, me.telegram_id, JSON.stringify(upd), error.message, error.code);
+        if (OWNER_ID) send(OWNER_ID,
+          `⚠️ <b>Сбой сохранения профиля</b>\n` +
+          `Человек: ${safeName(me.name)} <code>${me.telegram_id}</code>\n` +
+          `Менял: ${safeName(Object.keys(upd).join(', '))}\n` +
+          `Ошибка: <code>${safeName(error.code || '')} ${safeName(error.message || '')}</code>`
+        ).catch(() => {});
+        return json(res, 500, { error: 'update_failed', detail: error.message, code: error.code });
+      }
       return json(res, 200, { ok: true, me: fresh });
     }
 
@@ -4443,7 +4595,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
