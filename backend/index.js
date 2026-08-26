@@ -1041,6 +1041,51 @@ async function spamHandle(m, chatId, city, st, res) {
   }
 }
 
+
+// водитель вышел на линию — показываем, что висит прямо сейчас.
+// Уведомления рассылаются один раз при создании заявки, и тот,
+// кто был офлайн, их просто не получал.
+async function sendOpenRides(user) {
+  try {
+    if (!user || !user.telegram_id) return;
+    if (!['driver', 'both'].includes(user.role)) return;
+
+    let q = db.from('rides')
+      .select('id,kind,city,to_city,from_address,to_address,scheduled_at,passenger_price,created_at,passenger_name')
+      .eq('status', 'created').is('driver_id', null)
+      .order('created_at', { ascending: false }).limit(20);
+    if (user.city) q = q.eq('city', user.city);
+    const { data: rides } = await q;
+
+    // мотоциклам — только доставка, машинам — всё кроме неё не трогаем
+    const fit = (rides || []).filter(r => {
+      if (user.vehicle_type === 'moto') return r.kind === 'delivery';
+      if (r.kind === 'delivery' && !user.delivery) return false;
+      if (r.to_city && !user.intercity) return false;
+      return true;
+    });
+
+    if (!fit.length) {
+      await send(user.telegram_id, '🟢 <b>Вы на линии.</b>\nСвободных заявок сейчас нет — пришлю, как появятся.');
+      return;
+    }
+
+    const lines = fit.slice(0, 8).map(r => {
+      const kind = r.kind === 'delivery' ? '📦' : r.to_city ? '🛣' : '🚕';
+      const when = r.scheduled_at
+        ? ` ⏰ на ${new Date(r.scheduled_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+        : '';
+      const price = r.passenger_price ? ` · предлагают ${r.passenger_price} ₽` : '';
+      return `${kind} ${safeName(r.from_address)} → ${safeName(r.to_address || (r.to_city ? 'в ' + r.to_city : '—'))}${when}${price}`;
+    }).join('\n');
+
+    await send(user.telegram_id,
+      `🟢 <b>Вы на линии. Свободных заявок: ${fit.length}</b>\n\n${lines}` +
+      (fit.length > 8 ? `\n\n<i>…и ещё ${fit.length - 8}</i>` : ''),
+      { reply_markup: { inline_keyboard: [[wa('Открыть заявки', 'driver')]] } });
+  } catch (e) { console.error('sendOpenRides', e.message); }
+}
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -2132,7 +2177,12 @@ function feedText(r, state) {
   const when = r.scheduled_at
     ? `\n⏰ На ${new Date(r.scheduled_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
     : '';
-  return `<b>${kind}</b>\n📍 ${safeName(r.city)}${when}\n\nОткройте приложение, чтобы посмотреть.`;
+  // канал закрытый, туда попадают только допущенные водители — адрес показываем.
+  // цену по-прежнему прячем, иначе торг теряет смысл
+  const route = r.from_address
+    ? `\n📍 ${safeName(r.from_address)}\n🏁 ${safeName(r.to_address || (r.to_city ? 'в ' + r.to_city : '—'))}`
+    : '';
+  return `<b>${kind}</b> · ${safeName(r.city)}${when}${route}\n\nОткройте приложение, чтобы взять.`;
 }
 
 async function feedPublish(ride) {
@@ -2185,7 +2235,7 @@ async function feedLoop() {
   try {
     const since = new Date(Date.now() - 20 * 60000).toISOString();
     const { data: rides } = await db.from('rides')
-      .select('id,city,kind,to_city,passenger_price,scheduled_at,status,created_at')
+      .select('id,city,kind,to_city,passenger_price,scheduled_at,status,created_at,from_address,to_address')
       .gte('created_at', since).order('created_at', { ascending: true }).limit(100);
 
     for (const r of rides || []) {
@@ -3326,6 +3376,13 @@ http.createServer(async (req, res) => {
         ).catch(() => {});
         return json(res, 500, { error: 'update_failed', detail: error.message, code: error.code });
       }
+
+      // встал на линию — покажем, что уже висит: обычные уведомления
+      // уходят один раз, и офлайн-водитель их не видел
+      if (upd.status === 'online' && me.status !== 'online') {
+        sendOpenRides(fresh).catch(() => {});
+      }
+
       return json(res, 200, { ok: true, me: fresh });
     }
 
