@@ -2487,6 +2487,9 @@ function applyDrv(){
  <div class="fr"><label>Телефон</label><input id="ap" value="${esc(window._appPh!==undefined?window._appPh:me.phone)}" placeholder="+7 (900) 000-00-00" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
  <div class="fr"><label>${appVeh==='moto'?'Марка мотоцикла':'Марка и модель машины'}</label><input id="acar" value="${esc(window._appCar||'')}" placeholder="${appVeh==='moto'?'Honda CB 400':'Lada Vesta, белая'}" maxlength="60"></div>
  <div class="fr"><label>Гос. номер</label><input id="aplate" value="${esc(window._appPlate||'')}" placeholder="А123ВС" style="text-transform:uppercase" maxlength="15"></div>
+ <div class="fr"><label>В каком городе будете работать</label>
+  <select id="acity">${CITIES.map(c=>`<option value="${esc(c)}" ${((window._appCity||me.city)===c)?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+ <div class="note" style="margin:0 0 12px">Заявки приходят только по вашему городу. Поменять можно потом в кабинете водителя.</div>
  ${appVeh==='car'?`<div class="up" id="u3" onclick="pick('car')"><div class="ic" id="i3">🚗</div><div class="tx">Машина спереди<small>обязательно виден госномер</small></div><span class="st" id="s3">загрузить</span></div>`:''}
  <div class="up" id="u1" onclick="pick('license')"><div class="ic" id="i1">🪪</div><div class="tx">Водительские права<small>разворот, чтобы читалось</small></div><span class="st" id="s1">загрузить</span></div>
  ${appVeh==='car'?`<div class="up" id="u2" onclick="pick('pts')"><div class="ic" id="i2">📄</div><div class="tx">Техпаспорт<small>ПТС или СТС на эту машину</small></div><span class="st" id="s2">загрузить</span></div>`:''}
@@ -2549,7 +2552,8 @@ async function _sendApp(){
  const plateN=(document.getElementById('aplate').value||'').trim().toUpperCase();
  if(!carN)return T(appVeh==='moto'?'Впишите марку мотоцикла':'Впишите марку машины');
  if(!plateN)return T('Впишите госномер');
- const r=await api('/api/apply-driver',{phone:phoneFmt(p),full_name:fio,vehicle_type:appVeh,car:carN,plate:plateN});
+ const cityN=(document.getElementById('acity')||{}).value||me.city||CITIES[0];
+ const r=await api('/api/apply-driver',{phone:phoneFmt(p),full_name:fio,vehicle_type:appVeh,car:carN,plate:plateN,city:cityN});
  if(r.error){
   const msg={bad_phone:'Введите корректный телефон',bad_name:'Впишите фамилию и имя полностью',need_docs:'Загрузите все три фотографии',already:'Вы уже водитель'}[r.error]||'Не удалось отправить заявку';
   return T(msg);
@@ -3830,7 +3834,7 @@ function drvSet(k,v){if(k==='s')drvSort=v;else drvGrp=v;aStatDrivers(document.ge
 
 async function aStatDrivers(m){
  m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Считаем…</div>`;
- const r=await api('/api/admin',{action:'drivers-stats',from:statFrom,to:statTo,vehicle:statVeh});
+ const r=await api('/api/admin',{action:'drivers-stats',from:statFrom,to:statTo,vehicle:statVeh,city:statCity});
  if(r.error){m.innerHTML=`<div class="head"><h2>Отчёт</h2></div>${rangeBar()}<div class="empty">Не удалось загрузить</div>`;return;}
  const all=r.items||[];
  const tot=all.reduce((a,x)=>({taken:a.taken+x.taken,done:a.done+x.done,money:a.money+x.money,canc:a.canc+x.cancelled}),{taken:0,done:0,money:0,canc:0});
@@ -3895,7 +3899,11 @@ async function aStatDrivers(m){
 
  ${al.length?`<div class="sec">Требует внимания</div>${al.map(a=>`<div class="alrt ${a[0]}"><div class="ai">${a[1]}</div><div class="at">${a[2]}<s>${a[3]}</s></div></div>`).join('')}`:''}
 
- <div class="seg" style="padding-top:8px">
+ <div class="seg" style="padding-top:8px;overflow-x:auto">
+  <div class="${statCity==='all'?'on':''}" onclick="statCity='all';aStatDrivers(document.getElementById('main'))">Все города</div>
+  ${CITIES.map(c=>`<div class="${statCity===c?'on':''}" onclick="statCity='${esc(c)}';aStatDrivers(document.getElementById('main'))">${esc(c)}</div>`).join('')}
+ </div>
+ <div class="seg">
   <div class="${drvGrp==='all'?'on':''}" onclick="drvSet('g','all')">Все ${all.length}</div>
   <div class="${drvGrp==='work'?'on':''}" onclick="drvSet('g','work')">Работают ${work.length}</div>
   <div class="${drvGrp==='mute'?'on':''}" onclick="drvSet('g','mute')">Молчат ${mute.length}</div>
@@ -3914,7 +3922,7 @@ async function aStatDrivers(m){
    <div class="ava">${esc(d.name)[0]||'?'}</div>
    <div style="flex:1;min-width:0">
     <div class="nm">${drvSort==='money'&&drvGrp==='all'&&d.money?`<span style="color:var(--dim2);font-family:'Roboto Mono',monospace;font-size:11px">${i+1}.</span> `:''}${d.moto?'🏍 ':''}${esc(d.name)} <span class="idtag">#${d.tag}</span>${d.online?' <span style="color:var(--g);font-size:10px">на линии</span>':''}</div>
-    <div class="sub">${esc(d.car)||'—'}${d.moto?' · мотокурьер':''} · ${agoTxt(d)}</div>
+    <div class="sub">${d.city?'📍 '+esc(d.city)+' · ':''}${esc(d.car)||'—'}${d.moto?' · мотокурьер':''} · ${agoTxt(d)}</div>
     ${d.taken?`<div class="sub" style="margin-top:3px">взял ${d.taken} · выполнил ${d.done}${d.cancelled?` · <span style="color:${d.fail>=40?'var(--red)':'var(--am)'}">отказов ${d.cancelled} (${d.fail}%)</span>`:''}${d.delivery?' · доставок '+d.delivery:''}${d.intercity?' · межгород '+d.intercity:''}</div>
     <div class="ct" style="margin-top:6px"><i style="width:${Math.max(2,Math.round(d.money/mmax*100))}%"></i></div>`
     :`<div class="sub" style="margin-top:3px;color:var(--dim2)">за период заказов не брал</div>`}

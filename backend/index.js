@@ -3308,6 +3308,12 @@ http.createServer(async (req, res) => {
       const plateDecl = String(body.plate || '').trim().toUpperCase().slice(0, 15);
       if (!carDecl || !plateDecl) return json(res, 400, { error: 'need_car' });
       const updApply = { has_phone: true, driver_status: 'pending', vehicle_type: vType, car: carDecl, plate: plateDecl };
+      // город, в котором водитель собирается работать — по нему потом
+      // приходят заявки и строится фильтр в панели
+      if (body.city) {
+        const { data: ok } = await db.from('cities').select('name').eq('name', String(body.city).slice(0, 60)).maybeSingle();
+        if (ok) updApply.city = ok.name;
+      }
       if (vType === 'moto') { updApply.delivery = true; updApply.intercity = false; }
       await db.from('users').update(updApply).eq('id', me.id);
       // заявленный транспорт — на проверку вместе с заявкой
@@ -4375,13 +4381,14 @@ http.createServer(async (req, res) => {
         const to = body.to ? new Date(body.to + 'T23:59:59').toISOString() : new Date().toISOString();
         const { data: rows } = await db.from('rides').select('driver_id,status,price,created_at,kind,to_city')
           .not('driver_id', 'is', null).gte('created_at', from).lte('created_at', to).limit(5000);
-        let dq = db.from('users').select('id,name,car,telegram_id,status,driver_status,vehicle_type')
+        let dq = db.from('users').select('id,name,car,city,telegram_id,status,driver_status,vehicle_type')
           .eq('driver_status', 'approved');
         if (body.vehicle === 'moto') dq = dq.eq('vehicle_type', 'moto');
         if (body.vehicle === 'car') dq = dq.or('vehicle_type.is.null,vehicle_type.eq.car');
+        if (body.city && body.city !== 'all') dq = dq.eq('city', body.city);
         const { data: drv } = await dq;
         const agg = {};
-        (drv || []).forEach(d => { agg[d.id] = { id: d.id, name: d.name, car: d.car, moto: d.vehicle_type === 'moto', tag: String(d.telegram_id || '').slice(-4), online: d.status === 'online', taken: 0, done: 0, cancelled: 0, money: 0, delivery: 0, intercity: 0 }; });
+        (drv || []).forEach(d => { agg[d.id] = { id: d.id, name: d.name, car: d.car, city: d.city, moto: d.vehicle_type === 'moto', tag: String(d.telegram_id || '').slice(-4), online: d.status === 'online', taken: 0, done: 0, cancelled: 0, money: 0, delivery: 0, intercity: 0 }; });
         (rows || []).forEach(r => {
           const a2 = agg[r.driver_id];
           if (!a2) return;
