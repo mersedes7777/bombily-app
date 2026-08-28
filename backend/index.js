@@ -1086,6 +1086,53 @@ async function sendOpenRides(user) {
   } catch (e) { console.error('sendOpenRides', e.message); }
 }
 
+
+// команды, набранные в группе, до личного обработчика не доходят —
+// поэтому отвечаем на них отдельно: убираем из чата и пишем человеку лично
+async function groupCommand(m, chatId) {
+  const raw = String(m.text || '').trim();
+  const cmd = (raw.match(/^\/([a-z_]+)(?:@\w+)?\b/i) || [])[1];
+  if (!cmd) return false;
+  const known = ['start', 'order', 'driver', 'profile', 'support', 'help'];
+  if (!known.includes(cmd.toLowerCase())) return false;
+
+  const uid = m.from && m.from.id;
+  const name = (m.from && m.from.first_name) || '';
+
+  // чат чистим — команды в общей ленте только мусорят
+  await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
+
+  const screen = { start: 'home', order: 'order', driver: 'driver', profile: 'profile', support: 'home', help: 'home' }[cmd.toLowerCase()] || 'home';
+  const title = {
+    start: '🚕 <b>Главное меню</b>',
+    order: '🚖 <b>Заказ поездки</b>',
+    driver: '🚗 <b>Кабинет водителя</b>',
+    profile: '👤 <b>Личный кабинет</b>',
+    support: '💬 <b>Связь с админом</b>',
+    help: '🚕 <b>Бомбилы</b>'
+  }[cmd.toLowerCase()];
+
+  let dmOk = false;
+  if (uid) {
+    const body = cmd.toLowerCase() === 'support'
+      ? `${title}\n\nНапишите сюда, что случилось — я передам администратору, он ответит в этом же чате.`
+      : `${title}\n\nКоманды работают здесь, в личном чате со мной, а не в общей группе — там их никто не видит, кроме вас.`;
+    const dm = await send(uid, body, cmd.toLowerCase() === 'support'
+      ? {}
+      : { reply_markup: { inline_keyboard: [[wa('Открыть приложение', screen)]] } });
+    dmOk = !!(dm && dm.ok);
+  }
+
+  // не запускал бота — лично написать нельзя, зовём коротко в чате
+  if (!dmOk) {
+    const r = await send(chatId,
+      `${name ? safeName(name) + ', к' : 'К'}оманды работают в личном чате с ботом, а не здесь.\nНажмите кнопку — откроется бот.`,
+      { reply_markup: { inline_keyboard: [[{ text: '🚕 Открыть бот', url: `https://t.me/${BOT_USERNAME}?start=${screen}` }]] } });
+    if (r && r.result) delLater(chatId, r.result.message_id, 60);
+  }
+  return true;
+}
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -1739,6 +1786,11 @@ async function onGroupMessage(m) {
 
   const text = String(m.text || m.caption || '');
   if (m.from && m.from.is_bot) return;
+
+  // команды вроде /driver или /order, набранные в чате: отвечаем лично
+  if (text.startsWith('/')) {
+    try { if (await groupCommand(m, chatId)) return; } catch (e) { console.error('groupCommand', e.message); }
+  }
 
   // администраторов группы не трогаем
   let isAdminHere = false;
