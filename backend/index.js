@@ -3133,7 +3133,26 @@ http.createServer(async (req, res) => {
         photo: body.photo || null, doc_pts: body.doc_pts || null, doc_license: body.doc_license, approved: false });
       if (ins.error) return json(res, 400, { error: ins.error.message });
       try {
-        await notifyStaff(`${kind === 'moto' ? '🏍' : '🚙'} <b>Новый транспорт на проверку</b>\n${me.name}\n${brand} · ${plate}${kind === 'moto' ? '\n(мотоцикл — только доставка)' : ''}`,
+        // без города и статуса непонятно, кто это: действующий водитель
+        // добавил вторую машину или новичок ещё ждёт проверки
+        const { data: who } = await db.from('users')
+          .select('city,driver_status,telegram_id').eq('id', me.id).maybeSingle();
+        const { data: ct } = await db.from('contacts')
+          .select('phone').eq('user_id', me.id).maybeSingle();
+        const { count: carsHave } = await db.from('cars')
+          .select('id', { count: 'exact', head: true }).eq('user_id', me.id);
+        const stTxt = who && who.driver_status === 'approved'
+          ? `действующий водитель · машина ${carsHave || 1}-я`
+          : who && who.driver_status === 'pending'
+            ? 'заявка ещё на рассмотрении'
+            : 'без допуска';
+        await notifyStaff(
+          `${kind === 'moto' ? '🏍' : '🚙'} <b>Новый транспорт на проверку</b>\n` +
+          `${safeName(me.name)} <code>#${String((who && who.telegram_id) || '').slice(-4)}</code>\n` +
+          `${who && who.city ? '📍 ' + safeName(who.city) + '\n' : ''}` +
+          `${ct && ct.phone ? '📞 ' + safeName(ct.phone) + '\n' : ''}` +
+          `${kind === 'moto' ? '🏍' : '🚗'} ${safeName(brand)} · ${safeName(plate)}\n` +
+          `<i>${stTxt}</i>${kind === 'moto' ? '\n(мотоцикл — только доставка)' : ''}`,
           { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
       } catch (e) { console.error('notifyStaff car-add', e.message); }
       return json(res, 200, { ok: true });
@@ -3324,7 +3343,7 @@ http.createServer(async (req, res) => {
         }
       } catch (e) {}
       try {
-        await notifyStaff(`${vType === 'moto' ? '🏍' : '🚗'} <b>Новая заявка${vType === 'moto' ? ' (мотокурьер)' : ' в водители'}</b>\n${me.name}\n📞 ${phone}\n${vType === 'moto' ? '🏍' : '🚗'} ${carDecl} · ${plateDecl}\n\nФИО и документы — в панели.`,
+        await notifyStaff(`${vType === 'moto' ? '🏍' : '🚗'} <b>Новая заявка${vType === 'moto' ? ' (мотокурьер)' : ' в водители'}</b>\n${safeName(me.name)} <code>#${String(me.telegram_id || '').slice(-4)}</code>\n${updApply.city ? '📍 ' + safeName(updApply.city) + '\n' : ''}📞 ${safeName(phone)}\n${vType === 'moto' ? '🏍' : '🚗'} ${safeName(carDecl)} · ${safeName(plateDecl)}\n\nФИО и документы — в панели.`,
           { reply_markup: { inline_keyboard: [[wa('Открыть заявки', 'admin')]] } });
       } catch (e) { console.error('notifyStaff apply', e.message); }
       return json(res, 200, { ok: true });
