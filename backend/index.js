@@ -2178,6 +2178,44 @@ function looksLikeDriverReply(text) {
   return false;
 }
 
+// «Ватутино — Город», «Соцгород - центр», «Ватутино на Город».
+// В маленьком городе половина адресов — названия районов, без домов.
+const PLACE_RE = /(центр|вокзал|рынок|базар|больниц|поликлин|автостанц|автовокзал|парк|школ|садик|аптек|магазин|шахт|пос[её]лок|мкр|микрорайон|квартал|кольцо|остановк|общежит|терминал|переезд)/i;
+const STOPV = /^(работаю|работал|работала|живу|жил|учусь|купил|купила|продам|куплю|смотрю|сижу|стою|иду|еду|хочу|думаю|погода|привет|спасибо|поздравляю)$/i;
+
+function placeLike(part) {
+  const p = String(part || '').trim();
+  if (!p) return false;
+  if (/\d/.test(p)) return true;                       // есть номер дома
+  if (PLACE_RE.test(p)) return true;                    // известное место
+  return /^[А-ЯЁ]/.test(p);                             // название с большой буквы
+}
+
+function routeLine(text) {
+  const line = String(text || '').trim().replace(/\s+/g, ' ');
+  if (!line || line.length > 60) return false;
+  if (/(продам|куплю|отдам|меняю|сдам|сниму|руб|₽|цена|торг)/i.test(line)) return false;
+
+  const short = p => p && p.length <= 25 && p.split(' ').length <= 3;
+
+  // «А — Б» через тире или стрелку: обе стороны должны быть похожи на место
+  const m = line.match(/^(.{2,30}?)\s*(?:[-–—]|→|=>|->)\s*(.{2,30})$/);
+  if (m) {
+    const a = m[1].trim(), b = m[2].trim();
+    if (short(a) && short(b) && placeLike(a) && placeLike(b)) return true;
+  }
+
+  // «с Ватутино в центр»
+  const m2 = line.match(/^(?:с|со|от|из)\s+(.{2,25}?)\s+(?:на|до|в|к)\s+(.{2,25})$/i);
+  if (m2 && placeLike(m2[1].trim()) && placeLike(m2[2].trim())) return true;
+
+  // «Ватутино на Город» — без предлога в начале
+  const m3 = line.match(/^([А-ЯЁа-яё0-9.\-]{3,25})\s+(?:на|до|в)\s+(.{2,25})$/);
+  if (m3 && !STOPV.test(m3[1]) && placeLike(m3[1]) && placeLike(m3[2].trim())) return true;
+
+  return false;
+}
+
 function looksLikeOrder(text) {
   const t = norm(text);
   if (!t) return false;
@@ -2194,6 +2232,10 @@ function looksLikeOrder(text) {
   if (t.length <= 80 && VERB_RE.test(t)) return true;
 
   const hasTrip = TRIP_RE.test(t);
+
+  // короткий маршрут без номеров домов: «Ватутино — Город», «Ленина 12 - рынок».
+  // Проверяем раньше отсечки про магазины: «рынок» тут — это пункт назначения
+  if (routeLine(text)) return true;
 
   // речь про аптеку, магазин, мэрию и прочее, а не про машину
   if (OTHER_RE.test(t) && !hasTrip) return false;
