@@ -175,10 +175,21 @@ async function onUpdate(u) {
       const what = cq.data.slice(3);
       if (what === 'go') { await chatOrderCreate(chat); return; }
       if (what === 'no') { await draftDel(chat); await send(chat, 'Отменил. Если что — просто напишите, куда нужно ехать.'); return; }
+      if (what === 'price') {
+        const d = await draftGet(chat);
+        if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
+        await draftSet(chat, { city: d.city, from_address: d.from_address, to_address: d.to_address,
+          raw_text: d.raw_text, price: d.price || null, stage: 'ask_price' });
+        await send(chat,
+          `💰 <b>Сколько готовы заплатить?</b>\nНапишите число, например: 300\n\n` +
+          `<i>Водители увидят вашу цену. Кто согласен — возьмёт заказ, кто нет — предложит свою.</i>`,
+          { reply_markup: { force_reply: true, input_field_placeholder: 'цена в рублях' } });
+        return;
+      }
       if (what === 'edit') {
         const d = await draftGet(chat);
         if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
-        await draftSet(chat, { city: d.city, from_address: null, to_address: null, raw_text: d.raw_text, stage: 'ask_from' });
+        await draftSet(chat, { city: d.city, from_address: null, to_address: null, raw_text: d.raw_text, price: d.price || null, stage: 'ask_from' });
         await send(chat, 'Напишите одной строкой: <b>откуда — куда</b>.\n<i>Например: Ленина 12 — Центральный рынок</i>',
           { reply_markup: { force_reply: true, input_field_placeholder: 'откуда — куда' } });
         return;
@@ -306,7 +317,7 @@ async function onUpdate(u) {
   // сотрудник нажал «Ответить» и теперь пишет ответ
   // дописывает адреса для заказа, начатого в чате
   const draft = await draftGet(chat);
-  if (draft && ['ask_from', 'ask_to'].includes(draft.stage) && !text.startsWith('/')) {
+  if (draft && ['ask_from', 'ask_to', 'ask_price'].includes(draft.stage) && !text.startsWith('/')) {
     await chatOrderText(chat, draft, text);
     return;
   }
@@ -1309,9 +1320,10 @@ async function draftGet(tg) {
 }
 async function draftDel(tg) { try { await db.from('chat_draft').delete().eq('tg', tg); } catch (e) {} }
 
-const draftKb = () => ({
+const draftKb = d => ({
   reply_markup: { inline_keyboard: [
-    [{ text: '✅ Да, оформить', callback_data: 'co:go' }],
+    [{ text: d && d.price ? `✅ Оформить за ${d.price} ₽` : '✅ Да, оформить', callback_data: 'co:go' }],
+    [{ text: d && d.price ? '💰 Изменить цену' : '💰 Назвать свою цену', callback_data: 'co:price' }],
     [{ text: '✏️ Исправить адреса', callback_data: 'co:edit' }],
     [{ text: '✖️ Отмена', callback_data: 'co:no' }]
   ] }
@@ -1324,8 +1336,11 @@ async function draftShow(chat, d) {
     `📍 Откуда: <b>${safeName(d.from_address || '—')}</b>\n` +
     `🏁 Куда: <b>${safeName(d.to_address || '—')}</b>\n` +
     `${d.city ? `🏙 Город: ${safeName(d.city)}\n` : ''}` +
-    `\nОформить заявку? Водители сразу её увидят и назовут цену.`,
-    draftKb());
+    `${d.price ? `💰 Ваша цена: <b>${d.price} ₽</b>\n` : ''}` +
+    `\n${d.price
+        ? 'Оформить? Водители увидят вашу цену и смогут согласиться или предложить свою.'
+        : 'Оформить заявку? Водители сразу её увидят и назовут цену.\nМожно назвать свою — тогда им останется согласиться.'}`,
+    draftKb(d));
 }
 
 // человек написал заказ в общем чате
@@ -1382,6 +1397,18 @@ async function chatOrderText(chat, d, text) {
       { reply_markup: { force_reply: true, input_field_placeholder: 'куда ехать' } });
   }
 
+  if (d.stage === 'ask_price') {
+    const p = Math.max(0, Math.min(100000, parseInt(String(t).replace(/\D+/g, ''), 10) || 0));
+    if (!p) {
+      return send(chat, 'Не понял цену. Пришлите число, например 300.',
+        { reply_markup: { force_reply: true, input_field_placeholder: 'цена в рублях' } });
+    }
+    const nd = { ...d, price: p, stage: 'confirm' };
+    await draftSet(chat, { city: nd.city, from_address: nd.from_address, to_address: nd.to_address,
+      raw_text: nd.raw_text, price: p, stage: 'confirm' });
+    return draftShow(chat, nd);
+  }
+
   if (d.stage === 'ask_to') {
     const nd = { ...d, to_address: t, stage: 'confirm' };
     await draftSet(chat, { city: nd.city, from_address: nd.from_address, to_address: nd.to_address, raw_text: nd.raw_text, stage: 'confirm' });
@@ -1411,7 +1438,7 @@ async function chatOrderCreate(chat) {
 
   // без телефона водитель не сможет позвонить
   if (!u.has_phone) {
-    await draftSet(chat, { city: d.city, from_address: d.from_address, to_address: d.to_address, raw_text: d.raw_text, stage: 'ask_phone' });
+    await draftSet(chat, { city: d.city, from_address: d.from_address, to_address: d.to_address, raw_text: d.raw_text, price: d.price || null, stage: 'ask_phone' });
     await send(chat,
       `Остался последний шаг: <b>номер телефона</b>.\nЕго увидит только тот водитель, который возьмёт заказ.`,
       { reply_markup: { keyboard: [[{ text: '📱 Поделиться номером', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
@@ -1421,14 +1448,18 @@ async function chatOrderCreate(chat) {
   const { data: ride, error } = await db.from('rides').insert({
     passenger_id: u.id, passenger_name: u.name,
     from_address: d.from_address, to_address: d.to_address,
-    status: 'created', city: d.city || u.city, kind: 'ride', source: 'chat'
+    status: 'created', city: d.city || u.city, kind: 'ride', source: 'chat',
+    passenger_price: d.price || null
   }).select().single();
   if (error) { await send(chat, 'Не получилось создать заявку, попробуйте в приложении.'); return; }
 
   await draftDel(chat);
   await send(chat,
     `✅ <b>Заявка создана!</b>\n📍 ${safeName(d.from_address)}\n🏁 ${safeName(d.to_address)}\n\n` +
-    `Водители уже её видят. Как назовут цену — пришлю сюда, выберете подходящую.\n\n` +
+    `${d.price ? `💰 Ваша цена: <b>${d.price} ₽</b>\n\n` : ''}` +
+    `${d.price
+      ? 'Водители уже её видят. Кто согласен — возьмёт заказ, кто-то может предложить свою цену.'
+      : 'Водители уже её видят. Как назовут цену — пришлю сюда, выберете подходящую.'}\n\n` +
     `<i>В следующий раз можно просто написать в чат одной строкой:</i>\n` +
     `<code>${safeName(d.from_address)} — ${safeName(d.to_address)}</code>`,
     { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
