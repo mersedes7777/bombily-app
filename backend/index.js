@@ -375,6 +375,24 @@ async function onUpdate(u) {
     const param = parts[1] || '';
 
     // вызов конкретного водителя из его карточки в группе: /start drv_UUID
+    // человек писал заказ в чате, но бота не запускал — заказ ждал его здесь
+    if (param === 'chat' || !param) {
+      const d = await draftGet(chat);
+      if (d) {
+        if (d.stage === 'confirm' && d.from_address && d.to_address) { await draftShow(chat, d); return; }
+        if (d.stage === 'ask_to' && d.from_address) {
+          await send(chat, `🚖 <b>Ваш заказ из чата</b>\n📍 Откуда: <b>${safeName(d.from_address)}</b>\n\nНапишите, <b>куда</b> ехать.`,
+            { reply_markup: { force_reply: true, input_field_placeholder: 'куда ехать' } });
+          return;
+        }
+        if (d.stage === 'ask_from') {
+          await send(chat, `🚖 <b>Ваш заказ из чата</b>\n\nНапишите одной строкой: <b>откуда — куда</b>.\n<i>Например: Ленина 12 — Центральный рынок</i>`,
+            { reply_markup: { force_reply: true, input_field_placeholder: 'откуда — куда' } });
+          return;
+        }
+      }
+    }
+
     // «Связаться» из заявки: /start ask_UUID — уточнить детали до принятия
     if (param.startsWith('ask_')) {
       const rid = param.slice(4);
@@ -1329,8 +1347,10 @@ async function chatOrderStart(m, chatId, city) {
     stage: r.from && r.to ? 'confirm' : (r.from ? 'ask_to' : 'ask_from')
   };
 
-  // не зарегистрирован в боте — писать в личку нельзя
+  // не запускал бота — в личку не написать. Но черновик сохраняем:
+  // нажмёт «Старт» — и заказ ждёт его там же, ничего не потеряется
   if (!u) {
+    await draftSet(uid, draft);
     return false;
   }
 
@@ -1408,7 +1428,9 @@ async function chatOrderCreate(chat) {
   await draftDel(chat);
   await send(chat,
     `✅ <b>Заявка создана!</b>\n📍 ${safeName(d.from_address)}\n🏁 ${safeName(d.to_address)}\n\n` +
-    `Водители уже её видят. Как назовут цену — пришлю сюда, выберете подходящую.`,
+    `Водители уже её видят. Как назовут цену — пришлю сюда, выберете подходящую.\n\n` +
+    `<i>В следующий раз можно просто написать в чат одной строкой:</i>\n` +
+    `<code>${safeName(d.from_address)} — ${safeName(d.to_address)}</code>`,
     { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
 }
 
@@ -2143,10 +2165,10 @@ async function onGroupMessage(m) {
   if (Date.now() - last < 60 * 1000) return;
   groupReplyAt.set(chatId, Date.now());
 
-  const txtOrder = `🚖 ${name ? name + ', з' : 'З'}аказы такси — в боте Bombily, а не в чате.\n\nТам заявку сразу видят все свободные водители, и вы выбираете цену. Ваш номер и адрес не видит никто, кроме того, кто взял заказ.`;
-  const txtReply = `🚗 ${name ? name + ', з' : 'З'}аказы принимаются только в боте Bombily.\n\nТам видно все свободные заявки, а поездка засчитается в ваш рейтинг. Договариваться в чате нельзя.`;
+  const txtOrder = `🚖 ${name ? safeName(name) + ', я' : 'Я'} сохранил ваш заказ — осталось нажать кнопку.\n\nОткроется бот, там будет ваш адрес и кнопка «Оформить». Водители сразу увидят заявку и назовут цену.\n<i>Ваш номер и адрес видит только тот, кто возьмёт заказ.</i>`;
+  const txtReply = `🚗 ${name ? safeName(name) + ', з' : 'З'}аказы принимаются только в боте Bombily.\n\nТам видно все свободные заявки, а поездка засчитается в ваш рейтинг. Договариваться в чате нельзя.`;
   const r = await send(chatId, isReply ? txtReply : txtOrder,
-    { reply_markup: { inline_keyboard: [[{ text: isReply ? '🚗 Смотреть заявки' : '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}?start=order` }]] } });
+    { reply_markup: { inline_keyboard: [[{ text: isReply ? '🚗 Смотреть заявки' : '🚖 Забрать мой заказ', url: `https://t.me/${BOT_USERNAME}?start=chat` }]] } });
   if (r && r.result) delLater(chatId, r.result.message_id, st.group_del_sec ?? 90);
 }
 
