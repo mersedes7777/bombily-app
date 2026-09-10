@@ -175,13 +175,44 @@ async function onUpdate(u) {
       const what = cq.data.slice(3);
       if (what === 'go') { await chatOrderCreate(chat); return; }
       if (what === 'no') { await draftDel(chat); await send(chat, 'Отменил. Если что — просто напишите, куда нужно ехать.'); return; }
+      // выбрал вид заказа
+      if (what.startsWith('k:')) {
+        const d = await draftGet(chat);
+        if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
+        const k = what.slice(2);
+        if (k === 'inter') {
+          await draftSet(chat, draftPack(d, { kind: 'ride', stage: 'ask_tocity' }));
+          await askToCity(chat, { ...d, kind: 'ride' });
+          return;
+        }
+        const nd = { ...d, kind: k === 'delivery' ? 'delivery' : 'ride', to_city: null };
+        const next = nd.from_address && nd.to_address ? 'confirm' : (nd.from_address ? 'ask_to' : 'ask_from');
+        await draftSet(chat, draftPack(nd, { stage: next }));
+        return coNextStep(chat, { ...nd, stage: next });
+      }
+
+      // выбрал город для межгорода
+      if (what.startsWith('c:')) {
+        const d = await draftGet(chat);
+        if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
+        const nd = { ...d, kind: 'ride', to_city: what.slice(2) };
+        const next = nd.from_address && nd.to_address ? 'confirm' : (nd.from_address ? 'ask_to' : 'ask_from');
+        await draftSet(chat, draftPack(nd, { stage: next }));
+        return coNextStep(chat, { ...nd, stage: next });
+      }
+
+      if (what === 'back') {
+        const d = await draftGet(chat);
+        if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
+        await draftSet(chat, draftPack(d, { stage: 'ask_kind' }));
+        return askKind(chat, d);
+      }
+
       if (what === 'kind') {
         const d = await draftGet(chat);
         if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
-        const nd = { ...d, kind: d.kind === 'delivery' ? 'ride' : 'delivery' };
-        await draftSet(chat, draftPack(nd, { stage: 'confirm' }));
-        await draftShow(chat, nd);
-        return;
+        await draftSet(chat, draftPack(d, { stage: 'ask_kind' }));
+        return askKind(chat, d);
       }
       if (what === 'time') {
         const d = await draftGet(chat);
@@ -222,9 +253,7 @@ async function onUpdate(u) {
         const d = await draftGet(chat);
         if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
         await draftSet(chat, draftPack(d, { from_address: null, to_address: null, stage: 'ask_from' }));
-        await send(chat, 'Напишите одной строкой: <b>откуда — куда</b>.\n<i>Например: Ленина 12 — Центральный рынок</i>',
-          { reply_markup: { force_reply: true, input_field_placeholder: 'откуда — куда' } });
-        return;
+        return coNextStep(chat, { ...d, from_address: null, to_address: null, stage: 'ask_from' });
       }
     }
 
@@ -350,6 +379,7 @@ async function onUpdate(u) {
   // дописывает адреса для заказа, начатого в чате
   const draft = await draftGet(chat);
   if (draft && ['ask_from', 'ask_to', 'ask_price', 'ask_time', 'ask_note'].includes(draft.stage) && !text.startsWith('/')) {
+    // на шагах с кнопками текст не ждём — человек должен нажать кнопку
     await chatOrderText(chat, draft, text);
     return;
   }
@@ -421,19 +451,7 @@ async function onUpdate(u) {
     // человек писал заказ в чате, но бота не запускал — заказ ждал его здесь
     if (param === 'chat' || !param) {
       const d = await draftGet(chat);
-      if (d) {
-        if (d.stage === 'confirm' && d.from_address && d.to_address) { await draftShow(chat, d); return; }
-        if (d.stage === 'ask_to' && d.from_address) {
-          await send(chat, `🚖 <b>Ваш заказ из чата</b>\n📍 Откуда: <b>${safeName(d.from_address)}</b>\n\nНапишите, <b>куда</b> ехать.`,
-            { reply_markup: { force_reply: true, input_field_placeholder: 'куда ехать' } });
-          return;
-        }
-        if (d.stage === 'ask_from') {
-          await send(chat, `🚖 <b>Ваш заказ из чата</b>\n\nНапишите одной строкой: <b>откуда — куда</b>.\n<i>Например: Ленина 12 — Центральный рынок</i>`,
-            { reply_markup: { force_reply: true, input_field_placeholder: 'откуда — куда' } });
-          return;
-        }
-      }
+      if (d) { await coNextStep(chat, d); return; }
     }
 
     // «Связаться» из заявки: /start ask_UUID — уточнить детали до принятия
@@ -1298,27 +1316,6 @@ async function groupCommand(m, chatId) {
    одной кнопкой. Приложение открывать не нужно. */
 
 // вытаскиваем «откуда» и «куда» из живой речи
-// доставка это или поездка — понятно по словам
-function guessKind(raw) {
-  const t = String(raw || '').toLowerCase();
-  return /(доставк|привез|привёз|передат|передач|посылк|забрать\s+и\s+отвез|курьер|пакет|документ|цвет[ыи]|еду\s+заберит)/.test(t)
-    ? 'delivery' : 'ride';
-}
-
-// куда именно: если в адресе назван другой город — это межгород
-async function guessCity(toAddr, ownCity) {
-  try {
-    const { data: cities } = await db.from('cities').select('name');
-    const t = String(toAddr || '').toLowerCase();
-    for (const c of cities || []) {
-      const n = String(c.name || '').toLowerCase();
-      if (!n || n === String(ownCity || '').toLowerCase()) continue;
-      if (t.includes(n) || t.includes(n.replace(/[аеоуы]$/, ''))) return c.name;
-    }
-  } catch (e) {}
-  return null;
-}
-
 // «18:30», «завтра 9», «через час», «через 20 минут»
 function parseWhen(raw) {
   const t = String(raw || '').toLowerCase().trim();
@@ -1422,7 +1419,7 @@ const draftKb = d => ({
   reply_markup: { inline_keyboard: [
     [{ text: d && d.price ? `✅ Оформить за ${d.price} ₽` : '✅ Да, оформить', callback_data: 'co:go' }],
     [{ text: d && d.price ? '💰 Изменить цену' : '💰 Назвать свою цену', callback_data: 'co:price' },
-     { text: d && d.kind === 'delivery' ? '🚕 Это поездка' : '📦 Это доставка', callback_data: 'co:kind' }],
+     { text: '🔄 Сменить вид', callback_data: 'co:kind' }],
     [{ text: d && d.scheduled_at ? `⏰ ${whenTxt(d.scheduled_at)}` : '⏰ На время', callback_data: 'co:time' },
      { text: d && d.comment ? '💬 Изменить пояснение' : '💬 Добавить пояснение', callback_data: 'co:note' }],
     [{ text: '✏️ Исправить адреса', callback_data: 'co:edit' },
@@ -1430,11 +1427,42 @@ const draftKb = d => ({
   ] }
 });
 
+// первый шаг: человек сам говорит, что ему нужно.
+// раньше бот угадывал по словам и иногда ошибался
+async function askKind(chat, d) {
+  await send(chat,
+    `🚖 <b>Что вам нужно?</b>\n` +
+    (d && d.raw_text ? `<i>Вы писали: «${safeName(String(d.raw_text).slice(0, 120))}»</i>\n` : '') +
+    `\nВыберите — и я спрошу адреса.`,
+    { reply_markup: { inline_keyboard: [
+      [{ text: '🚕 Поездка по городу', callback_data: 'co:k:ride' }],
+      [{ text: '📦 Доставка, что-то передать', callback_data: 'co:k:delivery' }],
+      [{ text: '🛣 В другой город', callback_data: 'co:k:inter' }],
+      [{ text: '✖️ Отмена', callback_data: 'co:no' }]
+    ] } });
+}
+
+// выбор города для межгорода — списком, не текстом
+async function askToCity(chat, d) {
+  const { data: cities } = await db.from('cities').select('name').eq('active', true);
+  const list = (cities || []).map(c => c.name).filter(n => n && n !== d.city);
+  if (!list.length) {
+    await send(chat, 'Пока возим только по городу. Выберите другой вид заказа.');
+    return askKind(chat, d);
+  }
+  const rows = [];
+  for (let i = 0; i < list.length; i += 2) {
+    rows.push(list.slice(i, i + 2).map(n => ({ text: '🛣 ' + n, callback_data: 'co:c:' + n.slice(0, 40) })));
+  }
+  rows.push([{ text: '‹ Назад', callback_data: 'co:back' }]);
+  await send(chat, `🛣 <b>В какой город едем?</b>`, { reply_markup: { inline_keyboard: rows } });
+}
+
 // показать черновик и спросить подтверждение
 async function draftShow(chat, d) {
-  const head = d.kind === 'delivery' ? '📦 <b>Похоже, нужна доставка</b>'
-             : d.to_city ? '🛣 <b>Похоже, нужен межгород</b>'
-             : '🚖 <b>Похоже, вам нужна машина</b>';
+  const head = d.kind === 'delivery' ? '📦 <b>Доставка</b>'
+             : d.to_city ? '🛣 <b>Поездка в другой город</b>'
+             : '🚕 <b>Поездка по городу</b>';
   await send(chat,
     `${head}\n\n` +
     `📍 Откуда: <b>${safeName(d.from_address || '—')}</b>\n` +
@@ -1448,6 +1476,26 @@ async function draftShow(chat, d) {
         ? 'Оформить? Водители увидят вашу цену и смогут согласиться или предложить свою.'
         : 'Оформить заявку? Водители сразу её увидят и назовут цену.\nМожно назвать свою — тогда им останется согласиться.'}`,
     draftKb(d));
+}
+
+// куда вести человека дальше — в одном месте, чтобы шаги не разъезжались
+async function coNextStep(chat, d) {
+  if (d.stage === 'ask_kind') return askKind(chat, d);
+  if (d.stage === 'ask_tocity') return askToCity(chat, d);
+  if (d.stage === 'confirm') return draftShow(chat, d);
+
+  const what = d.kind === 'delivery' ? 'откуда забрать' : 'откуда вас забрать';
+  if (d.stage === 'ask_from') {
+    return send(chat,
+      `📍 <b>Напишите, ${what}.</b>\n<i>Например: Ленина 12, второй подъезд</i>`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'адрес подачи' } });
+  }
+  if (d.stage === 'ask_to') {
+    return send(chat,
+      `📍 Откуда: <b>${safeName(d.from_address)}</b>\n\n` +
+      `🏁 <b>Напишите, куда ${d.kind === 'delivery' ? 'доставить' : 'ехать'}.</b>`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'адрес назначения' } });
+  }
 }
 
 // человек написал заказ в общем чате
@@ -1464,13 +1512,13 @@ async function chatOrderStart(m, chatId, city) {
 
   const r = parseRoute(raw);
   const ownCity = (u && u.city) || city.name;
+  // вид заказа не угадываем — ошибка тут дороже лишнего нажатия.
+  // адреса разбираем предварительно, человек их всё равно подтвердит
   const draft = {
     city: ownCity,
     from_address: r.from, to_address: r.to, raw_text: raw.slice(0, 300),
-    kind: guessKind(raw),
-    to_city: r.to ? await guessCity(r.to, ownCity) : null,
-    scheduled_at: null, comment: null, price: null,
-    stage: r.from && r.to ? 'confirm' : (r.from ? 'ask_to' : 'ask_from')
+    kind: null, to_city: null, scheduled_at: null, comment: null, price: null,
+    stage: 'ask_kind'
   };
 
   // не запускал бота — в личку не написать. Но черновик сохраняем:
@@ -1481,15 +1529,7 @@ async function chatOrderStart(m, chatId, city) {
   }
 
   await draftSet(uid, draft);
-
-  if (draft.stage === 'confirm') { await draftShow(uid, draft); return true; }
-  if (draft.stage === 'ask_to') {
-    await send(uid, `🚖 <b>Вижу, вам нужна машина</b>\n📍 Откуда: <b>${safeName(draft.from_address)}</b>\n\nНапишите, <b>куда</b> ехать.`,
-      { reply_markup: { force_reply: true, input_field_placeholder: 'куда ехать' } });
-    return true;
-  }
-  await send(uid, `🚖 <b>Вижу, вам нужна машина</b>\n\nНапишите одной строкой: <b>откуда — куда</b>.\n<i>Например: Ленина 12 — Центральный рынок</i>`,
-    { reply_markup: { force_reply: true, input_field_placeholder: 'откуда — куда' } });
+  await askKind(uid, draft);
   return true;
 }
 
@@ -1500,12 +1540,10 @@ async function chatOrderText(chat, d, text) {
 
   if (d.stage === 'ask_from') {
     const r = parseRoute(t);
-    const nd = { ...d, from_address: r.from, to_address: r.to || d.to_address };
+    const nd = { ...d, from_address: r.from || t, to_address: r.to || d.to_address };
     nd.stage = nd.from_address && nd.to_address ? 'confirm' : 'ask_to';
     await draftSet(chat, draftPack(nd, { stage: nd.stage }));
-    if (nd.stage === 'confirm') return draftShow(chat, nd);
-    return send(chat, `📍 Откуда: <b>${safeName(nd.from_address)}</b>\n\nТеперь напишите, <b>куда</b> ехать.`,
-      { reply_markup: { force_reply: true, input_field_placeholder: 'куда ехать' } });
+    return coNextStep(chat, nd);
   }
 
   if (d.stage === 'ask_time') {
@@ -1539,7 +1577,7 @@ async function chatOrderText(chat, d, text) {
   if (d.stage === 'ask_to') {
     const nd = { ...d, to_address: t, stage: 'confirm' };
     await draftSet(chat, draftPack(nd, { stage: 'confirm' }));
-    return draftShow(chat, nd);
+    return coNextStep(chat, nd);
   }
 }
 
