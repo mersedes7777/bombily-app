@@ -175,11 +175,43 @@ async function onUpdate(u) {
       const what = cq.data.slice(3);
       if (what === 'go') { await chatOrderCreate(chat); return; }
       if (what === 'no') { await draftDel(chat); await send(chat, 'Отменил. Если что — просто напишите, куда нужно ехать.'); return; }
+      if (what === 'kind') {
+        const d = await draftGet(chat);
+        if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
+        const nd = { ...d, kind: d.kind === 'delivery' ? 'ride' : 'delivery' };
+        await draftSet(chat, draftPack(nd, { stage: 'confirm' }));
+        await draftShow(chat, nd);
+        return;
+      }
+      if (what === 'time') {
+        const d = await draftGet(chat);
+        if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
+        if (d.scheduled_at) {   // повторное нажатие снимает время
+          const nd = { ...d, scheduled_at: null };
+          await draftSet(chat, draftPack(nd, { stage: 'confirm' }));
+          await send(chat, 'Убрал время — заказ будет на сейчас.');
+          await draftShow(chat, nd);
+          return;
+        }
+        await draftSet(chat, draftPack(d, { stage: 'ask_time' }));
+        await send(chat,
+          `⏰ <b>Когда подать машину?</b>\nНапишите время: <b>18:30</b>, <b>завтра 9:00</b> или <b>через час</b>.`,
+          { reply_markup: { force_reply: true, input_field_placeholder: 'например 18:30' } });
+        return;
+      }
+      if (what === 'note') {
+        const d = await draftGet(chat);
+        if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
+        await draftSet(chat, draftPack(d, { stage: 'ask_note' }));
+        await send(chat,
+          `💬 <b>Что уточнить водителю?</b>\n<i>Например: третий подъезд, есть коляска, позвонить заранее.</i>`,
+          { reply_markup: { force_reply: true, input_field_placeholder: 'пояснение для водителя' } });
+        return;
+      }
       if (what === 'price') {
         const d = await draftGet(chat);
         if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
-        await draftSet(chat, { city: d.city, from_address: d.from_address, to_address: d.to_address,
-          raw_text: d.raw_text, price: d.price || null, stage: 'ask_price' });
+        await draftSet(chat, draftPack(d, { stage: 'ask_price' }));
         await send(chat,
           `💰 <b>Сколько готовы заплатить?</b>\nНапишите число, например: 300\n\n` +
           `<i>Водители увидят вашу цену. Кто согласен — возьмёт заказ, кто нет — предложит свою.</i>`,
@@ -189,7 +221,7 @@ async function onUpdate(u) {
       if (what === 'edit') {
         const d = await draftGet(chat);
         if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
-        await draftSet(chat, { city: d.city, from_address: null, to_address: null, raw_text: d.raw_text, price: d.price || null, stage: 'ask_from' });
+        await draftSet(chat, draftPack(d, { from_address: null, to_address: null, stage: 'ask_from' }));
         await send(chat, 'Напишите одной строкой: <b>откуда — куда</b>.\n<i>Например: Ленина 12 — Центральный рынок</i>',
           { reply_markup: { force_reply: true, input_field_placeholder: 'откуда — куда' } });
         return;
@@ -317,7 +349,7 @@ async function onUpdate(u) {
   // сотрудник нажал «Ответить» и теперь пишет ответ
   // дописывает адреса для заказа, начатого в чате
   const draft = await draftGet(chat);
-  if (draft && ['ask_from', 'ask_to', 'ask_price'].includes(draft.stage) && !text.startsWith('/')) {
+  if (draft && ['ask_from', 'ask_to', 'ask_price', 'ask_time', 'ask_note'].includes(draft.stage) && !text.startsWith('/')) {
     await chatOrderText(chat, draft, text);
     return;
   }
@@ -1266,6 +1298,60 @@ async function groupCommand(m, chatId) {
    одной кнопкой. Приложение открывать не нужно. */
 
 // вытаскиваем «откуда» и «куда» из живой речи
+// доставка это или поездка — понятно по словам
+function guessKind(raw) {
+  const t = String(raw || '').toLowerCase();
+  return /(доставк|привез|привёз|передат|передач|посылк|забрать\s+и\s+отвез|курьер|пакет|документ|цвет[ыи]|еду\s+заберит)/.test(t)
+    ? 'delivery' : 'ride';
+}
+
+// куда именно: если в адресе назван другой город — это межгород
+async function guessCity(toAddr, ownCity) {
+  try {
+    const { data: cities } = await db.from('cities').select('name');
+    const t = String(toAddr || '').toLowerCase();
+    for (const c of cities || []) {
+      const n = String(c.name || '').toLowerCase();
+      if (!n || n === String(ownCity || '').toLowerCase()) continue;
+      if (t.includes(n) || t.includes(n.replace(/[аеоуы]$/, ''))) return c.name;
+    }
+  } catch (e) {}
+  return null;
+}
+
+// «18:30», «завтра 9», «через час», «через 20 минут»
+function parseWhen(raw) {
+  const t = String(raw || '').toLowerCase().trim();
+  const now = new Date();
+
+  let m = t.match(/через\s+(\d{1,3})\s*(мин|час)/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    return new Date(now.getTime() + n * (m[2] === 'час' ? 3600000 : 60000));
+  }
+  if (/через\s+час/.test(t)) return new Date(now.getTime() + 3600000);
+
+  m = t.match(/(\d{1,2})[:.\s](\d{2})/);
+  let hh = null, mm = 0;
+  if (m) { hh = parseInt(m[1], 10); mm = parseInt(m[2], 10); }
+  else {
+    m = t.match(/(?:в\s+)?(\d{1,2})\s*(?:час\w*|ч)?\b/);
+    if (m) { hh = parseInt(m[1], 10); mm = 0; }
+  }
+  if (hh === null || hh > 23 || mm > 59) return null;
+
+  const d = new Date(now);
+  d.setSeconds(0, 0);
+  d.setHours(hh, mm);
+  if (/завтра/.test(t)) d.setDate(d.getDate() + 1);
+  else if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);  // время уже прошло — значит завтра
+  return d;
+}
+
+const whenTxt = v => v
+  ? new Date(v).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  : '';
+
 function parseRoute(raw) {
   let t = String(raw || '').replace(/\s+/g, ' ').trim();
 
@@ -1305,6 +1391,18 @@ function parseRoute(raw) {
   return { from: cut(t) || null, to: null };
 }
 
+// сохраняем черновик целиком: раньше каждый шаг перечислял поля руками,
+// и что-нибудь обязательно терялось
+function draftPack(d, over) {
+  const x = { ...d, ...over };
+  return {
+    city: x.city || null, from_address: x.from_address || null, to_address: x.to_address || null,
+    raw_text: x.raw_text || null, price: x.price || null, kind: x.kind || null,
+    to_city: x.to_city || null, scheduled_at: x.scheduled_at || null,
+    comment: x.comment || null, stage: x.stage || 'confirm'
+  };
+}
+
 async function draftSet(tg, d) {
   try { await db.from('chat_draft').upsert({ tg, ...d, created_at: new Date().toISOString() }, { onConflict: 'tg' }); }
   catch (e) { console.error('draftSet', e.message); }
@@ -1323,19 +1421,28 @@ async function draftDel(tg) { try { await db.from('chat_draft').delete().eq('tg'
 const draftKb = d => ({
   reply_markup: { inline_keyboard: [
     [{ text: d && d.price ? `✅ Оформить за ${d.price} ₽` : '✅ Да, оформить', callback_data: 'co:go' }],
-    [{ text: d && d.price ? '💰 Изменить цену' : '💰 Назвать свою цену', callback_data: 'co:price' }],
-    [{ text: '✏️ Исправить адреса', callback_data: 'co:edit' }],
-    [{ text: '✖️ Отмена', callback_data: 'co:no' }]
+    [{ text: d && d.price ? '💰 Изменить цену' : '💰 Назвать свою цену', callback_data: 'co:price' },
+     { text: d && d.kind === 'delivery' ? '🚕 Это поездка' : '📦 Это доставка', callback_data: 'co:kind' }],
+    [{ text: d && d.scheduled_at ? `⏰ ${whenTxt(d.scheduled_at)}` : '⏰ На время', callback_data: 'co:time' },
+     { text: d && d.comment ? '💬 Изменить пояснение' : '💬 Добавить пояснение', callback_data: 'co:note' }],
+    [{ text: '✏️ Исправить адреса', callback_data: 'co:edit' },
+     { text: '✖️ Отмена', callback_data: 'co:no' }]
   ] }
 });
 
 // показать черновик и спросить подтверждение
 async function draftShow(chat, d) {
+  const head = d.kind === 'delivery' ? '📦 <b>Похоже, нужна доставка</b>'
+             : d.to_city ? '🛣 <b>Похоже, нужен межгород</b>'
+             : '🚖 <b>Похоже, вам нужна машина</b>';
   await send(chat,
-    `🚖 <b>Похоже, вам нужна машина</b>\n\n` +
+    `${head}\n\n` +
     `📍 Откуда: <b>${safeName(d.from_address || '—')}</b>\n` +
     `🏁 Куда: <b>${safeName(d.to_address || '—')}</b>\n` +
     `${d.city ? `🏙 Город: ${safeName(d.city)}\n` : ''}` +
+    `${d.to_city ? `🛣 В город: <b>${safeName(d.to_city)}</b>\n` : ''}` +
+    `${d.scheduled_at ? `⏰ На время: <b>${whenTxt(d.scheduled_at)}</b>\n` : ''}` +
+    `${d.comment ? `💬 ${safeName(d.comment)}\n` : ''}` +
     `${d.price ? `💰 Ваша цена: <b>${d.price} ₽</b>\n` : ''}` +
     `\n${d.price
         ? 'Оформить? Водители увидят вашу цену и смогут согласиться или предложить свою.'
@@ -1356,9 +1463,13 @@ async function chatOrderStart(m, chatId, city) {
   if (u && ['driver', 'both'].includes(u.role)) return false;
 
   const r = parseRoute(raw);
+  const ownCity = (u && u.city) || city.name;
   const draft = {
-    city: (u && u.city) || city.name,
+    city: ownCity,
     from_address: r.from, to_address: r.to, raw_text: raw.slice(0, 300),
+    kind: guessKind(raw),
+    to_city: r.to ? await guessCity(r.to, ownCity) : null,
+    scheduled_at: null, comment: null, price: null,
     stage: r.from && r.to ? 'confirm' : (r.from ? 'ask_to' : 'ask_from')
   };
 
@@ -1391,10 +1502,27 @@ async function chatOrderText(chat, d, text) {
     const r = parseRoute(t);
     const nd = { ...d, from_address: r.from, to_address: r.to || d.to_address };
     nd.stage = nd.from_address && nd.to_address ? 'confirm' : 'ask_to';
-    await draftSet(chat, { city: nd.city, from_address: nd.from_address, to_address: nd.to_address, raw_text: nd.raw_text, stage: nd.stage });
+    await draftSet(chat, draftPack(nd, { stage: nd.stage }));
     if (nd.stage === 'confirm') return draftShow(chat, nd);
     return send(chat, `📍 Откуда: <b>${safeName(nd.from_address)}</b>\n\nТеперь напишите, <b>куда</b> ехать.`,
       { reply_markup: { force_reply: true, input_field_placeholder: 'куда ехать' } });
+  }
+
+  if (d.stage === 'ask_time') {
+    const when = parseWhen(t);
+    if (!when) {
+      return send(chat, 'Не разобрал время. Напишите так: <b>18:30</b>, <b>завтра 9:00</b> или <b>через час</b>.',
+        { reply_markup: { force_reply: true, input_field_placeholder: 'например 18:30' } });
+    }
+    const nd = { ...d, scheduled_at: when.toISOString(), stage: 'confirm' };
+    await draftSet(chat, draftPack(nd, { stage: 'confirm' }));
+    return draftShow(chat, nd);
+  }
+
+  if (d.stage === 'ask_note') {
+    const nd = { ...d, comment: t.slice(0, 300), stage: 'confirm' };
+    await draftSet(chat, draftPack(nd, { stage: 'confirm' }));
+    return draftShow(chat, nd);
   }
 
   if (d.stage === 'ask_price') {
@@ -1404,14 +1532,13 @@ async function chatOrderText(chat, d, text) {
         { reply_markup: { force_reply: true, input_field_placeholder: 'цена в рублях' } });
     }
     const nd = { ...d, price: p, stage: 'confirm' };
-    await draftSet(chat, { city: nd.city, from_address: nd.from_address, to_address: nd.to_address,
-      raw_text: nd.raw_text, price: p, stage: 'confirm' });
+    await draftSet(chat, draftPack(nd, { price: p, stage: 'confirm' }));
     return draftShow(chat, nd);
   }
 
   if (d.stage === 'ask_to') {
     const nd = { ...d, to_address: t, stage: 'confirm' };
-    await draftSet(chat, { city: nd.city, from_address: nd.from_address, to_address: nd.to_address, raw_text: nd.raw_text, stage: 'confirm' });
+    await draftSet(chat, draftPack(nd, { stage: 'confirm' }));
     return draftShow(chat, nd);
   }
 }
@@ -1438,7 +1565,7 @@ async function chatOrderCreate(chat) {
 
   // без телефона водитель не сможет позвонить
   if (!u.has_phone) {
-    await draftSet(chat, { city: d.city, from_address: d.from_address, to_address: d.to_address, raw_text: d.raw_text, price: d.price || null, stage: 'ask_phone' });
+    await draftSet(chat, draftPack(d, { stage: 'ask_phone' }));
     await send(chat,
       `Остался последний шаг: <b>номер телефона</b>.\nЕго увидит только тот водитель, который возьмёт заказ.`,
       { reply_markup: { keyboard: [[{ text: '📱 Поделиться номером', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
@@ -1448,7 +1575,12 @@ async function chatOrderCreate(chat) {
   const { data: ride, error } = await db.from('rides').insert({
     passenger_id: u.id, passenger_name: u.name,
     from_address: d.from_address, to_address: d.to_address,
-    status: 'created', city: d.city || u.city, kind: 'ride', source: 'chat',
+    status: 'created', city: d.city || u.city,
+    kind: d.kind === 'delivery' ? 'delivery' : 'ride',
+    to_city: d.to_city || null,
+    scheduled_at: d.scheduled_at || null,
+    comment: d.comment || null,
+    source: 'chat',
     passenger_price: d.price || null
   }).select().single();
   if (error) { await send(chat, 'Не получилось создать заявку, попробуйте в приложении.'); return; }
