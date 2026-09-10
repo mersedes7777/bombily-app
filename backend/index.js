@@ -175,6 +175,18 @@ async function onUpdate(u) {
       const what = cq.data.slice(3);
       if (what === 'go') { await chatOrderCreate(chat); return; }
       if (what === 'no') { await draftDel(chat); await send(chat, 'Отменил. Если что — просто напишите, куда нужно ехать.'); return; }
+      // «Оформить заказ» из подсказки — начинаем с чистого листа
+      if (what === 'new') {
+        const { data: uu } = await db.from('users').select('city').eq('telegram_id', chat).maybeSingle();
+        const d = {
+          city: (uu && uu.city) || null, from_address: null, to_address: null,
+          raw_text: null, kind: null, to_city: null, scheduled_at: null,
+          comment: null, price: null, stage: 'ask_kind'
+        };
+        await draftSet(chat, draftPack(d, { stage: 'ask_kind' }));
+        return askKind(chat, d);
+      }
+
       // выбрал вид заказа
       if (what.startsWith('k:')) {
         const d = await draftGet(chat);
@@ -1479,6 +1491,14 @@ async function draftShow(chat, d) {
 }
 
 // куда вести человека дальше — в одном месте, чтобы шаги не разъезжались
+// как надо было написать — показываем на его же случае
+const HOWTO = (kind) => {
+  const w = kind === 'delivery' ? 'Доставка' : 'Поездка';
+  return `\n\n<i>Кстати, в следующий раз можно короче — одной строкой в чат:</i>\n` +
+         `<code>${w} Ленина 12 — рынок</code>\n` +
+         `<i>Главное, чтобы слово «${w}» было первым.</i>`;
+};
+
 async function coNextStep(chat, d) {
   if (d.stage === 'ask_kind') return askKind(chat, d);
   if (d.stage === 'ask_tocity') return askToCity(chat, d);
@@ -1486,8 +1506,11 @@ async function coNextStep(chat, d) {
 
   const what = d.kind === 'delivery' ? 'откуда забрать' : 'откуда вас забрать';
   if (d.stage === 'ask_from') {
+    // адрес не разобрался — заодно подскажем, как писать, чтобы в следующий раз
+    // всё получилось с первого раза
+    const hint = d.raw_text && !d.from_address ? HOWTO(d.kind) : '';
     return send(chat,
-      `📍 <b>Напишите, ${what}.</b>\n<i>Например: Ленина 12, второй подъезд</i>`,
+      `📍 <b>Напишите, ${what}.</b>\n<i>Например: Ленина 12, второй подъезд</i>` + hint,
       { reply_markup: { force_reply: true, input_field_placeholder: 'адрес подачи' } });
   }
   if (d.stage === 'ask_to') {
@@ -1648,6 +1671,46 @@ async function chatOrderCreate(chat) {
     `<i>В следующий раз напишите в чат одной строкой — я сразу пойму:</i>\n` +
     `<code>${d.kind === 'delivery' ? 'Доставка' : 'Поездка'} ${safeName(d.from_address)} — ${safeName(d.to_address)}</code>`,
     { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
+}
+
+
+// человек, похоже, хотел заказать, но написал непонятно.
+// Сообщение не удаляем (вдруг это обычный разговор), но подсказываем в личку.
+const HINT_RE = /(машин|такси|отвез|подвез|довез|доехат|забрат|подкин|бомбил|кто.{0,15}(свободен|работает|на линии)|нужно\s+в|надо\s+в|нужно\s+на|надо\s+на)/i;
+const hintAt = new Map();
+
+async function maybeHint(m, chatId, city, text) {
+  try {
+    const uid = m.from && m.from.id;
+    if (!uid) return;
+    const line = String(text || '').trim();
+    if (line.length < 5 || line.length > 140) return;
+    if (!HINT_RE.test(line)) return;
+    // благодарности и отзывы — это не попытка заказать
+    if (/(спасибо|благодар|отличн|молодец|рекоменду|хорош|вежлив|быстро довез|доволен|довольна)/i.test(line)) return;
+
+    // не чаще раза в 6 часов на человека, чтобы не надоесть
+    const last = hintAt.get(uid) || 0;
+    if (Date.now() - last < 6 * 3600 * 1000) return;
+
+    const { data: u } = await db.from('users').select('role,is_banned').eq('telegram_id', uid).maybeSingle();
+    if (!u || u.is_banned) return;                       // не запускал бота — писать нельзя
+    if (['driver', 'both'].includes(u.role)) return;     // водителям не нужно
+
+    hintAt.set(uid, Date.now());
+    if (hintAt.size > 2000) hintAt.clear();
+
+    const r = await send(uid,
+      `🚖 <b>Похоже, вам нужна машина?</b>\n` +
+      `<i>Вы писали в чате: «${safeName(line.slice(0, 100))}»</i>\n\n` +
+      `Я не понял, откуда и куда — поэтому заявку не создал.\n\n` +
+      `<b>Напишите в чат одной строкой, начиная со слова «Поездка»:</b>\n` +
+      `<code>Поездка Ленина 12 — рынок</code>\n` +
+      `<code>Доставка аптека Кирова — Шахтёрская 14</code>\n\n` +
+      `Или оформите прямо здесь — нажмите кнопку.`,
+      { reply_markup: { inline_keyboard: [[{ text: '🚖 Оформить заказ', callback_data: 'co:new' }]] } });
+    if (r && r.ok) glog(`${city.name}: подсказал, как писать заказ · ${(m.from && m.from.first_name) || ''}`);
+  } catch (e) { console.error('maybeHint', e.message); }
 }
 
 /* ---------- long polling ---------- */
@@ -2395,7 +2458,13 @@ async function onGroupMessage(m) {
 
   const isOrder = looksLikeOrder(text);
   const isReply = !isOrder && looksLikeDriverReply(text);
-  if (!isOrder && !isReply) { glog(`${city.name}: не похоже на заказ · «${preview}»`); return; }
+  if (!isOrder && !isReply) {
+    // похоже, человек всё-таки хотел заказать, но написал так, что не разобрать.
+    // Сообщение не трогаем, а в личку подсказываем, как надо
+    await maybeHint(m, chatId, city, text);
+    glog(`${city.name}: не похоже на заказ · «${preview}»`);
+    return;
+  }
 
   const del = await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id });
   if (del && del.ok) glog(`${city.name}: УДАЛЕНО · «${preview}»`);
