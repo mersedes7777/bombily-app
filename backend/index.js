@@ -170,6 +170,21 @@ async function onUpdate(u) {
 
     await tg('answerCallbackQuery', { callback_query_id: cq.id });
 
+    // заказ из чата: подтвердить, исправить, отменить
+    if (cq.data && cq.data.startsWith('co:')) {
+      const what = cq.data.slice(3);
+      if (what === 'go') { await chatOrderCreate(chat); return; }
+      if (what === 'no') { await draftDel(chat); await send(chat, 'Отменил. Если что — просто напишите, куда нужно ехать.'); return; }
+      if (what === 'edit') {
+        const d = await draftGet(chat);
+        if (!d) { await send(chat, 'Черновик устарел, напишите заказ заново.'); return; }
+        await draftSet(chat, { city: d.city, from_address: null, to_address: null, raw_text: d.raw_text, stage: 'ask_from' });
+        await send(chat, 'Напишите одной строкой: <b>откуда — куда</b>.\n<i>Например: Ленина 12 — Центральный рынок</i>',
+          { reply_markup: { force_reply: true, input_field_placeholder: 'откуда — куда' } });
+        return;
+      }
+    }
+
     // ошиблись — владелец возвращает человека одной кнопкой
     if (cq.data && cq.data.startsWith('unspam:')) {
       const p = cq.data.split(':');
@@ -223,6 +238,37 @@ async function onUpdate(u) {
 
   const m = u.message;
   if (!m) return;
+
+  // человек нажал «Поделиться номером» — телеграм присылает контакт,
+  // а не текст. Раньше такие сообщения просто игнорировались.
+  if (m.contact && m.chat && m.chat.type === 'private') {
+    try {
+      const chatC = m.chat.id;
+      const own = !m.contact.user_id || String(m.contact.user_id) === String(chatC);
+      if (!own) {
+        await send(chatC, 'Нужен ваш собственный номер — нажмите кнопку «Поделиться номером».');
+        return;
+      }
+      const digits = String(m.contact.phone_number || '').replace(/\D/g, '');
+      if (digits.length < 10) { await send(chatC, 'Не разобрал номер, попробуйте ещё раз.'); return; }
+      const phone11 = digits.length === 11 ? digits : digits.slice(-11);
+
+      const { data: uu } = await db.from('users').select('id').eq('telegram_id', chatC).maybeSingle();
+      if (uu) {
+        await db.from('users').update({ phone: phone11, has_phone: true }).eq('id', uu.id);
+        await db.from('contacts').upsert({ user_id: uu.id, phone: phone11, updated_at: new Date().toISOString() })
+          .then(() => {}, () => {});
+      }
+      await send(chatC, '✅ Номер сохранён. Его увидит только тот водитель, который возьмёт заказ.',
+        { reply_markup: { remove_keyboard: true } });
+
+      // если человек застрял на шаге телефона — доводим заказ до конца
+      const d = await draftGet(chatC);
+      if (d && d.stage === 'ask_phone') await chatOrderCreate(chatC);
+    } catch (e) { console.error('contact', e.message); }
+    return;
+  }
+
   if (m.chat && (m.chat.type === 'group' || m.chat.type === 'supergroup')) {
     try { await onGroupMessage(m); } catch (e) { console.error('group', e.message); }
     return;
@@ -258,6 +304,13 @@ async function onUpdate(u) {
   }
 
   // сотрудник нажал «Ответить» и теперь пишет ответ
+  // дописывает адреса для заказа, начатого в чате
+  const draft = await draftGet(chat);
+  if (draft && ['ask_from', 'ask_to'].includes(draft.stage) && !text.startsWith('/')) {
+    await chatOrderText(chat, draft, text);
+    return;
+  }
+
   // человек пишет сообщение по заявке (кнопка «Связаться» или «Ответить»)
   const askW = await askGetWait(chat);
   if (askW && !text.startsWith('/')) {
@@ -1177,6 +1230,188 @@ async function groupCommand(m, chatId) {
   return true;
 }
 
+
+/* ---------- заказ прямо из чата ----------
+   Человек пишет в группе «нужна машина, Ленина 12 на рынок».
+   Бот убирает сообщение, разбирает адреса и предлагает оформить
+   одной кнопкой. Приложение открывать не нужно. */
+
+// вытаскиваем «откуда» и «куда» из живой речи
+function parseRoute(raw) {
+  let t = String(raw || '').replace(/\s+/g, ' ').trim();
+
+  // убираем вступление: «нужна машина», «кто отвезёт», «такси».
+  // важно: \w не понимает кириллицу, поэтому везде [а-яё]
+  const INTRO = [
+    /^[^а-яёa-z0-9]*(?:нужн[аоыа-яё]*\s+(?:машин[а-яё]*|такси|водител[а-яё]*))/i,
+    /^[^а-яёa-z0-9]*(?:машин[а-яё]*|такси)\s+нужн[а-яё]*/i,
+    /^[^а-яёa-z0-9]*кто\s+(?:отвез[её]т|подвез[её]т|свободен|может|сможет)[^а-яё]*/i,
+    /^[^а-яёa-z0-9]*(?:подвезите|заберите|отвезите|нужно\s+такси|такси)/i
+  ];
+  for (const re of INTRO) t = t.replace(re, ' ');
+  t = t.replace(/^[\s,.:;!?–—-]*(?:пожалуйста|плиз|срочно|можно|есть кто|привет|здравствуйте)[\s,.:;!?–—-]*/i, ' ');
+  t = t.replace(/^[\s,.:;!?–—-]+/, '').trim();
+
+  const cut = s => String(s || '')
+    .replace(/^[\s,.:;–—>!?-]+|[\s,.:;–—>!?.]+$/g, '')
+    .replace(/^(?:с|со|от|из|по)\s+/i, '')
+    .replace(/^(?:на|в|до|к)\s+/i, '')
+    .slice(0, 120).trim();
+
+  // «Ленина 12 - рынок», «Ленина 12 → рынок», «Ленина 12 на рынок»
+  const seps = [
+    /\s*(?:→|➡️?|=>|->)\s*/,
+    /\s+[-–—]+\s+/,
+    /\s+ехать\s+(?:(?:на|до|в|к)\s+)?/i,
+    /\s+едем\s+(?:(?:на|до|в|к)\s+)?/i,
+    /\s+(?:на|до|в|к)\s+(?=[а-яёa-z0-9])/i
+  ];
+  for (const re of seps) {
+    const parts = t.split(re);
+    if (parts.length >= 2) {
+      const a = cut(parts[0]), b = cut(parts.slice(1).join(' '));
+      if (a.length >= 3 && b.length >= 2) return { from: a, to: b };
+    }
+  }
+  return { from: cut(t) || null, to: null };
+}
+
+async function draftSet(tg, d) {
+  try { await db.from('chat_draft').upsert({ tg, ...d, created_at: new Date().toISOString() }, { onConflict: 'tg' }); }
+  catch (e) { console.error('draftSet', e.message); }
+}
+async function draftGet(tg) {
+  try {
+    const { data } = await db.from('chat_draft').select('*').eq('tg', tg).maybeSingle();
+    if (!data) return null;
+    // через 20 минут черновик протух — человек мог давно уйти
+    if (Date.now() - new Date(data.created_at).getTime() > 20 * 60000) { await draftDel(tg); return null; }
+    return data;
+  } catch (e) { return null; }
+}
+async function draftDel(tg) { try { await db.from('chat_draft').delete().eq('tg', tg); } catch (e) {} }
+
+const draftKb = () => ({
+  reply_markup: { inline_keyboard: [
+    [{ text: '✅ Да, оформить', callback_data: 'co:go' }],
+    [{ text: '✏️ Исправить адреса', callback_data: 'co:edit' }],
+    [{ text: '✖️ Отмена', callback_data: 'co:no' }]
+  ] }
+});
+
+// показать черновик и спросить подтверждение
+async function draftShow(chat, d) {
+  await send(chat,
+    `🚖 <b>Похоже, вам нужна машина</b>\n\n` +
+    `📍 Откуда: <b>${safeName(d.from_address || '—')}</b>\n` +
+    `🏁 Куда: <b>${safeName(d.to_address || '—')}</b>\n` +
+    `${d.city ? `🏙 Город: ${safeName(d.city)}\n` : ''}` +
+    `\nОформить заявку? Водители сразу её увидят и назовут цену.`,
+    draftKb());
+}
+
+// человек написал заказ в общем чате
+async function chatOrderStart(m, chatId, city) {
+  const uid = m.from && m.from.id;
+  if (!uid) return false;
+  const raw = String(m.text || '').trim();
+
+  const { data: u } = await db.from('users')
+    .select('id,name,city,role,is_banned,has_phone').eq('telegram_id', uid).maybeSingle();
+  if (u && u.is_banned) return false;
+  // водителям это меню не нужно — они и так работают в приложении
+  if (u && ['driver', 'both'].includes(u.role)) return false;
+
+  const r = parseRoute(raw);
+  const draft = {
+    city: (u && u.city) || city.name,
+    from_address: r.from, to_address: r.to, raw_text: raw.slice(0, 300),
+    stage: r.from && r.to ? 'confirm' : (r.from ? 'ask_to' : 'ask_from')
+  };
+
+  // не зарегистрирован в боте — писать в личку нельзя
+  if (!u) {
+    return false;
+  }
+
+  await draftSet(uid, draft);
+
+  if (draft.stage === 'confirm') { await draftShow(uid, draft); return true; }
+  if (draft.stage === 'ask_to') {
+    await send(uid, `🚖 <b>Вижу, вам нужна машина</b>\n📍 Откуда: <b>${safeName(draft.from_address)}</b>\n\nНапишите, <b>куда</b> ехать.`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'куда ехать' } });
+    return true;
+  }
+  await send(uid, `🚖 <b>Вижу, вам нужна машина</b>\n\nНапишите одной строкой: <b>откуда — куда</b>.\n<i>Например: Ленина 12 — Центральный рынок</i>`,
+    { reply_markup: { force_reply: true, input_field_placeholder: 'откуда — куда' } });
+  return true;
+}
+
+// человек дописывает адреса в личке
+async function chatOrderText(chat, d, text) {
+  const t = String(text || '').trim().slice(0, 200);
+  if (!t) return;
+
+  if (d.stage === 'ask_from') {
+    const r = parseRoute(t);
+    const nd = { ...d, from_address: r.from, to_address: r.to || d.to_address };
+    nd.stage = nd.from_address && nd.to_address ? 'confirm' : 'ask_to';
+    await draftSet(chat, { city: nd.city, from_address: nd.from_address, to_address: nd.to_address, raw_text: nd.raw_text, stage: nd.stage });
+    if (nd.stage === 'confirm') return draftShow(chat, nd);
+    return send(chat, `📍 Откуда: <b>${safeName(nd.from_address)}</b>\n\nТеперь напишите, <b>куда</b> ехать.`,
+      { reply_markup: { force_reply: true, input_field_placeholder: 'куда ехать' } });
+  }
+
+  if (d.stage === 'ask_to') {
+    const nd = { ...d, to_address: t, stage: 'confirm' };
+    await draftSet(chat, { city: nd.city, from_address: nd.from_address, to_address: nd.to_address, raw_text: nd.raw_text, stage: 'confirm' });
+    return draftShow(chat, nd);
+  }
+}
+
+// подтвердил — создаём заявку
+async function chatOrderCreate(chat) {
+  const d = await draftGet(chat);
+  if (!d) { await send(chat, 'Черновик устарел. Напишите заказ ещё раз.'); return; }
+  if (!d.from_address || !d.to_address) { await send(chat, 'Не хватает адреса. Начните заново.'); await draftDel(chat); return; }
+
+  const { data: u } = await db.from('users')
+    .select('id,name,city,is_banned,has_phone').eq('telegram_id', chat).maybeSingle();
+  if (!u || u.is_banned) { await send(chat, 'Нет доступа.'); return; }
+
+  // уже есть активная заявка — вторую не плодим
+  const { data: act } = await db.from('rides').select('id,status')
+    .eq('passenger_id', u.id).in('status', ['created', 'confirmed', 'in_progress']).maybeSingle();
+  if (act) {
+    await send(chat, 'У вас уже есть активная заявка. Дождитесь её завершения или отмените в приложении.',
+      { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
+    await draftDel(chat);
+    return;
+  }
+
+  // без телефона водитель не сможет позвонить
+  if (!u.has_phone) {
+    await draftSet(chat, { city: d.city, from_address: d.from_address, to_address: d.to_address, raw_text: d.raw_text, stage: 'ask_phone' });
+    await send(chat,
+      `Остался последний шаг: <b>номер телефона</b>.\nЕго увидит только тот водитель, который возьмёт заказ.`,
+      { reply_markup: { keyboard: [[{ text: '📱 Поделиться номером', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
+    return;
+  }
+
+  const { data: ride, error } = await db.from('rides').insert({
+    passenger_id: u.id, passenger_name: u.name,
+    from_address: d.from_address, to_address: d.to_address,
+    status: 'created', city: d.city || u.city, kind: 'ride', source: 'chat'
+  }).select().single();
+  if (error) { await send(chat, 'Не получилось создать заявку, попробуйте в приложении.'); return; }
+
+  await draftDel(chat);
+  await send(chat,
+    `✅ <b>Заявка создана!</b>\n📍 ${safeName(d.from_address)}\n🏁 ${safeName(d.to_address)}\n\n` +
+    `Водители уже её видят. Как назовут цену — пришлю сюда, выберете подходящую.`,
+    { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
+}
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -1867,6 +2102,17 @@ async function onGroupMessage(m) {
 
   const name = m.from && m.from.first_name ? m.from.first_name : '';
   const fromId = m.from && m.from.id;
+
+  // это заказ пассажира — не читаем нотацию, а сразу предлагаем оформить:
+  // человеку остаётся одно нажатие, приложение открывать не надо
+  if (!isReply && fromId) {
+    try {
+      if (await chatOrderStart(m, chatId, city)) {
+        glog(`${city.name}: предложил оформить заказ из чата · ${name}`);
+        return;
+      }
+    } catch (e) { console.error('chatOrderStart', e.message); }
+  }
 
   // сначала пробуем написать человеку лично — так он не чувствует себя
   // отчитанным при всех, и сразу получает кнопку, куда идти.
