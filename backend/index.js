@@ -338,8 +338,8 @@ async function onUpdate(u) {
 
       const busy = await driverStatusNow(drv);
       const car = drv.car || (drv.vehicle_type === 'moto' ? 'мотоцикл' : 'машина не указана');
-      const head = `🚗 <b>${safeName(drv.name)}</b> · ⭐ ${Number(drv.rating || 5).toFixed(1)}\n${car}` +
-        (drv.spot ? `\n📍 Стоит: ${safeName(drv.spot)}` : '');
+      const head = `🚗 <b>${safeName(noContacts(drv.name))}</b> · ⭐ ${Number(drv.rating || 5).toFixed(1)}\n${car}` +
+        (drv.spot ? `\n📍 Стоит: ${safeName(noContacts(drv.spot))}` : '');
 
       if (busy === 'offline')
         return send(chat, head + '\n\n⚫ Сейчас не на линии. Можно вызвать другого — откройте приложение.',
@@ -2091,10 +2091,10 @@ function driverCardText(d, state, reviews) {
              : '⚫ Не на линии';
 
   const lines = [
-    `🚗 <b>${safeName(d.name || 'Водитель')}</b> · ⭐ ${rate}${cnt}`,
+    `🚗 <b>${safeName(noContacts(d.name) || 'Водитель')}</b> · ⭐ ${rate}${cnt}`,
     car
   ];
-  if (d.spot) lines.push(`📍 Стоит: ${safeName(d.spot)}`);
+  if (d.spot) lines.push(`📍 Стоит: ${safeName(noContacts(d.spot))}`);
   const extra = [];
   if (d.delivery) extra.push('берёт доставку');
   if (d.intercity) extra.push('возит в другие города');
@@ -2735,6 +2735,17 @@ async function audit(me, action, tid, targetName, details) {
 
 const rateMap = new Map();
 // безопасная вставка имени в сообщение (имя может содержать угловые скобки)
+// телефоны и ники не должны попадать в публичные надписи: имя, место стоянки.
+// Контакты показываются только тому, кто взял заказ.
+function noContacts(s) {
+  return String(s || '')
+    .replace(/(?:\+?\d[\s\-()]*){10,}/g, ' ')
+    .replace(/(?:\+?7|8)?[\s\-(]*9\d{2}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/g, ' ')
+    .replace(/@[a-zA-Z0-9_]{4,}/g, ' ')
+    .replace(/(?:t\.me|wa\.me|viber|whatsapp)\S*/gi, ' ')
+    .replace(/\s{2,}/g, ' ').trim();
+}
+
 function safeName(v) {
   return String(v || '?').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
@@ -3442,8 +3453,17 @@ http.createServer(async (req, res) => {
     // личность подтверждена подписью Telegram, подделать её без токена бота нельзя.
     // пишем ТОЛЬКО поля из белого списка и ТОЛЬКО в свою строку.
     if (req.url === '/api/me/update') {
+      // люди вписывают телефон в имя и в «где стою», чтобы звонили мимо
+      // сервиса — вырезаем. Номер показывается только тому, кто взял заказ.
+      const stripPhone = s => String(s || '')
+        .replace(/(?:\+?\d[\s\-()]*){10,}/g, ' ')                       // длинные последовательности цифр
+        .replace(/(?:\+?7|8)?[\s\-(]*9\d{2}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/g, ' ')
+        .replace(/@[a-zA-Z0-9_]{4,}/g, ' ')                             // и телеграм-ники
+        .replace(/(?:t\.me|wa\.me|viber|whatsapp)\S*/gi, ' ')
+        .replace(/\s{2,}/g, ' ').trim();
+
       const ALLOWED = {
-        name:        v => String(v).trim().slice(0, 60),
+        name:        v => stripPhone(String(v).trim()).slice(0, 60),
         theme:       v => ['green','orange','light','mono','blue'].includes(v) ? v : 'green',
         show_in_group: v => !!v,
         phone:       v => {
@@ -3452,7 +3472,7 @@ http.createServer(async (req, res) => {
         },
         has_phone:   () => true,
         city:        v => v === null ? null : String(v).trim().slice(0, 60),
-        spot:        v => v === null ? null : String(v).trim().slice(0, 120),
+        spot:        v => v === null ? null : stripPhone(String(v).trim()).slice(0, 120),
         age:         v => v === null ? null : Math.max(0, Math.min(120, parseInt(v) || 0)) || null,
         status:      v => ['online', 'offline'].includes(v) ? v : 'offline',
         onboarded:   v => !!v,
