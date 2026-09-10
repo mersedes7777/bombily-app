@@ -1510,16 +1510,31 @@ async function chatOrderStart(m, chatId, city) {
   // водителям это меню не нужно — они и так работают в приложении
   if (u && ['driver', 'both'].includes(u.role)) return false;
 
-  const r = parseRoute(raw);
   const ownCity = (u && u.city) || city.name;
-  // вид заказа не угадываем — ошибка тут дороже лишнего нажатия.
-  // адреса разбираем предварительно, человек их всё равно подтвердит
+
+  // если человек начал сообщение со слова «Поездка» или «Доставка» —
+  // это его собственный выбор, а не догадка бота: лишний шаг не нужен
+  const ow = orderWord(raw);
+  const body = ow && ow.rest ? ow.rest : raw;
+  const r = parseRoute(body);
+
   const draft = {
     city: ownCity,
     from_address: r.from, to_address: r.to, raw_text: raw.slice(0, 300),
     kind: null, to_city: null, scheduled_at: null, comment: null, price: null,
     stage: 'ask_kind'
   };
+
+  if (ow && ow.kind === 'delivery') draft.kind = 'delivery';
+  else if (ow && ow.kind === 'ride') draft.kind = 'ride';
+
+  if (ow && ow.kind === 'inter') {
+    draft.kind = 'ride';
+    draft.stage = 'ask_tocity';
+  } else if (draft.kind) {
+    draft.stage = draft.from_address && draft.to_address ? 'confirm'
+                : draft.from_address ? 'ask_to' : 'ask_from';
+  }
 
   // не запускал бота — в личку не написать. Но черновик сохраняем:
   // нажмёт «Старт» — и заказ ждёт его там же, ничего не потеряется
@@ -1529,7 +1544,7 @@ async function chatOrderStart(m, chatId, city) {
   }
 
   await draftSet(uid, draft);
-  await askKind(uid, draft);
+  await coNextStep(uid, draft);
   return true;
 }
 
@@ -1630,8 +1645,8 @@ async function chatOrderCreate(chat) {
     `${d.price
       ? 'Водители уже её видят. Кто согласен — возьмёт заказ, кто-то может предложить свою цену.'
       : 'Водители уже её видят. Как назовут цену — пришлю сюда, выберете подходящую.'}\n\n` +
-    `<i>В следующий раз можно просто написать в чат одной строкой:</i>\n` +
-    `<code>${safeName(d.from_address)} — ${safeName(d.to_address)}</code>`,
+    `<i>В следующий раз напишите в чат одной строкой — я сразу пойму:</i>\n` +
+    `<code>${d.kind === 'delivery' ? 'Доставка' : 'Поездка'} ${safeName(d.from_address)} — ${safeName(d.to_address)}</code>`,
     { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
 }
 
@@ -2191,6 +2206,24 @@ function placeLike(part) {
   return /^[А-ЯЁ]/.test(p);                             // название с большой буквы
 }
 
+// человек сам помечает сообщение словом-командой — угадывать не нужно.
+// «Заказ Ленина 12 - рынок», «Доставка аптека — Шахтёрская 14»
+// \b не работает с кириллицей — вместо него запрет на продолжение слова,
+// иначе «Заказал вчера пиццу» тоже считался бы командой
+const ORDER_WORD = /^\s*(заказ|заказать|поездка|поездку|такси|машина|машину|доставка|доставку|доставить|межгород|курьер)(?![а-яё])[\s,:.—-]*/i;
+
+function orderWord(text) {
+  const m = String(text || '').match(ORDER_WORD);
+  if (!m) return null;
+  const w = m[1].toLowerCase();
+  const rest = String(text).slice(m[0].length).trim();
+  const kind = /доставк|доставить|курьер/.test(w) ? 'delivery'
+             : /межгород/.test(w) ? 'inter'
+             : /поездк|такси|машин/.test(w) ? 'ride'
+             : null;                       // «заказ» — вид спросим
+  return { kind, rest };
+}
+
 function routeLine(text) {
   const line = String(text || '').trim().replace(/\s+/g, ' ');
   if (!line || line.length > 60) return false;
@@ -2232,6 +2265,9 @@ function looksLikeOrder(text) {
   if (t.length <= 80 && VERB_RE.test(t)) return true;
 
   const hasTrip = TRIP_RE.test(t);
+
+  // человек сам написал «Заказ» или «Доставка» — это точно заявка
+  if (ORDER_WORD.test(String(text || ''))) return true;
 
   // короткий маршрут без номеров домов: «Ватутино — Город», «Ленина 12 - рынок».
   // Проверяем раньше отсечки про магазины: «рынок» тут — это пункт назначения
