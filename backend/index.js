@@ -604,6 +604,13 @@ async function onUpdate(u) {
    Пассажиру приходит сообщение с кнопкой «Ответить» — отвечать можно,
    не открывая приложение. Телефоны при этом не раскрываются. */
 
+// нажатия кнопок нижнего меню приходят обычным текстом — их нельзя
+// принимать за сообщение собеседнику, иначе в переписке появляется
+// «💬 Связь с админом» вместо ответа
+const MENU_TEXTS = ['🚕 Заказать поездку', '🚗 Стать водителем', '👤 Кабинет',
+  '📣 Наша группа', '💬 Связь с админом'];
+const isMenuTap = t => MENU_TEXTS.includes(String(t || '').trim());
+
 async function askSetWait(tg, rideId, peerTg, role) {
   try {
     await db.from('ask_wait').upsert({
@@ -685,6 +692,11 @@ async function askReplyBtn(chat, rideId, peerTg) {
 
 // человек написал текст, пока мы ждали от него сообщение
 async function askDeliver(chat, wait, text) {
+  if (isMenuTap(text)) {
+    // человек нажал кнопку меню, а не написал ответ — ожидание не сбрасываем
+    await send(chat, 'Это кнопка меню. Напишите сообщение текстом — или нажмите «Ответить» ещё раз.');
+    return;
+  }
   await askClearWait(chat);
   if (!text || !text.trim()) { await send(chat, 'Пустое сообщение не отправил.'); return; }
   const body = text.trim().slice(0, 2000);
@@ -784,6 +796,10 @@ async function takeStart(chat, rideId) {
 
 // водитель прислал цену
 async function takePrice(chat, wait, text) {
+  if (isMenuTap(text)) {
+    await send(chat, 'Это кнопка меню. Пришлите цену числом, например 300.');
+    return;
+  }
   await askClearWait(chat);
   const price = Math.max(0, Math.min(100000, parseInt(String(text).replace(/\D+/g, ''), 10) || 0));
   if (!price) {
@@ -1573,6 +1589,10 @@ async function chatOrderStart(m, chatId, city) {
 
 // человек дописывает адреса в личке
 async function chatOrderText(chat, d, text) {
+  if (isMenuTap(text)) {
+    await send(chat, 'Это кнопка меню. Напишите ответ текстом.');
+    return;
+  }
   const t = String(text || '').trim().slice(0, 200);
   if (!t) return;
 

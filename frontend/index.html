@@ -166,7 +166,10 @@ nav{display:flex;background:var(--elev);border-top:1px solid var(--line);padding
 .mi{display:flex;align-items:center;justify-content:space-between;padding:15px 4px;border-bottom:1px solid var(--line);font-size:14.5px;font-weight:500;cursor:pointer;}
 .mi .c{color:var(--dim);}
 .mask{position:fixed;inset:0;background:rgba(4,6,5,.7);z-index:80;display:flex;align-items:flex-end;justify-content:center;}
-.sheet{width:100%;max-width:430px;background:var(--surf);border-radius:22px 22px 0 0;padding:20px 18px calc(22px + env(safe-area-inset-bottom));}
+.sheet{width:100%;max-width:430px;background:var(--surf);border-radius:22px 22px 0 0;padding:20px 18px calc(22px + env(safe-area-inset-bottom));position:relative;}
+/* крестик в углу: в длинных списках листать до кнопки внизу неудобно */
+.shx{position:sticky;top:-20px;float:right;z-index:5;width:34px;height:34px;margin:-8px -4px 0 0;border-radius:50%;background:var(--line);border:none;color:var(--ink);font-size:19px;line-height:34px;text-align:center;cursor:pointer;padding:0;}
+.shx:active{background:var(--line2);}
 .sheet h3{font-family:Golos Text,sans-serif;font-weight:600;font-size:17px;margin-bottom:4px;}
 .sheet .s{font-size:12px;color:var(--dim);margin-bottom:14px;line-height:1.5;}
 .sa{display:flex;gap:8px;margin-top:14px;}
@@ -3652,12 +3655,14 @@ async function rideCard(rideId){
  const kind=x.kind==='delivery'?'📦 Доставка':x.to_city?'🛣 Межгород':'🚕 Поездка';
  const stArr=RST[x.status];
  const st=stArr?stArr[0]+' '+stArr[1]:(String(x.status||'').startsWith('cancelled')?'❌ отменена':x.status||'—');
- const person=(w,fallback)=>w?`${w.moto?'🏍 ':''}${esc(w.name)} <span class="idtag">#${w.tag}</span>`:esc(fallback||'—');
+ const person=(w,fallback,uid)=>w
+  ?`<span style="color:var(--g);cursor:pointer" onclick="document.getElementById('sh2').remove();userCard('${uid||''}')">${w.moto?'🏍 ':''}${esc(w.name)} <span class="idtag">#${w.tag}</span></span>`
+  :esc(fallback||'—');
 
  const wait=mins(x.created_at,x.confirmed_at);
  const ride=mins(x.confirmed_at,x.completed_at);
 
- sh.innerHTML=`<h3>${kind}</h3>
+ sh.innerHTML=`<button class="shx" onclick="document.getElementById('sh2').remove()">✕</button><h3>${kind}</h3>
  <div class="note" style="margin:6px 0 12px">
   <div style="font-size:13px;line-height:1.9">
    📍 <b>${esc(x.from_address)||'—'}</b><br>
@@ -3677,8 +3682,8 @@ async function rideCard(rideId){
 
  <div class="sec" style="padding-left:0">Кто участвовал</div>
  <div class="note" style="margin:0 0 10px;font-size:13px;line-height:2">
-  👤 Пассажир: ${person(r.passenger,x.passenger_name)}<br>
-  🚗 Водитель: ${r.driver?`${person(r.driver)}${r.driver.car?' · '+esc(r.driver.car):''}`:'<span style="color:var(--dim2)">не назначен</span>'}
+  👤 Пассажир: ${person(r.passenger,x.passenger_name,x.passenger_id)}<br>
+  🚗 Водитель: ${r.driver?`${person(r.driver,null,x.driver_id)}${r.driver.car?' · '+esc(r.driver.car):''}`:'<span style="color:var(--dim2)">не назначен</span>'}
  </div>
 
  <div class="sec" style="padding-left:0">Рассылка · получили ${r.notify.got}, ответили ${r.notify.answered}</div>
@@ -3688,7 +3693,7 @@ async function rideCard(rideId){
  <div class="sec" style="padding-left:0">Предложения цены · ${r.offers.length}</div>
  ${r.offers.length?r.offers.map(o=>`<div class="card" style="padding:10px 12px">
    <div style="flex:1;min-width:0">
-    <div class="nm">${o.who?person(o.who):esc(o.driver_name||'водитель')}</div>
+    <div class="nm">${o.who?person(o.who,null,o.driver_id):esc(o.driver_name||'водитель')}</div>
     <div class="sub">${esc(o.car||(o.who&&o.who.car)||'—')} · ${tm(o.created_at)}</div>
    </div>
    <div style="text-align:right">
@@ -3783,7 +3788,7 @@ async function ridesList(only){
  const r=await api('/api/admin',{action:'rides-list',from:statFrom,to:statTo,city:statCity,only});
  const items=(r&&r.items)||[];
  const sheet=m.querySelector('.sheet');
- sheet.innerHTML=`<h3>${only==='lost'?'Потерянные заявки':'Заявки'}</h3>
+ sheet.innerHTML=`<button class="shx" onclick="closeSh()">✕</button><h3>${only==='lost'?'Потерянные заявки':'Заявки'}</h3>
  <div class="s">${statFrom} — ${statTo}${statCity!=='all'?' · '+esc(statCity):''} · найдено ${items.length}</div>
  ${items.length?items.map(r2=>{
    const[ic,txt,col]=rstatus(r2);
