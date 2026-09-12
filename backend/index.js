@@ -390,7 +390,7 @@ async function onUpdate(u) {
   // сотрудник нажал «Ответить» и теперь пишет ответ
   // дописывает адреса для заказа, начатого в чате
   const draft = await draftGet(chat);
-  if (draft && ['ask_from', 'ask_to', 'ask_price', 'ask_time', 'ask_note'].includes(draft.stage) && !text.startsWith('/')) {
+  if (draft && ['ask_from', 'ask_to', 'ask_price', 'ask_time', 'ask_note', 'ask_tocity'].includes(draft.stage) && !text.startsWith('/')) {
     // на шагах с кнопками текст не ждём — человек должен нажать кнопку
     await chatOrderText(chat, draft, text);
     return;
@@ -1500,18 +1500,18 @@ async function askKind(chat, d) {
 
 // выбор города для межгорода — списком, не текстом
 async function askToCity(chat, d) {
+  // город пишем текстом: возят и в Ростов, и на побережье — списком всё не охватить.
+  // Кнопки оставляем как быстрый выбор для частых направлений
   const { data: cities } = await db.from('cities').select('name').eq('active', true);
-  const list = (cities || []).map(c => c.name).filter(n => n && n !== d.city);
-  if (!list.length) {
-    await send(chat, 'Пока возим только по городу. Выберите другой вид заказа.');
-    return askKind(chat, d);
-  }
+  const list = (cities || []).map(c => c.name).filter(n => n && n !== d.city).slice(0, 6);
   const rows = [];
   for (let i = 0; i < list.length; i += 2) {
     rows.push(list.slice(i, i + 2).map(n => ({ text: '🛣 ' + n, callback_data: 'co:c:' + n.slice(0, 40) })));
   }
   rows.push([{ text: '‹ Назад', callback_data: 'co:back' }]);
-  await send(chat, `🛣 <b>В какой город едем?</b>`, { reply_markup: { inline_keyboard: rows } });
+  await send(chat,
+    `🛣 <b>В какой город едем?</b>\nНапишите название — подойдёт любой${list.length ? ', или выберите частое направление кнопкой' : ''}.`,
+    { reply_markup: { inline_keyboard: rows, force_reply: true } });
 }
 
 // показать черновик и спросить подтверждение
@@ -1597,7 +1597,18 @@ async function chatOrderStart(m, chatId, city) {
 
   if (ow && ow.kind === 'inter') {
     draft.kind = 'ride';
-    draft.stage = 'ask_tocity';
+    // «Межгород до Донецка», «Межгород Донецк» — город уже назван, не переспрашиваем
+    const mc = String(ow.rest || '').match(/^(?:в|до|на)?\s*([А-ЯЁA-Z][\wа-яё-]{2,24})/);
+    if (mc) {
+      draft.to_city = mc[1].replace(/[.,;]+$/, '');
+      const rest2 = String(ow.rest).slice(mc[0].length).trim();
+      if (rest2) { const r2 = parseRoute(rest2); draft.from_address = r2.from; draft.to_address = r2.to; }
+      else { draft.from_address = null; draft.to_address = null; }
+      draft.stage = draft.from_address && draft.to_address ? 'confirm'
+                  : draft.from_address ? 'ask_to' : 'ask_from';
+    } else {
+      draft.stage = 'ask_tocity';
+    }
   } else if (draft.kind) {
     draft.stage = draft.from_address && draft.to_address ? 'confirm'
                 : draft.from_address ? 'ask_to' : 'ask_from';
@@ -1630,6 +1641,18 @@ async function chatOrderText(chat, d, text) {
     nd.stage = nd.from_address && nd.to_address ? 'confirm' : 'ask_to';
     await draftSet(chat, draftPack(nd, { stage: nd.stage }));
     return coNextStep(chat, nd);
+  }
+
+  if (d.stage === 'ask_tocity') {
+    const cityName = t.replace(/^(в|до|на)\s+/i, '').slice(0, 40).trim();
+    if (cityName.length < 2) {
+      return send(chat, 'Напишите название города, например: Донецк.',
+        { reply_markup: { force_reply: true, input_field_placeholder: 'город назначения' } });
+    }
+    const nd = { ...d, kind: 'ride', to_city: cityName };
+    const next = nd.from_address && nd.to_address ? 'confirm' : (nd.from_address ? 'ask_to' : 'ask_from');
+    await draftSet(chat, draftPack(nd, { stage: next }));
+    return coNextStep(chat, { ...nd, stage: next });
   }
 
   if (d.stage === 'ask_time') {
