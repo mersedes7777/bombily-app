@@ -3630,11 +3630,84 @@ async function ridesList(fate,title){
      ${wait!==null?` · ждал ${wait} мин`:''}
      ${x.city?` · ${esc(x.city)}`:''}
     </div>
-    <div style="padding-top:7px"><button class="rolebtn" onclick="event.stopPropagation();notifyList('${x.id}')">кому ушла заявка ›</button></div>
+    <div style="padding-top:7px"><button class="rolebtn" onclick="event.stopPropagation();rideCard('${x.id}')">вся история заявки ›</button></div>
    </div>`;
   }).join(''):'<div class="empty">Заявок нет</div>'}
  <div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div>`;
 }
+// вся история одной заявки: кто взял, кто торговался, о чём переписывались
+async function rideCard(rideId){
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet" style="max-height:90vh;overflow-y:auto"><h3>Заявка</h3><div class="empty">Загрузка…</div></div>`;
+ document.getElementById('device').appendChild(m);
+ const r=await api('/api/admin',{action:'ride-card',ride_id:rideId});
+ const sh=m.querySelector('.sheet');
+ const close=`<div class="sa"><button class="o" onclick="document.getElementById('sh2').remove()">Закрыть</button></div>`;
+ if(!r||r.error){sh.innerHTML=`<h3>Заявка</h3><div class="empty">Не удалось загрузить</div>${close}`;return;}
+
+ const x=r.ride;
+ const dt=v=>v?new Date(v).toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+ const tm=v=>v?new Date(v).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):'';
+ const mins=(a,b)=>{if(!a||!b)return null;const n=Math.round((new Date(b)-new Date(a))/60000);return n>=0&&n<2880?n:null;};
+ const kind=x.kind==='delivery'?'📦 Доставка':x.to_city?'🛣 Межгород':'🚕 Поездка';
+ const stArr=RST[x.status];
+ const st=stArr?stArr[0]+' '+stArr[1]:(String(x.status||'').startsWith('cancelled')?'❌ отменена':x.status||'—');
+ const person=(w,fallback)=>w?`${w.moto?'🏍 ':''}${esc(w.name)} <span class="idtag">#${w.tag}</span>`:esc(fallback||'—');
+
+ const wait=mins(x.created_at,x.confirmed_at);
+ const ride=mins(x.confirmed_at,x.completed_at);
+
+ sh.innerHTML=`<h3>${kind}</h3>
+ <div class="note" style="margin:6px 0 12px">
+  <div style="font-size:13px;line-height:1.9">
+   📍 <b>${esc(x.from_address)||'—'}</b><br>
+   🏁 <b>${esc(x.to_address)||'—'}</b>${x.to_city?` · в ${esc(x.to_city)}`:''}<br>
+   🏙 ${esc(x.city)||'—'}${x.source==='chat'?' · <span style="color:var(--g)">заказ из чата</span>':''}<br>
+   🕐 создана ${dt(x.created_at)}${x.scheduled_at?`<br>⏰ на ${dt(x.scheduled_at)}`:''}
+   ${x.comment?`<br>💬 ${esc(x.comment)}`:''}
+  </div>
+ </div>
+
+ <div class="agrid" style="padding:0 0 6px">
+  <div class="ac"><div class="n" style="font-size:15px">${st}</div><div class="l">статус${x.auto_closed?' · закрыл бот':''}</div></div>
+  <div class="ac"><div class="n a">${x.price||x.passenger_price||0}</div><div class="l">${x.price?'итог, ₽':'предлагали, ₽'}</div></div>
+  <div class="ac"><div class="n">${wait===null?'—':wait}</div><div class="l">мин до водителя</div></div>
+  <div class="ac"><div class="n">${ride===null?'—':ride}</div><div class="l">мин в пути</div></div>
+ </div>
+
+ <div class="sec" style="padding-left:0">Кто участвовал</div>
+ <div class="note" style="margin:0 0 10px;font-size:13px;line-height:2">
+  👤 Пассажир: ${person(r.passenger,x.passenger_name)}<br>
+  🚗 Водитель: ${r.driver?`${person(r.driver)}${r.driver.car?' · '+esc(r.driver.car):''}`:'<span style="color:var(--dim2)">не назначен</span>'}
+ </div>
+
+ <div class="sec" style="padding-left:0">Рассылка · получили ${r.notify.got}, ответили ${r.notify.answered}</div>
+ ${r.notify.sent?`<div style="padding:0 0 10px"><button class="rolebtn" onclick="document.getElementById('sh2').remove();notifyList('${x.id}')">кому ушла заявка ›</button></div>`
+  :'<div class="note" style="margin:0 0 10px;color:var(--dim2)">Нет данных — заявка создана до включения учёта.</div>'}
+
+ <div class="sec" style="padding-left:0">Предложения цены · ${r.offers.length}</div>
+ ${r.offers.length?r.offers.map(o=>`<div class="card" style="padding:10px 12px">
+   <div style="flex:1;min-width:0">
+    <div class="nm">${o.who?person(o.who):esc(o.driver_name||'водитель')}</div>
+    <div class="sub">${esc(o.car||(o.who&&o.who.car)||'—')} · ${tm(o.created_at)}</div>
+   </div>
+   <div style="text-align:right">
+    <div class="price">${o.price} ₽</div>
+    <div class="sub" style="font-size:10px;color:${o.status==='accepted'||o.status==='selected'?'var(--g)':'var(--dim2)'}">${o.status==='accepted'||o.status==='selected'?'выбран':o.status==='declined'?'отклонён':'ждал'}</div>
+   </div>
+  </div>`).join(''):'<div class="note" style="margin:0 0 10px;color:var(--dim2)">Никто не назвал цену.</div>'}
+
+ <div class="sec" style="padding-left:0">Переписка ${r.chat.length?'· '+r.chat.length:''}</div>
+ ${r.chat.length?`<div style="padding-bottom:8px">${r.chat.map(c=>{
+   const drv=c.from_role==='driver';
+   return `<div style="margin-bottom:8px;padding:9px 11px;border-radius:12px;background:${drv?'var(--surf)':'var(--gs)'};border:1px solid var(--line)">
+     <div style="font-size:11px;color:var(--dim);margin-bottom:3px">${drv?'🚗':'👤'} ${c.who?esc(c.who.name):'—'} · ${tm(c.created_at)}</div>
+     <div style="font-size:13px;line-height:1.5">${esc(c.text)}</div>
+   </div>`;}).join('')}</div>`
+  :'<div class="note" style="margin:0 0 10px;color:var(--dim2)">Не переписывались.</div>'}
+ ${close}`;
+}
+
 // кому уходило уведомление о заявке и кто промолчал
 async function notifyList(rideId){
  const m=document.createElement('div');m.className='mask';m.id='sh2';

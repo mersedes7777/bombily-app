@@ -3290,7 +3290,7 @@ const ACT_PERM = {
   'car-approve':'drivers','car-edit':'drivers','car-remove':'drivers',
   'car-add-admin':'drivers','cars-of-user':'drivers','doc-urls':'drivers',
 
-  'rides-list':'rides','del-review':'rides','ride-notify-list':'rides',
+  'rides-list':'rides','del-review':'rides','ride-notify-list':'rides','ride-card':'rides',
 
   'complaint-resolve':'complaints','resolve-complaint':'complaints',
 
@@ -4397,7 +4397,7 @@ http.createServer(async (req, res) => {
       // запись в журнал — всё, кроме чтения
       const readOnly = new Set(['promo-list','support-list','support-count','winback-list','cars-of-user',
         'cars-pending','cars-pending-list','doc-urls','user-phone','apps-phones','admin-counts','stats',
-        'drivers-stats','days-stats','user-search','avatars','avatar-fetch','ride-notify-list',
+        'drivers-stats','days-stats','user-search','avatars','avatar-fetch','ride-notify-list','ride-card',
         'audit-list','audit-actors','activity','broadcast-count','broadcast-list','rides-stats','rides-list','src-list','rides-list',
         'city-list','group-check']);
       const customLog = new Set(['edit-user', 'adjust-balance', 'driver-status', 'ban', 'car-edit']);
@@ -5045,6 +5045,51 @@ http.createServer(async (req, res) => {
       }
 
       // статистика по водителям за период
+      // вся история одной заявки: кто взял, кто предлагал цену, была ли переписка
+      if (act === 'ride-card') {
+        const rid = body.ride_id;
+        if (!rid) return json(res, 400, { error: 'no_ride' });
+
+        const { data: ride } = await db.from('rides').select('*').eq('id', rid).maybeSingle();
+        if (!ride) return json(res, 404, { error: 'not_found' });
+
+        const ids = [ride.passenger_id, ride.driver_id].filter(Boolean);
+        const { data: offs } = await db.from('offers')
+          .select('id,driver_id,driver_name,car,price,status,created_at')
+          .eq('ride_id', rid).order('created_at', { ascending: true });
+        (offs || []).forEach(o => { if (o.driver_id) ids.push(o.driver_id); });
+
+        const { data: asks } = await db.from('ride_ask')
+          .select('from_id,to_id,from_role,text,created_at')
+          .eq('ride_id', rid).order('created_at', { ascending: true });
+        (asks || []).forEach(a => { if (a.from_id) ids.push(a.from_id); });
+
+        const { data: notif } = await db.from('ride_notify')
+          .select('driver_id,delivered,responded').eq('ride_id', rid);
+
+        const uniq = [...new Set(ids.filter(Boolean).map(String))];
+        const who = {};
+        if (uniq.length) {
+          const { data: us } = await db.from('users')
+            .select('id,name,car,telegram_id,vehicle_type,rating').in('id', uniq);
+          (us || []).forEach(u => {
+            who[u.id] = { name: u.name, car: u.car, rating: u.rating,
+              moto: u.vehicle_type === 'moto', tag: String(u.telegram_id || '').slice(-4) };
+          });
+        }
+
+        return json(res, 200, {
+          ok: true, ride,
+          driver: ride.driver_id ? (who[ride.driver_id] || null) : null,
+          passenger: ride.passenger_id ? (who[ride.passenger_id] || null) : null,
+          offers: (offs || []).map(o => ({ ...o, who: who[o.driver_id] || null })),
+          chat: (asks || []).map(a => ({ ...a, who: who[a.from_id] || null })),
+          notify: { sent: (notif || []).length,
+                    got: (notif || []).filter(x => x.delivered).length,
+                    answered: (notif || []).filter(x => x.responded).length }
+        });
+      }
+
       // кому уходила заявка и кто на неё откликнулся
       if (act === 'ride-notify-list') {
         const rid = body.ride_id;
