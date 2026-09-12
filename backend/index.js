@@ -5067,6 +5067,12 @@ http.createServer(async (req, res) => {
         const { data: notif } = await db.from('ride_notify')
           .select('driver_id,delivered,responded').eq('ride_id', rid);
 
+        // оценки за эту поездку: пассажир водителю и наоборот
+        const { data: revs } = await db.from('reviews')
+          .select('id,from_id,target_id,rating,comment,visible,created_at')
+          .eq('ride_id', rid).order('created_at', { ascending: true });
+        (revs || []).forEach(v => { if (v.from_id) ids.push(v.from_id); if (v.target_id) ids.push(v.target_id); });
+
         const uniq = [...new Set(ids.filter(Boolean).map(String))];
         const who = {};
         if (uniq.length) {
@@ -5084,6 +5090,7 @@ http.createServer(async (req, res) => {
           passenger: ride.passenger_id ? (who[ride.passenger_id] || null) : null,
           offers: (offs || []).map(o => ({ ...o, who: who[o.driver_id] || null })),
           chat: (asks || []).map(a => ({ ...a, who: who[a.from_id] || null })),
+          reviews: (revs || []).map(v => ({ ...v, who: who[v.from_id] || null, about: who[v.target_id] || null })),
           notify: { sent: (notif || []).length,
                     got: (notif || []).filter(x => x.delivered).length,
                     answered: (notif || []).filter(x => x.responded).length }

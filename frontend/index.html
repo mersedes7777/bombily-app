@@ -3697,6 +3697,19 @@ async function rideCard(rideId){
    </div>
   </div>`).join(''):'<div class="note" style="margin:0 0 10px;color:var(--dim2)">Никто не назвал цену.</div>'}
 
+ <div class="sec" style="padding-left:0">Оценки ${r.reviews&&r.reviews.length?'· '+r.reviews.length:''}</div>
+ ${r.reviews&&r.reviews.length?r.reviews.map(v=>{
+   const drv=r.driver&&String(v.from_id)===String(r.ride.driver_id);
+   return `<div style="margin-bottom:8px;padding:10px 12px;border-radius:12px;background:var(--surf);border:1px solid var(--line)">
+     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div style="font-size:11px;color:var(--dim)">${drv?'🚗':'👤'} ${v.who?esc(v.who.name):'—'} → ${v.about?esc(v.about.name):'—'}</div>
+      <div style="font-size:13px;white-space:nowrap">${'⭐'.repeat(Math.max(0,Math.min(5,v.rating||0)))}${v.rating?'':'без оценки'}</div>
+     </div>
+     ${v.comment?`<div style="font-size:13px;line-height:1.5;margin-top:6px">${esc(v.comment)}</div>`:''}
+     ${v.visible===false?'<div class="sub" style="margin-top:5px;color:var(--am)">скрыт — вторая сторона ещё не оценила</div>':''}
+   </div>`;}).join('')
+  :'<div class="note" style="margin:0 0 10px;color:var(--dim2)">Никто не оставил оценку.</div>'}
+
  <div class="sec" style="padding-left:0">Переписка ${r.chat.length?'· '+r.chat.length:''}</div>
  ${r.chat.length?`<div style="padding-bottom:8px">${r.chat.map(c=>{
    const drv=c.from_role==='driver';
