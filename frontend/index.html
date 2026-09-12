@@ -3806,6 +3806,7 @@ async function ridesList(only){
      ${dn?`<span onclick="closeSh();userCard('${r2.driver.id}')" class="rrp">🚗 ${dn}${dt?' <span class="idtag">#'+dt+'</span>':''}</span>`:'<span style="color:var(--dim)">водителя не было</span>'}
     </div>
     <div class="rr4">${r2.price?`<b>${r2.price} ₽</b>`:''}${r2.passenger_price?` · просил ${r2.passenger_price} ₽`:''}${r2.offers?` · предложений ${r2.offers}`:''}${wait}</div>
+    <div style="padding-top:7px"><button class="rolebtn" onclick="event.stopPropagation();rideCard('${r2.id}')">вся история заявки ›</button></div>
    </div>`;
   }).join(''):'<div class="empty">Заявок нет</div>'}
  <div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div>`;
