@@ -138,10 +138,18 @@ async function onUpdate(u) {
       if (!city) return;
 
       const st = await groupSettings();
-      if (!st.group_welcome) return;
 
       const name = who.first_name || 'Гость';
       glog(`${city.name}: вступил ${name}`);
+
+      // проверка новичка: пока не решит пример, писать не сможет.
+      // Приветствие покажем после — чтобы не было двух сообщений сразу
+      if (st.captcha_on) {
+        const ok = await capStart(cm.chat.id, who, city.name);
+        if (ok) return;
+      }
+
+      if (!st.group_welcome) return;
       const r = await send(cm.chat.id,
         `👋 ${name}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте в боте — так быстрее и безопаснее.`,
         { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', url: `https://t.me/${BOT_USERNAME}` }]] } });
@@ -152,6 +160,46 @@ async function onUpdate(u) {
 
   if (u.callback_query) {
     const cq = u.callback_query, chat = cq.from.id;
+
+    // ответ на проверку при входе
+    if (cq.data && cq.data.startsWith('cap:')) {
+      const p = cq.data.split(':');
+      const forId = Number(p[1]), val = Number(p[2]);
+      const chatId = cq.message && cq.message.chat ? cq.message.chat.id : null;
+      if (String(cq.from.id) !== String(forId)) {
+        await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Это проверка другого человека.', show_alert: true });
+        return;
+      }
+      const { data: c } = await db.from('captcha_wait').select('*').eq('chat_id', chatId).eq('tg', forId).maybeSingle();
+      if (!c) { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Проверка уже пройдена.' }); return; }
+
+      if (val === c.answer) {
+        await tg('answerCallbackQuery', { callback_query_id: cq.id, text: '✅ Спасибо, теперь можно писать!' });
+        await capPass(chatId, forId, c.msg_id);
+        const city2 = await cityByGroup(chatId);
+        const st2 = await groupSettings();
+        if (city2 && st2.group_welcome) {
+          const r2 = await send(chatId,
+            `👋 ${safeName(c.user_name || 'Гость')}, добро пожаловать в <b>Bombily | ${safeName(city2.name)}</b>\n\nМашину вызывайте в боте — так быстрее и безопаснее.`,
+            { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', url: `https://t.me/${BOT_USERNAME}` }]] } });
+          if (r2 && r2.result) delLater(chatId, r2.result.message_id, st2.group_welcome_sec ?? 120);
+        }
+        return;
+      }
+
+      const tries = (c.tries || 0) + 1;
+      if (tries >= CAP_TRIES) {
+        await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Ответ неверный. Попытки закончились.', show_alert: true });
+        await capFail(chatId, forId, c.msg_id, 'три раза подряд неверный ответ');
+        return;
+      }
+      await tg('answerCallbackQuery', {
+        callback_query_id: cq.id,
+        text: `Неверно. Осталось попыток: ${CAP_TRIES - tries}`, show_alert: true
+      });
+      await capAsk(chatId, { id: forId, first_name: c.user_name }, '', { msg_id: c.msg_id, tries });
+      return;
+    }
 
     // «какие машины на линии» — окошко видит только нажавший, закреп не трогаем
     if (cq.data && cq.data.startsWith('cars:')) {
@@ -1798,6 +1846,107 @@ async function maybeHint(m, chatId, city, text) {
   } catch (e) { console.error('maybeHint', e.message); }
 }
 
+
+/* ---------- проверка новичков ----------
+   Простой пример на сложение. Три попытки, вопрос каждый раз новый.
+   Не ответил за отведённое время или ошибся трижды — исключаем,
+   но не баним: сможет вернуться и попробовать снова. */
+
+const CAP_TRIES = 3;
+
+// права обычного участника — возвращаем их после проверки
+const CAP_FULL = {
+  can_send_messages: true, can_send_audios: true, can_send_documents: true,
+  can_send_photos: true, can_send_videos: true, can_send_video_notes: true,
+  can_send_voice_notes: true, can_send_polls: true, can_send_other_messages: true,
+  can_add_web_page_previews: true, can_invite_users: true
+};
+const CAP_MUTE = { can_send_messages: false, can_send_other_messages: false, can_send_polls: false, can_add_web_page_previews: false };
+
+function capQuestion() {
+  const a = 2 + Math.floor(Math.random() * 7);      // 2..8
+  const b = 2 + Math.floor(Math.random() * 7);
+  const right = a + b;
+  const set = new Set([right]);
+  while (set.size < 4) {
+    const d = right + (Math.floor(Math.random() * 9) - 4);
+    if (d > 0 && d !== right) set.add(d);
+  }
+  const opts = [...set].sort(() => Math.random() - 0.5);
+  return { a, b, right, opts };
+}
+
+async function capAsk(chatId, who, cityName, edit) {
+  const q = capQuestion();
+  const name = who.first_name || 'Гость';
+  const text = `👋 <b>${safeName(name)}</b>, добро пожаловать!\n\n` +
+    `Чтобы писать в чате, решите простой пример — так мы не пускаем сюда спам-ботов.\n\n` +
+    `<b>Сколько будет ${q.a} + ${q.b}?</b>`;
+  const kb = { inline_keyboard: [q.opts.map(v => ({ text: String(v), callback_data: `cap:${who.id}:${v}` }))] };
+
+  let msgId = edit && edit.msg_id;
+  if (msgId) {
+    const r = await tg('editMessageText', { chat_id: chatId, message_id: msgId, text, parse_mode: 'HTML', reply_markup: kb });
+    if (!r || !r.ok) msgId = null;
+  }
+  if (!msgId) {
+    const r = await send(chatId, text, { reply_markup: kb });
+    msgId = r && r.result ? r.result.message_id : null;
+  }
+
+  await db.from('captcha_wait').upsert({
+    chat_id: chatId, tg: who.id, answer: q.right,
+    tries: edit && edit.tries ? edit.tries : 0,
+    msg_id: msgId, user_name: name, created_at: new Date().toISOString()
+  }, { onConflict: 'chat_id,tg' }).then(() => {}, () => {});
+}
+
+// запускаем проверку: сначала лишаем права писать
+async function capStart(chatId, who, cityName) {
+  const r = await tg('restrictChatMember', {
+    chat_id: chatId, user_id: who.id, permissions: CAP_MUTE
+  });
+  if (!r || !r.ok) {
+    // нет права ограничивать — проверку пропускаем, иначе человек просто зависнет
+    glog(`${cityName}: проверка невозможна, нет прав (${r && r.description ? r.description : '—'})`);
+    return false;
+  }
+  await capAsk(chatId, who, cityName);
+  return true;
+}
+
+async function capPass(chatId, tgId, msgId) {
+  await tg('restrictChatMember', { chat_id: chatId, user_id: tgId, permissions: CAP_FULL }).catch(() => {});
+  if (msgId) await tg('deleteMessage', { chat_id: chatId, message_id: msgId }).catch(() => {});
+  await db.from('captcha_wait').delete().eq('chat_id', chatId).eq('tg', tgId);
+}
+
+async function capFail(chatId, tgId, msgId, why) {
+  // исключаем, но сразу разбаниваем: пусть вернётся и попробует ещё раз
+  await tg('banChatMember', { chat_id: chatId, user_id: tgId }).catch(() => {});
+  await tg('unbanChatMember', { chat_id: chatId, user_id: tgId, only_if_banned: true }).catch(() => {});
+  if (msgId) await tg('deleteMessage', { chat_id: chatId, message_id: msgId }).catch(() => {});
+  await db.from('captcha_wait').delete().eq('chat_id', chatId).eq('tg', tgId);
+
+  // объясним лично, если человек запускал бота
+  await send(tgId,
+    `Вы не прошли проверку при входе в чат (${why}).\n\nЭто не бан — можете зайти снова и попробовать ещё раз.`)
+    .catch(() => {});
+}
+
+// не ответившие вовремя
+async function capLoop() {
+  try {
+    const st = await groupSettings();
+    const mins = st.captcha_minutes || 10;
+    const cut = new Date(Date.now() - mins * 60000).toISOString();
+    const { data: old } = await db.from('captcha_wait').select('*').lt('created_at', cut).limit(50);
+    for (const c of old || []) await capFail(c.chat_id, c.tg, c.msg_id, 'не ответили вовремя');
+  } catch (e) { console.error('capLoop', e.message); }
+  setTimeout(capLoop, 60000);
+}
+setTimeout(capLoop, 90000);
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -2426,7 +2575,7 @@ function driverAdLike(text) {
   const line = String(text || '').replace(/\s+/g, ' ');
   const phone = /(?:\+?7|8)?[\s\-(]*9\d{2}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/.test(line);
   if (!phone) return false;
-  return /(работаю|вожу|возим|катаю|межгород|побереж|бус\b|минивэн|микроавтобус|багажник|мест\b|пассажир|комфорт|трезв|аккуратн|недорого|подача|таксую|на линии)/i.test(line);
+  return /(работаю|вожу|возим|катаю|межгород|побереж|бус\b|минивэн|микроавтобус|багажник|мест\b|пассажир|комфорт|трезв|аккуратн|недорого|подача|таксую|на линии|выезжа|поеду|еду в|еду до|могу забрать|заберу|подвезу|подброшу|свободен|свободна|попутн|направлени|есть места|места есть)/i.test(line);
 }
 
 function looksLikeOrder(text) {
@@ -2596,7 +2745,7 @@ async function onGroupMessage(m) {
 
   // это заказ пассажира — не читаем нотацию, а сразу предлагаем оформить:
   // человеку остаётся одно нажатие, приложение открывать не надо
-  if (!isReply && fromId) {
+  if (!isReply && fromId && !driverAdLike(text)) {
     try {
       if (await chatOrderStart(m, chatId, city)) {
         glog(`${city.name}: предложил оформить заказ из чата · ${name}`);
@@ -5647,7 +5796,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban','captcha_on','captcha_minutes'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
