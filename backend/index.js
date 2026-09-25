@@ -436,6 +436,14 @@ async function onUpdate(u) {
   }
 
   // сотрудник нажал «Ответить» и теперь пишет ответ
+  // «Поездка Ленина 12 — рынок» прямо в личке с ботом — тот же заказ, что и из чата
+  if (!text.startsWith('/') && orderWord(text)) {
+    const { data: uu } = await db.from('users').select('city').eq('telegram_id', chat).maybeSingle();
+    try {
+      if (await chatOrderStart(m, chat, { name: (uu && uu.city) || '' })) return;
+    } catch (e) { console.error('private order', e.message); }
+  }
+
   // дописывает адреса для заказа, начатого в чате
   const draft = await draftGet(chat);
   if (draft && ['ask_from', 'ask_to', 'ask_price', 'ask_time', 'ask_note', 'ask_tocity'].includes(draft.stage) && !text.startsWith('/')) {
@@ -512,6 +520,17 @@ async function onUpdate(u) {
     if (param === 'chat' || !param) {
       const d = await draftGet(chat);
       if (d) { await coNextStep(chat, d); return; }
+    }
+
+    // кнопки из чата: /start driver, /start order — сразу нужный экран
+    if (param === 'driver' || param === 'order') {
+      const scr = param === 'driver' ? 'driver' : 'order';
+      await send(chat,
+        param === 'driver'
+          ? '🚗 <b>Кабинет водителя</b>\nЗдесь можно подать заявку, включить смену и смотреть заказы.'
+          : '🚖 <b>Заказ поездки</b>\nНапишите сюда одной строкой: <code>Поездка Ленина 12 — рынок</code>\nили откройте приложение.',
+        { reply_markup: { inline_keyboard: [[wa(param === 'driver' ? '🚗 Открыть кабинет' : '🚖 Открыть приложение', scr)]] } });
+      return;
     }
 
     // «Связаться» из заявки: /start ask_UUID — уточнить детали до принятия
@@ -1960,6 +1979,54 @@ async function capLoop() {
 }
 setTimeout(capLoop, 90000);
 
+
+// мягкий режим: заказ в чате не удаляем, а подсказываем под ним.
+// Черновик всё равно сохраняем — одна кнопка, и заказ оформлен в боте
+async function softOrderReply(m, chatId, city, st, text, isReply) {
+  const uid = m.from && m.from.id;
+  const name = (m.from && m.from.first_name) || '';
+  if (!uid) return;
+
+  // не отвечаем одному человеку чаще раза в пару минут
+  const rk = `soft:${chatId}:${uid}`;
+  const last = groupReplyAt.get(rk) || 0;
+  if (Date.now() - last < 120 * 1000) return;
+  groupReplyAt.set(rk, Date.now());
+
+  const isAd = driverAdLike(text);
+  let body, btn;
+
+  if (isAd) {
+    const { data: au } = await db.from('users').select('role,driver_status').eq('telegram_id', uid).maybeSingle();
+    const isDrv = au && ['driver', 'both'].includes(au.role);
+    if (isDrv) {
+      body = `🚗 ${safeName(name) || 'Коллега'}, заказы удобнее брать в боте — там они идут в ваш рейтинг, а пассажир под защитой.`;
+      btn = { text: '🚗 Кабинет водителя', url: `https://t.me/${BOT_USERNAME}?start=driver` };
+    } else {
+      body = `🚗 ${safeName(name) || 'Коллега'}, возите людей? Оформитесь водителем в Бомбилах — заказы будут приходить вам сами, а карточка с машиной появится в этой группе.`;
+      btn = { text: '🚗 Стать водителем', url: `https://t.me/${BOT_USERNAME}?start=driver` };
+    }
+  } else if (isReply) {
+    body = `🚗 Договариваться лучше через бота — там видно все заявки, и поездка пойдёт в рейтинг.`;
+    btn = { text: '🚗 Смотреть заявки', url: `https://t.me/${BOT_USERNAME}?start=driver` };
+  } else {
+    // сохраняем черновик — кнопка откроет бота уже с адресом
+    let sentDm = false;
+    try { sentDm = await chatOrderStart(m, chatId, city); } catch (e) {}
+    body = sentDm
+      ? `📩 ${safeName(name) || 'Вам'}, отправил в личку кнопку — оформите заказ там, и его сразу увидят все свободные водители.`
+      : `🚖 ${safeName(name) ? safeName(name) + ', о' : 'О'}формите заказ в боте — его сразу увидят все свободные водители, и они назовут цену. Ваш адрес я уже запомнил.`;
+    btn = sentDm ? null : { text: '🚖 Оформить заказ', url: `https://t.me/${BOT_USERNAME}?start=chat` };
+  }
+
+  const r = await send(chatId, body, {
+    reply_parameters: { message_id: m.message_id, allow_sending_without_reply: true },
+    ...(btn ? { reply_markup: { inline_keyboard: [[btn]] } } : {})
+  });
+  if (r && r.result) delLater(chatId, r.result.message_id, st.group_del_sec ?? 90);
+  glog(`${city.name}: мягкий режим — ответил под сообщением · ${name}`);
+}
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -2750,6 +2817,12 @@ async function onGroupMessage(m) {
     // Сообщение не трогаем, а в личку подсказываем, как надо
     await maybeHint(m, chatId, city, text);
     glog(`${city.name}: не похоже на заказ · «${preview}»`);
+    return;
+  }
+
+  // мягкий режим: сообщение не трогаем, а отвечаем под ним, как оформить
+  if (st.group_order_mode === 'reply') {
+    await softOrderReply(m, chatId, city, st, text, isReply);
     return;
   }
 
@@ -5816,7 +5889,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban','captcha_on','captcha_minutes'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban','captcha_on','captcha_minutes','group_order_mode'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });

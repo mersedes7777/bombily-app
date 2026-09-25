@@ -4595,6 +4595,18 @@ async function finCities(c){
   <button class="btn" onclick="saveDpost()">Сохранить</button>
  </div>
  <div class="obar" style="margin:14px 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Удалять заказы из чата</div>
+   <div class="obhint">${SETTINGS.group_order_mode==='reply'
+     ?'Сейчас <b>мягкий режим</b>: сообщение с заказом остаётся в чате, а бот отвечает под ним, как оформить в боте. Ответ бота сам исчезает через пару минут.'
+     :'Сейчас сообщение с заказом убирается из чата, а человеку приходит кнопка оформления в личку.'} Спам удаляется в любом режиме.</div>
+  </div><div class="tg ${SETTINGS.group_order_mode!=='reply'?'on':''}" onclick="togOrderMode()"><b></b></div></div>
+
+ <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Проверка новичков при входе</div>
+   <div class="obhint">Новый участник решает простой пример на сложение, пока не решит — писать не может. Три попытки, потом исключение без бана: сможет зайти снова. Отсекает автоматических ботов, но не живых спамеров. Боту нужно право «Блокировать участников» в группе.</div>
+  </div><div class="tg ${SETTINGS.captcha_on?'on':''}" onclick="togGroup('captcha_on')"><b></b></div></div>
+
+ <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
    <div class="l">Чистить спам в группах</div>
    <div class="obhint">Убирает рекламу запрещённого, «знакомства» и лёгкий заработок. Считает по сочетанию признаков, а не по одному слову — обычные сообщения не трогает. Каждая сработка приходит вам в бота, там же кнопка вернуть человека, если ошиблись.</div>
   </div><div class="tg ${SETTINGS.antispam_on!==false?'on':''}" onclick="togGroup('antispam_on')"><b></b></div></div>
@@ -4701,6 +4713,14 @@ async function saveGroupTimers(){
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Не удалось сохранить');
  if(r.settings)SETTINGS=r.settings; else {SETTINGS.group_del_sec=d;SETTINGS.group_welcome_sec=w;}
  T('Время сохранено');
+}
+async function togOrderMode(){
+ const v=SETTINGS.group_order_mode==='reply'?'delete':'reply';
+ const r=await api('/api/admin',{action:'settings-update',fields:{group_order_mode:v}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ if(r.settings)SETTINGS=r.settings; else SETTINGS.group_order_mode=v;
+ T(v==='reply'?'Мягкий режим: заказы остаются в чате':'Заказы снова убираются из чата');
+ aFin(document.getElementById('main'));
 }
 async function togGroup(field){
  const v=!(field==='group_clean_service'?SETTINGS[field]!==false:SETTINGS[field]);
