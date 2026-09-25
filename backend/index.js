@@ -1274,8 +1274,11 @@ function spamScore(text, opts) {
   if (/(?:^|\n|\s)(?:пиши|пишите|ставь|ставьте|жду)\s*[«"']?\+/i.test(raw)) { score += 3; why.push('«пиши +»'); }
   // объявление списком: несколько коротких строк и сумма — типичная вакансия
   const rows = raw.split(/\n/).map(x => x.trim()).filter(Boolean);
+  // цифры телефона суммой не считаем — иначе любое объявление с номером
+  // выглядело как вакансия с зарплатой
+  const noPhone = raw.replace(/(?:\+?\d[\s\-()]*){10,}/g, ' ');
   if (rows.length >= 3 && rows.length <= 12 && rows.every(x => x.length <= 60)
-      && /\d{4,6}/.test(raw)) { score += 3; why.push('объявление списком с суммой'); }
+      && /\d{4,6}/.test(noPhone)) { score += 3; why.push('объявление списком с суммой'); }
 
   // ссылки и приглашения в личку
   const links = (raw.match(/https?:\/\/|t\.me\/|@[a-zA-Z_]{4,}/g) || []).length;
@@ -1301,7 +1304,15 @@ async function spamHandle(m, chatId, city, st, res) {
   const text = String(m.text || m.caption || '');
   const uid = m.from && m.from.id;
   const uname = (m.from && m.from.first_name) || '';
-  const ban = st.antispam_ban !== false && res.score >= 8;
+
+  // проверенных водителей автоматически не баним никогда: они прошли
+  // проверку документов, и выгонять их — решение владельца, а не фильтра
+  let trusted = false;
+  if (uid) {
+    const { data: tu } = await db.from('users').select('driver_status,staff_role').eq('telegram_id', uid).maybeSingle();
+    trusted = !!(tu && (tu.driver_status === 'approved' || (tu.staff_role && tu.staff_role !== 'none')));
+  }
+  const ban = !trusted && st.antispam_ban !== false && res.score >= 8;
 
   await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
 
@@ -1327,7 +1338,7 @@ async function spamHandle(m, chatId, city, st, res) {
       `🚫 <b>Спам в группе ${safeName(city.name)}</b>\n` +
       `От: ${safeName(uname)}${uid ? ` <code>${uid}</code>` : ''}${m.sender_chat ? ' (канал)' : ''}\n` +
       `Очки: ${res.score} — ${safeName(res.why)}\n` +
-      `Действие: ${ban ? 'удалено, забанен' : 'удалено'}\n\n` +
+      `Действие: ${ban ? 'удалено, забанен' : trusted ? 'удалено, <b>не забанен — это ваш водитель</b>' : 'удалено'}\n\n` +
       `<blockquote expandable>${safeName(text.slice(0, 600))}</blockquote>`,
       ban && uid ? { reply_markup: { inline_keyboard: [[
         { text: '↩️ Разбанить — это не спам', callback_data: `unspam:${chatId}:${uid}` }
@@ -1548,7 +1559,7 @@ const draftKb = d => ({
 // первый шаг: человек сам говорит, что ему нужно.
 // раньше бот угадывал по словам и иногда ошибался
 async function askKind(chat, d) {
-  await send(chat,
+  return send(chat,
     `🚖 <b>Что вам нужно?</b>\n` +
     (d && d.raw_text ? `<i>Вы писали: «${safeName(String(d.raw_text).slice(0, 120))}»</i>\n` : '') +
     `\nВыберите — и я спрошу адреса.`,
@@ -1571,7 +1582,7 @@ async function askToCity(chat, d) {
     rows.push(list.slice(i, i + 2).map(n => ({ text: '🛣 ' + n, callback_data: 'co:c:' + n.slice(0, 40) })));
   }
   rows.push([{ text: '‹ Назад', callback_data: 'co:back' }]);
-  await send(chat,
+  return send(chat,
     `🛣 <b>В какой город едем?</b>\nНапишите название — подойдёт любой${list.length ? ', или выберите частое направление кнопкой' : ''}.`,
     { reply_markup: { inline_keyboard: rows, force_reply: true } });
 }
@@ -1581,7 +1592,7 @@ async function draftShow(chat, d) {
   const head = d.kind === 'delivery' ? '📦 <b>Доставка</b>'
              : d.to_city ? '🛣 <b>Поездка в другой город</b>'
              : '🚕 <b>Поездка по городу</b>';
-  await send(chat,
+  return send(chat,
     `${head}\n\n` +
     `📍 Откуда: <b>${safeName(d.from_address || '—')}</b>\n` +
     `🏁 Куда: <b>${safeName(d.to_address || '—')}</b>\n` +
@@ -1684,8 +1695,10 @@ async function chatOrderStart(m, chatId, city) {
   }
 
   await draftSet(uid, draft);
-  await coNextStep(uid, draft);
-  return true;
+  const sent = await coNextStep(uid, draft);
+  // человек мог заблокировать бота — тогда личка не дошла, и нужно
+  // позвать его в чате, иначе сообщение просто исчезнет без следа
+  return !!(sent && sent.ok);
 }
 
 // человек дописывает адреса в личке
@@ -2575,7 +2588,7 @@ function driverAdLike(text) {
   const line = String(text || '').replace(/\s+/g, ' ');
   const phone = /(?:\+?7|8)?[\s\-(]*9\d{2}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/.test(line);
   if (!phone) return false;
-  return /(работаю|вожу|возим|катаю|межгород|побереж|бус\b|минивэн|микроавтобус|багажник|мест\b|пассажир|комфорт|трезв|аккуратн|недорого|подача|таксую|на линии|выезжа|поеду|еду в|еду до|могу забрать|заберу|подвезу|подброшу|свободен|свободна|попутн|направлени|есть места|места есть)/i.test(line);
+  return /(работаю|вожу|возим|катаю|межгород|побереж|бус\b|минивэн|микроавтобус|багажник|мест\b|пассажир|комфорт|трезв|аккуратн|недорого|подача|таксую|на линии|выезжа|поеду|еду в|еду до|могу забрать|заберу|подвезу|подброшу|свободен|свободна|попутн|направлени|есть места|места есть|междугород|опытн\w* водител|переезд|грузоперевоз)/i.test(line);
 }
 
 function looksLikeOrder(text) {
@@ -2720,7 +2733,10 @@ async function onGroupMessage(m) {
       forwarded: !!(m.forward_origin || m.forward_from || m.forward_from_chat),
       isNew: recentJoin.has(`${chatId}:${m.from && m.from.id}`)
     });
-    if (res.score >= 5) { await spamHandle(m, chatId, city, st, res); return; }
+    // объявление перевозчика — не спам, а возможный водитель: его удалит
+    // модерация и позовёт оформиться. Баним только если там запрещёнка
+    const isDriverAd = driverAdLike(text) && !/запрещённое/.test(res.why);
+    if (res.score >= 5 && !isDriverAd) { await spamHandle(m, chatId, city, st, res); return; }
   }
 
   if (!st.group_moderate) { glog(`${city.name}: приходят сообщения, но «убирать заказы» выключено`); return; }
@@ -2822,10 +2838,13 @@ async function onGroupMessage(m) {
   // дошло лично — в чате не пишем, чтобы не позорить человека и не сорить
   if (dmOk) return;
 
-  // не частим с ответами: не чаще раза в минуту на группу
-  const last = groupReplyAt.get(chatId) || 0;
+  // не частим с ответами — но считаем по человеку, а не по всей группе:
+  // иначе двое написали заказ подряд, и второй молча терял сообщение
+  const rk = `${chatId}:${fromId || 0}`;
+  const last = groupReplyAt.get(rk) || 0;
   if (Date.now() - last < 60 * 1000) return;
-  groupReplyAt.set(chatId, Date.now());
+  groupReplyAt.set(rk, Date.now());
+  if (groupReplyAt.size > 3000) groupReplyAt.clear();
 
   const txtOrder = `🚖 ${name ? safeName(name) + ', я' : 'Я'} сохранил ваш заказ — осталось нажать кнопку.\n\nОткроется бот, там будет ваш адрес и кнопка «Оформить». Водители сразу увидят заявку и назовут цену.\n<i>Ваш номер и адрес видит только тот, кто возьмёт заказ.</i>`;
   const txtReply = `🚗 ${name ? safeName(name) + ', з' : 'З'}аказы принимаются только в боте Bombily.\n\nТам видно все свободные заявки, а поездка засчитается в ваш рейтинг. Договариваться в чате нельзя.`;
