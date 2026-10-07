@@ -2046,7 +2046,11 @@ async function poll() {
 /* ---------- уведомления ---------- */
 const tgIdOf = async id => (await db.from('users').select('telegram_id').eq('id', id).maybeSingle()).data?.telegram_id;
 
+// редкие проверки (отзывы, итоги смен, промокоды) хватает делать раз в минуту —
+// раньше всё подряд опрашивалось каждые 4 секунды и съедало трафик базы
+let notifyTick = 0;
 async function notifyLoop() {
+    const slow = (notifyTick++ % 15) === 0;
     try {
       // новая заявка -> водителям
       const { data: rides } = await db.from('rides').select('*').eq('status', 'created').eq('notified', false);
@@ -2200,7 +2204,7 @@ async function notifyLoop() {
 
     } catch (e) { notifyErrors['поездка завершена -> обоим'] = e.message; console.error('notify:поездка завершена -> обоим', e.message); }
 
-    try {
+    if (slow) try {
       // смена закончилась -> итог водителю
       const { data: sh } = await db.from('shifts').select('*').eq('notified', false).not('ended_at', 'is', null);
       for (const s of sh || []) {
@@ -2232,7 +2236,7 @@ async function notifyLoop() {
 
     } catch (e) { notifyErrors['водитель приехал -> пассажиру'] = e.message; console.error('notify:водитель приехал -> пассажиру', e.message); }
 
-    try {
+    if (slow) try {
       // отзывы становятся видимыми, когда обе стороны оценили
       const { data: hidden } = await db.from('reviews').select('*').eq('visible', false);
       for (const rv of hidden || []) {
@@ -2273,7 +2277,7 @@ async function notifyLoop() {
 
     } catch (e) { notifyErrors['сообщения от админа -> юзеру в бот'] = e.message; console.error('notify:сообщения от админа -> юзеру в бот', e.message); }
 
-    try {
+    if (slow) try {
       // одобренный возврат -> отправить промокод
       const { data: appr } = await db.from('winback_queue').select('*').eq('status', 'approved');
       for (const w of appr || []) {
@@ -2326,15 +2330,27 @@ async function notifyLoop() {
       }
 
     } catch (e) { notifyErrors['водитель отказался: заявка вернулась в о'] = e.message; console.error('notify:водитель отказался: заявка вернулась в о', e.message); }
-    try {
+    if (slow) try {
       // одна сторона оценила -> напоминаем второй
       const cut2 = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-      const { data: fin2 } = await db.from('rides').select('*')
-        .eq('status', 'completed').eq('review_nudged', false).lt('created_at', new Date().toISOString()).limit(50);
+      // ГЛАВНАЯ УТЕЧКА ТРАФИКА была здесь: поездки, по которым никто не
+      // оставил оценку, никогда не помечались — и 50 полных строк читались
+      // заново каждые 4 секунды, круглые сутки. Теперь только свежие поездки,
+      // только нужные поля, а без оценок через сутки — помечаем и забываем
+      const since2 = new Date(Date.now() - 3 * 864e5).toISOString();
+      const { data: fin2 } = await db.from('rides')
+        .select('id,driver_id,passenger_id,from_address,to_address,created_at')
+        .eq('status', 'completed').eq('review_nudged', false).gte('created_at', since2).limit(50);
       for (const r of fin2 || []) {
-        if (!r.driver_id || !r.passenger_id) continue;
+        if (!r.driver_id || !r.passenger_id) {
+          await db.from('rides').update({ review_nudged: true }).eq('id', r.id); continue;
+        }
         const { data: revs } = await db.from('reviews').select('from_id,created_at').eq('ride_id', r.id);
-        if (!revs || revs.length === 0) continue;
+        if (!revs || revs.length === 0) {
+          if (Date.now() - new Date(r.created_at).getTime() > 864e5)
+            await db.from('rides').update({ review_nudged: true }).eq('id', r.id);
+          continue;
+        }
         if (revs.length >= 2) { await db.from('rides').update({ review_nudged: true }).eq('id', r.id); continue; }
         // прошло ли 2 минуты с момента первого отзыва
         if (revs[0].created_at > cut2) continue;
@@ -3798,6 +3814,15 @@ function safeName(v) {
 let guardKnownStaff = null;     // кого знаем как персонал
 let guardLastAlert  = 0;        // чтобы не заваливать сообщениями
 
+function staffDiffers(a, b) {
+  if (a.size !== b.size) return true;
+  for (const [id, u] of a) {
+    const v = b.get(id);
+    if (!v || v.staff_role !== u.staff_role) return true;
+  }
+  return false;
+}
+
 async function guardCheck() {
   try {
     const since = new Date(Date.now() - 10 * 60000).toISOString();
@@ -3813,9 +3838,25 @@ async function guardCheck() {
     // 3) кто сейчас с правами
     // настоящие права — только эти три. 'none' и пустое значение правами не являются
     const REAL_ROLES = ['owner', 'admin', 'moderator'];
-    const { data: staff } = await db.from('users')
-      .select('id,name,telegram_id,staff_role').in('staff_role', REAL_ROLES);
-    const now = new Map((staff || []).map(u => [String(u.id), u]));
+    // база могла не ответить — раньше пустой ответ принимался за «у всех
+    // сняли права», и сторож поднимал ложную тревогу сразу про всех
+    const readStaff = async () => {
+      const { data, error } = await db.from('users')
+        .select('id,name,telegram_id,staff_role').in('staff_role', REAL_ROLES);
+      if (error || !Array.isArray(data)) return null;
+      return new Map(data.map(u => [String(u.id), u]));
+    };
+    let now = await readStaff();
+    let staffChecked = false;
+    // заметили перемены — перечитываем через 15 секунд. Тревога только
+    // если второй ответ базы совпал с первым, иначе это был сбой связи
+    if (now && guardKnownStaff && staffDiffers(guardKnownStaff, now)) {
+      await new Promise(r => setTimeout(r, 15000));
+      const again = await readStaff();
+      if (!again || staffDiffers(now, again)) now = null;
+      else staffChecked = true;
+    }
+    if (!now) console.error('guard: состав персонала не прочитан или ответы не сошлись — пропускаю');
 
     const alerts = [];
 
@@ -3826,7 +3867,7 @@ async function guardCheck() {
       alerts.push(`📋 За 10 минут создано <b>${freshRides}</b> заявок — похоже на накрутку.`);
 
     // сравниваем состав персонала с прошлой проверкой
-    if (guardKnownStaff) {
+    if (now && guardKnownStaff) {
       for (const [id, u] of now) {
         const was = guardKnownStaff.get(id);
         if (!was) {
@@ -3840,7 +3881,7 @@ async function guardCheck() {
           alerts.push(`⚠️ Права сняты: <b>${safeName(u.name)}</b> (был ${u.staff_role}).`);
       }
     }
-    guardKnownStaff = now;
+    if (now) guardKnownStaff = now;
 
     if (!alerts.length) return;
 
@@ -3849,7 +3890,9 @@ async function guardCheck() {
     guardLastAlert = Date.now();
 
     await send(OWNER,
-      '🚨 <b>Похоже, что-то не так</b>\n\n' + alerts.join('\n\n') +
+      '🚨 <b>Похоже, что-то не так</b>\n' +
+      (staffChecked ? '<i>Изменения в правах подтверждены повторной проверкой.</i>\n' : '') +
+      '\n' + alerts.join('\n\n') +
       '\n\nЕсли это не вы — проверьте панель и напишите /backup, чтобы сохранить копию до изменений.'
     );
   } catch (e) {
