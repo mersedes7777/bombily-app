@@ -77,13 +77,23 @@ async function setupBot() {
 /* ---------- поддержка ---------- */
 const waitingSupport = new Set();   // кто сейчас пишет админу
 const fwdMap = new Map();
+// кому админ сейчас отвечает: держим и в базе, и в памяти — чтобы кнопка
+// «Ответить» работала, даже если база временно недоступна
+const staffReplyMem = new Map();
 async function setStaffReply(staffTg, targetTg, supportId){
+  staffReplyMem.set(String(staffTg), { staff_tg: staffTg, target_tg: targetTg, support_id: supportId || null });
   try { await db.from('staff_reply').upsert({ staff_tg: staffTg, target_tg: targetTg, support_id: supportId || null, created_at: new Date().toISOString() }); } catch(e){}
 }
 async function getStaffReply(staffTg){
-  try { const { data } = await db.from('staff_reply').select('*').eq('staff_tg', staffTg).maybeSingle(); return data || null; } catch(e){ return null; }
+  const mem = staffReplyMem.get(String(staffTg)) || null;
+  try {
+    const { data, error } = await db.from('staff_reply').select('*').eq('staff_tg', staffTg).maybeSingle();
+    if (error) return mem;
+    return data || mem;
+  } catch(e){ return mem; }
 }
 async function clearStaffReply(staffTg){
+  staffReplyMem.delete(String(staffTg));
   try { await db.from('staff_reply').delete().eq('staff_tg', staffTg); } catch(e){}
 }
 async function deliverStaffReply(staffChat, link, m, text, hasPhoto){
@@ -111,13 +121,19 @@ async function isWaiting(tgid){
 }
 async function clearWait(tgid){ waitingSupport.delete(tgid); try{ await db.from('support_wait').delete().eq('tg', tgid); }catch(e){} }
 async function staffByTg(tgid) {
+  // владельца узнаём по ID из настроек, без базы: если база недоступна,
+  // он всё равно должен иметь возможность отвечать людям
+  const isOwner = OWNER && String(tgid) === String(OWNER);
   try {
-    const { data } = await db.from('users').select('id,name,staff_role,telegram_id').eq('telegram_id', tgid).maybeSingle();
+    const { data, error } = await db.from('users').select('id,name,staff_role,telegram_id').eq('telegram_id', tgid).maybeSingle();
+    if (isOwner) return data || { id: null, name: 'Владелец', staff_role: 'owner', telegram_id: tgid };
+    if (error) console.error('staffByTg: база не ответила', error.message);
     if (!data) return null;
-    if (String(tgid) === String(OWNER)) return data;
     if (['owner', 'admin', 'moderator'].includes(data.staff_role)) return data;
     return null;
-  } catch (e) { return null; }
+  } catch (e) {
+    return isOwner ? { id: null, name: 'Владелец', staff_role: 'owner', telegram_id: tgid } : null;
+  }
 }           // message_id у админа -> telegram_id пользователя
 
 async function onUpdate(u) {
