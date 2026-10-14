@@ -336,7 +336,7 @@ async function onUpdate(u) {
     // ошиблись — владелец возвращает человека одной кнопкой
     if (cq.data && cq.data.startsWith('unspam:')) {
       const p = cq.data.split(':');
-      if (String(chat) !== String(OWNER_ID)) { await send(chat, 'Только владелец.'); return; }
+      if (String(chat) !== String(OWNER)) { await send(chat, 'Только владелец.'); return; }
       const r = await tg('unbanChatMember', { chat_id: Number(p[1]), user_id: Number(p[2]), only_if_banned: true });
       await send(chat, r && r.ok ? '✅ Разбанен. Слово из его сообщения стоит убрать из фильтра — напишите разработчику.' : 'Не получилось разбанить.');
       return;
@@ -1216,6 +1216,11 @@ const SPAM_VACANCY = [
   'частичная занятость', 'официальное трудоустройство', 'опыт не требуется',
   'резюме в лс', 'анкета в лс', 'условия в лс', 'подробности в лс',
   'собрать мебель', 'мелкий ремонт', 'частным домам', 'по частным', 'бригаду',
+  'ищем сотрудник', 'ищем помощник', 'требуются помощник', 'требуется помощник', 'нужны работник',
+  'обучение предоставляется', 'есть работа', 'для студентов', 'по оплате выходит',
+  'оплата нормальн', 'оплата после смен', 'выплаты каждый день', 'расчет после', 'расчёт после',
+  'на развозку', 'развозить заказ', 'маршруты уже', 'маршрут составлен',
+  'сортировк', 'упаковк', 'комплектац', 'фасовк',
   'пиши обсудим', 'пишите обсудим', 'клацни', 'обсудим детали', 'нужно пару человек',
   'нужны пару человек', 'пару человек', 'могу платить', 'нормально платить',
   'платить буду', 'бонусом', 'сотрудник проката', 'оформлять выдачу',
@@ -1250,11 +1255,56 @@ const SPAM_MONEY = [
   'криптовалют', 'инвестиции от', 'удвоим ваш', 'проверенный способ'
 ];
 
+// подмена букв: «сoтpудников» — латинские o и p вместо русских.
+// Живой человек так не пишет никогда, это обход фильтров
+const GLYPH = { A:'А',B:'В',C:'С',E:'Е',H:'Н',K:'К',M:'М',O:'О',P:'Р',T:'Т',X:'Х',Y:'У',
+                a:'а',c:'с',e:'е',o:'о',p:'р',x:'х',y:'у',k:'к',m:'м' };
+function mixedWords(raw) {
+  return (String(raw || '').match(/[A-Za-zА-Яа-яЁё]+/g) || [])
+    .filter(w => w.length >= 2 && /[А-Яа-яЁё]/.test(w) && /[A-Za-z]/.test(w)).length;
+}
+function deglyph(raw) {
+  return String(raw || '').replace(/[A-Za-zА-Яа-яЁё]+/g, w =>
+    /[А-Яа-яЁё]/.test(w) ? w.replace(/[A-Za-z]/g, c => GLYPH[c] || c) : w);
+}
+
+// короткие приманки: человек пишет одну фразу, чтобы зашли к нему в профиль
+const BAIT_RE = [
+  [/(?:^|\s)помог(у|аю|ем)\s+(вам\s+)?(с|со)\s+(жиль|квартир|долг|кредит|займ|деньг|ипотек|микрозайм|банкрот|пристав|работ)/, 'приманка «помогу с…»'],
+  [/(надоел[иа]?|устал[аи]?\s+от|замучил[иа]?|достал[иа]?)\s+(долг|кредит|займ|коллектор|пристав)/, 'приманка про долги'],
+  [/(?:^|\s)(хоч(у|ешь|ете)|дам|покажу|угощу|попробу[а-яё]*|любишь|ищу)\s+((тво[йюеи]|мо[йюеи]|мою)\s+)?(перч|дын|клубни|огурч|банан|персик|вишен|киск|пирожк|сосис|арбуз|ягодк|сладк|горяч|шалун)/, 'интимная приманка']
+];
+const SPAM_SEX = ['интим', 'секс', ' вирт ', 'эскорт', 'без одежды', 'голые', 'голая', 'обнаж',
+  'горячие фото', 'пошалим', 'шалунь', 'скучаю одна', 'скучно одной', 'одинокая девушка', 'нюдс'];
+
+// «Psdtu Aupsrxa» — набор латинских букв вместо имени, так выглядят купленные аккаунты
+function junkName(name) {
+  const n = String(name || '').trim();
+  return /^[A-Za-z]+(\s+[A-Za-z]+)?$/.test(n) && /[bcdfghjklmnpqrstvwxz]{4,}/i.test(n);
+}
+
+// кто уже попадался на спаме: второй раз — сразу бан
+const spamStrikes = new Map();
+function strikesOf(chatId, uid) {
+  const v = spamStrikes.get(`${chatId}:${uid}`);
+  if (!v || Date.now() - v.t > 24 * 3600 * 1000) return 0;
+  return v.n;
+}
+function strikeAdd(chatId, uid) {
+  const k = `${chatId}:${uid}`;
+  spamStrikes.set(k, { n: strikesOf(chatId, uid) + 1, t: Date.now() });
+  if (spamStrikes.size > 5000) spamStrikes.clear();
+}
+
 function spamScore(text, opts) {
   const t = spamNorm(text);
-  const raw = String(text || '');
+  const raw0 = String(text || '');
+  const mixed = mixedWords(raw0);
+  const raw = deglyph(raw0);      // дальше проверяем уже с нормальными буквами
   let score = 0;
   const why = [];
+  if (mixed >= 2) { score += 6; why.push(`подмена букв в ${mixed} словах`); }
+  else if (mixed === 1) { score += 2; why.push('подмена букв'); }
   const hit = (list, pts, label) => {
     const found = list.filter(w => t.includes(w));
     if (found.length) { score += pts * Math.min(found.length, 3); why.push(label + ': ' + found.slice(0, 3).join(', ')); }
@@ -1267,6 +1317,21 @@ function spamScore(text, opts) {
   hit(SPAM_LOAN, 4, 'займы');
   hit(SPAM_DATE, 3, 'знакомства');
   hit(SPAM_MONEY, 3, 'деньги');
+  hit(SPAM_SEX, 5, 'интим');
+  for (const [re, label] of BAIT_RE) if (re.test(t)) { score += 6; why.push(label); }
+
+  // «оплата до 9 500 р за смену», «доход от 3000 в день»
+  if (/(оплат|зарплат|доход|плат(им|ят)|плачу)[а-яё]*\s*(до|от)?\s*\d[\d\s]{2,7}\s*(р(?![а-яё])\.?|руб[а-яё]*|₽|к(?![а-яё])|тыс[а-яё]*)?\s*(за|в|\/)\s*(смен|день|дня|сутки|час|недел|выход|рейс|месяц)/i.test(raw)) {
+    score += 4; why.push('оплата за смену');
+  }
+  // «5000 + бензин»
+  if (/\d{3,6}\s*\+\s*(бензин|топлив|гсм|проезд|обед)/i.test(raw)) { score += 3; why.push('оплата + бензин'); }
+  // «Подробности в @Gor_work1» — зовут к стороннему нику
+  if (/(подробн|детали|услови|пиши|пишите|напиши|обращ|вопрос|связь|анкет)[а-яё]*\s*(в|у|по|сюда|тут)?\s*:?\s*@[A-Za-z0-9_]{4,}/i.test(raw)) {
+    score += 3; why.push('зовёт к нику');
+  }
+  // имя из случайных латинских букв — только как довесок к остальному
+  if (opts && opts.name && junkName(opts.name) && score > 0) { score += 2; why.push('имя-набор букв'); }
 
   // номер телефона в сообщении — так зовут писать в обход бота
   const hasPhone = /(?:\+?7|8)?[\s\-(]*9\d{2}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/.test(raw.replace(/\s+/g, ' '));
@@ -1327,6 +1392,8 @@ function spamScore(text, opts) {
   if (opts && opts.isNew && links) { score += 3; why.push('новичок со ссылкой'); }
   // новичок, у которого уже есть любой признак — почти всегда заброс
   if (opts && opts.isNew && score >= 3) { score += 2; why.push('новичок в чате'); }
+  // этот человек уже попадался сегодня — каждое следующее сообщение под подозрением
+  if (opts && opts.strikes && score >= 2) { score += 4 * Math.min(opts.strikes, 2); why.push('уже попадался на спаме'); }
   // сплошной капс длиннее двадцати знаков
   const caps = raw.replace(/[^А-ЯA-Z]/g, '').length;
   if (raw.length > 20 && caps / raw.length > 0.6) { score += 2; why.push('капс'); }
@@ -1342,12 +1409,21 @@ async function spamHandle(m, chatId, city, st, res) {
 
   // проверенных водителей автоматически не баним никогда: они прошли
   // проверку документов, и выгонять их — решение владельца, а не фильтра
-  let trusted = false;
+  let trusted = false, dbDown = false;
   if (uid) {
-    const { data: tu } = await db.from('users').select('driver_status,staff_role').eq('telegram_id', uid).maybeSingle();
-    trusted = !!(tu && (tu.driver_status === 'approved' || (tu.staff_role && tu.staff_role !== 'none')));
+    try {
+      const { data: tu, error } = await db.from('users').select('driver_status,staff_role').eq('telegram_id', uid).maybeSingle();
+      if (error) dbDown = true;
+      trusted = !!(tu && (tu.driver_status === 'approved' || (tu.staff_role && tu.staff_role !== 'none')));
+    } catch (e) { dbDown = true; }
   }
-  const ban = !trusted && st.antispam_ban !== false && res.score >= 8;
+  const sid = (m.sender_chat && m.sender_chat.id) || uid;
+  const strikes = strikesOf(chatId, sid);
+  // бан: явный спам или второе попадание за сутки. Если база не ответила,
+  // мы не знаем, свой ли это водитель — тогда баним только совсем явное
+  const clear = res.score >= 8 || strikes >= 1;
+  const ban = !trusted && st.antispam_ban !== false && clear && (!dbDown || strikes >= 1 || res.score >= 12);
+  strikeAdd(chatId, sid);
 
   await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
 
@@ -1368,8 +1444,8 @@ async function spamHandle(m, chatId, city, st, res) {
   glog(`${city.name}: СПАМ ${res.score} (${res.why}) — ${ban ? 'удалено и забанен' : 'удалено'} · ${uname}`);
 
   // владельцу — чтобы видел и мог вернуть, если ошиблись
-  if (OWNER_ID) {
-    await send(OWNER_ID,
+  if (OWNER) {
+    await send(OWNER,
       `🚫 <b>Спам в группе ${safeName(city.name)}</b>\n` +
       `От: ${safeName(uname)}${uid ? ` <code>${uid}</code>` : ''}${m.sender_chat ? ' (канал)' : ''}\n` +
       `Очки: ${res.score} — ${safeName(res.why)}\n` +
@@ -2767,11 +2843,25 @@ async function groupSettings() {
 }
 
 // группа наша, если её id прописан у какого-то города
+// последние известные группы городов: если база недоступна, бот всё равно
+// узнаёт свою группу и продолжает чистить спам. Раньше при сбое базы
+// он считал группу чужой и не трогал вообще ничего
+const groupCache = new Map([
+  ['-1003876675606', { name: 'Енакиево', group_link: 't.me/bombily_enk' }],
+  ['-1004308723949', { name: 'Горловка', group_link: 't.me/bombily_gorlovka' }]
+]);
 async function cityByGroup(chatId) {
   try {
-    const { data } = await db.from('cities').select('name,group_link').eq('group_id', chatId).maybeSingle();
+    const { data, error } = await db.from('cities').select('name,group_link').eq('group_id', chatId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) groupCache.set(String(chatId), data);
     return data || null;
-  } catch (e) { return null; }
+  } catch (e) {
+    const c = groupCache.get(String(chatId));
+    // настройки в этот момент тоже не читаются, поэтому заказы и приветствия
+    // сами выключаются — остаётся только защита от спама
+    return c ? { ...c, offline: true } : { name: 'группа', group_link: null, offline: true };
+  }
 }
 
 async function onGroupMessage(m) {
@@ -2827,10 +2917,13 @@ async function onGroupMessage(m) {
 
   // спам ловим первым делом — до всякой модерации заказов
   if (st.antispam_on !== false && !isAdminHere && (text || m.sender_chat)) {
+    const spamUid = (m.sender_chat && m.sender_chat.id) || (m.from && m.from.id);
     const res = spamScore(text, {
       senderChat: !!m.sender_chat,
       forwarded: !!(m.forward_origin || m.forward_from || m.forward_from_chat),
-      isNew: recentJoin.has(`${chatId}:${m.from && m.from.id}`)
+      isNew: recentJoin.has(`${chatId}:${m.from && m.from.id}`),
+      name: m.from ? `${m.from.first_name || ''} ${m.from.last_name || ''}`.trim() : '',
+      strikes: strikesOf(chatId, spamUid)
     });
     // объявление перевозчика — не спам, а возможный водитель: его удалит
     // модерация и позовёт оформиться. Баним только если там запрещёнка
@@ -4611,7 +4704,7 @@ http.createServer(async (req, res) => {
         // без подробностей такие сбои не поймать: у одного человека
         // не работает, у остальных всё хорошо
         console.error('me/update', me.id, me.telegram_id, JSON.stringify(upd), error.message, error.code);
-        if (OWNER_ID) send(OWNER_ID,
+        if (OWNER) send(OWNER,
           `⚠️ <b>Сбой сохранения профиля</b>\n` +
           `Человек: ${safeName(me.name)} <code>${me.telegram_id}</code>\n` +
           `Менял: ${safeName(Object.keys(upd).join(', '))}\n` +
