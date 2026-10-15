@@ -2119,6 +2119,104 @@ async function softOrderReply(m, chatId, city, st, text, isReply) {
   glog(`${city.name}: мягкий режим — ответил под сообщением · ${name}`);
 }
 
+
+/* ---------- реклама, анкеты и номера в общем чате ----------
+   Правило простое: чат — для поездок и разговоров, не доска объявлений.
+   Признак рекламы — человек оставляет контакт (номер, ник, «пишите в лс»)
+   вместе с рассказом о себе или услуге. Заказы поездок сюда не попадают. */
+
+const AD_WORDS = /(поездки|перевоз|трансфер|межгород|доставк|в любое время|круглосуточн|услуг|недорого|качественн|выезд на дом|на дому|мастер|ремонт|маникюр|педикюр|ресниц|бров|стрижк|парикмах|массаж|репетитор|на заказ|продам|продаю|куплю|скупк|сдам|сниму|аренд|ищу работу|ищу подработ|резюме|анкет|стаж|опыт работы|работаю|подработ|обращайтесь|звоните|пишите|приглашаю|запись)/i;
+
+function selfAdLike(text) {
+  const line = deglyph(String(text || '')).replace(/\s+/g, ' ');
+  if (line.length < 8) return false;
+  const phone = /(?:\+?7|8)?[\s\-(]*9\d{2}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/.test(line);
+  const nick = /@[A-Za-z0-9_]{4,}|t\.me\/|wa\.me|viber|whatsapp|ватсап|вайбер/i.test(line);
+  const dm = /(в|во)\s*(лс|личк|личные|директ)/i.test(line);
+  if (phone) return true;                         // номер в общем чате — всегда объявление
+  return (nick || dm) && AD_WORDS.test(line);
+}
+
+// заказ поездки с номером («Поездка Ленина 12 — рынок, 8949...») — это не реклама
+function orderish(text) {
+  // «Межгород круглосуточно, пишите в личку» — это предложение перевозчика, а не заказ
+  if (driverAdLike(text) && !routeLine(text)) return false;
+  if (orderWord(text) || routeLine(text)) return true;
+  // «Ищу работу водителем» — анкета, а не заказ, хоть и со словом «водитель»
+  if (/(ищу работу|ищу подработ|резюме|анкет|стаж|опыт работы|услуг|маникюр|ремонт)/i.test(deglyph(text))) return false;
+  return looksLikeOrder(text) && !driverAdLike(text);
+}
+
+const adHits = new Map();   // сколько раз человек сегодня публиковал рекламу
+function adHitAdd(chatId, uid) {
+  const k = `${chatId}:${uid}`;
+  const v = adHits.get(k);
+  const n = v && Date.now() - v.t < 24 * 3600 * 1000 ? v.n + 1 : 1;
+  adHits.set(k, { n, t: Date.now() });
+  if (adHits.size > 5000) adHits.clear();
+  return n;
+}
+
+async function adHandle(m, chatId, city, text) {
+  const uid = m.from && m.from.id;
+  const name = (m.from && m.from.first_name) || '';
+  await tg('deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
+  if (!uid) return;
+
+  const n = adHitAdd(chatId, uid);
+  const quoted = text.length > 300 ? text.slice(0, 300) + '…' : text;
+
+  // третий раз за сутки — сутки без права писать. Не бан: завтра всё вернётся
+  let muted = false;
+  if (n >= 3) {
+    const r = await tg('restrictChatMember', {
+      chat_id: chatId, user_id: uid, until_date: Math.floor(Date.now() / 1000) + 24 * 3600,
+      permissions: { can_send_messages: false, can_send_other_messages: false, can_send_polls: false, can_add_web_page_previews: false }
+    });
+    muted = !!(r && r.ok);
+  }
+
+  // кто это — от этого зависит, что ему сказать
+  let role = null;
+  try {
+    const { data, error } = await db.from('users').select('role,driver_status').eq('telegram_id', uid).maybeSingle();
+    if (!error && data) role = data;
+  } catch (e) {}
+  const ourDriver = role && role.driver_status === 'approved';
+  const isCarrier = driverAdLike(text);
+
+  let body = `📵 ${safeName(name) || 'Здравствуйте'}, я убрал ваше сообщение из чата.\n\n` +
+             `<blockquote expandable>${safeName(quoted)}</blockquote>\n\n`;
+  let kb = {};
+  if (isCarrier && ourDriver) {
+    body += `Объявления с номером в группе не публикуются — даже от наших водителей. ` +
+            `Включите <b>карточку водителя</b> в кабинете: она сама появляется в группе с вашей машиной и рейтингом, и пассажиры вызывают вас через бота.`;
+    kb = { reply_markup: { inline_keyboard: [[wa('🚗 Открыть кабинет', 'driver')]] } };
+  } else if (isCarrier) {
+    body += `Реклама перевозок в группе не публикуется. Но вы можете возить через нас — это бесплатно:\n` +
+            `• заказы приходят сами, не нужно сидеть в чате\n` +
+            `• ваша карточка с машиной и рейтингом появляется в группе\n` +
+            `• пассажиры видят, что вы проверены`;
+    kb = { reply_markup: { inline_keyboard: [[wa('🚗 Стать водителем', 'driver')]] } };
+  } else {
+    body += `В этой группе не публикуются реклама, анкеты и номера телефонов — иначе чат превращается в доску объявлений, и в нём теряются заказы. Спасибо за понимание!`;
+  }
+  if (muted) body += `\n\n⏸ Это уже третье объявление за сутки, поэтому писать в группе можно будет завтра.`;
+  else if (n === 2) body += `\n\n⚠️ Если объявление появится ещё раз, писать в группе будет нельзя до завтра.`;
+
+  const dm = await send(uid, body, kb);
+  glog(`${city.name}: реклама убрана (${n}-я за сутки${muted ? ', запрет на сутки' : ''}) · ${name}`);
+
+  // в личку не дошло — коротко в чате, но только при первом случае за сутки,
+  // иначе бот сам станет шумом. Сообщение исчезает через полминуты
+  if (!(dm && dm.ok) && n === 1) {
+    const r = await send(chatId,
+      `📵 ${safeName(name) ? safeName(name) + ', р' : 'Р'}еклама, анкеты и номера телефонов в этой группе не публикуются.`,
+      isCarrier ? { reply_markup: { inline_keyboard: [[{ text: '🚗 Возить через Бомбилы', url: `https://t.me/${BOT_USERNAME}?start=driver` }]] } } : {});
+    if (r && r.result) delLater(chatId, r.result.message_id, 30);
+  }
+}
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -2762,6 +2860,10 @@ function routeLine(text) {
 function driverAdLike(text) {
   const line = String(text || '').replace(/\s+/g, ' ');
   const phone = /(?:\+?7|8)?[\s\-(]*9\d{2}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/.test(line);
+  // «Поездки ЛДНР/РФ, в любое время, в лс!» — номера нет, но зовут в личку
+  const dm = /(в|во)\s*(лс|личк|личные|директ)|@[A-Za-z0-9_]{4,}/i.test(line);
+  // слова именно предложения услуги: пассажир, который пишет «напишите в лс», их не использует
+  if (dm && /(поездки|перевоз|трансфер|в любое время|круглосуточн|24\/7|лднр|по рф|с постами|всего чего|возим|вожу)/i.test(line)) return true;
   if (!phone) return false;
   return /(работаю|вожу|возим|катаю|межгород|побереж|бус\b|минивэн|микроавтобус|багажник|мест\b|пассажир|комфорт|трезв|аккуратн|недорого|подача|таксую|на линии|выезжа|поеду|еду в|еду до|могу забрать|заберу|подвезу|подброшу|свободен|свободна|попутн|направлени|есть места|места есть|междугород|опытн\w* водител|переезд|грузоперевоз)/i.test(line);
 }
@@ -2929,6 +3031,12 @@ async function onGroupMessage(m) {
     // модерация и позовёт оформиться. Баним только если там запрещёнка
     const isDriverAd = driverAdLike(text) && !/запрещённое/.test(res.why);
     if (res.score >= 5 && !isDriverAd) { await spamHandle(m, chatId, city, st, res); return; }
+  }
+
+  // реклама, анкеты и номера телефонов — убираем, даже если база недоступна
+  if (st.group_no_ads !== false && !isAdminHere && text && selfAdLike(text) && !orderish(text)) {
+    await adHandle(m, chatId, city, text);
+    return;
   }
 
   if (!st.group_moderate) { glog(`${city.name}: приходят сообщения, но «убирать заказы» выключено`); return; }
@@ -6041,7 +6149,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban','captcha_on','captcha_minutes','group_order_mode'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban','captcha_on','captcha_minutes','group_order_mode','group_no_ads'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
