@@ -3,6 +3,9 @@ import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import zlib from 'node:zlib';
 
+// время везде по Москве (Донбасс живёт по МСК), а не по серверу — там UTC
+process.env.TZ = 'Europe/Moscow';
+
 const TOKEN   = process.env.BOT_TOKEN;
 const APP_URL = process.env.MINI_APP_URL;
 // метка версии: меняем при каждом обновлении, чтобы телефоны не держали старое в памяти
