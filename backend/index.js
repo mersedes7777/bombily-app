@@ -465,6 +465,38 @@ async function onUpdate(u) {
     return;
   }
 
+  // проверка меток: есть ли у бота право и проставить метки всем водителям сразу
+  if (text === '/tags') {
+    if (chat !== OWNER) return;
+    await send(chat, '⏳ Проверяю группы и ставлю метки водителям…');
+    const me2 = await tg('getMe');
+    const botId = me2 && me2.result && me2.result.id;
+    const { data: cities } = await db.from('cities').select('name,group_id').not('group_id', 'is', null);
+    const out = [];
+    for (const c of cities || []) {
+      const bm = await tg('getChatMember', { chat_id: c.group_id, user_id: botId });
+      const r = bm && bm.result || {};
+      const right = r.can_manage_tags === true ? '✅ есть'
+                  : r.can_manage_tags === false ? '❌ выключено'
+                  : '❔ Telegram не сообщил';
+      const { data: drv } = await db.from('users').select('telegram_id,name')
+        .eq('city', c.name).eq('driver_status', 'approved').eq('is_banned', false).not('telegram_id', 'is', null).limit(300);
+      let ok = 0, notIn = 0, lastErr = '';
+      for (const d of drv || []) {
+        const t = await tg('setChatMemberTag', { chat_id: c.group_id, user_id: d.telegram_id, tag: DRIVER_TAG });
+        if (t && t.ok) ok++;
+        else if (t && /not found|PARTICIPANT|USER_NOT|not a member/i.test(t.description || '')) notIn++;
+        else lastErr = (t && t.description) || 'нет ответа';
+        tagMemo.delete(String(d.telegram_id));
+      }
+      out.push(`<b>${safeName(c.name)}</b>\nПраво «метки» у бота: ${right}\n` +
+        `Водителей: ${(drv || []).length} · метка стоит: ${ok}` +
+        (notIn ? ` · не в группе: ${notIn}` : '') +
+        (lastErr ? `\n⚠️ Ошибка Telegram: <code>${safeName(lastErr)}</code>` : ''));
+    }
+    return send(chat, out.join('\n\n') || 'Групп городов нет.');
+  }
+
   if (text === '/stop') {
     await db.from('users').update({ no_broadcast: true }).eq('telegram_id', chat);
     return send(chat, 'Больше не будем присылать общие сообщения. Уведомления по вашим заказам продолжат приходить.\n\nВернуть рассылку — /start');
