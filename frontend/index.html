@@ -1956,8 +1956,12 @@ async function cancelRide(){
  active=null;T('Заявка отменена');pGo('home');
 }
 async function doneRide(did,dn){
- await api('/api/action',{action:'ride-complete',ride_id:active.id});
+ // второе нажатие или поездку уже завершили с другой стороны — не падаем
+ if(!active||!active.id){pGo('home');return;}
  const rid=active.id;active=null;
+ if(doneWatch){clearInterval(doneWatch);doneWatch=null;}
+ await api('/api/action',{action:'ride-complete',ride_id:rid});
+ if(document.getElementById('sh'))return;   // окно оценки уже открыто
  rateSheet(rid,did,dn);
 }
 let doneWatch=null;
@@ -1973,7 +1977,7 @@ function watchCompletion(){
     const done=active;active=null;clearInterval(doneWatch);doneWatch=null;
     if(rideCh){db.removeChannel(rideCh);rideCh=null;}
     const{data:rev}=await db.from('reviews').select('id').eq('ride_id',done.id).eq('from_id',me.id).limit(1);
-    if(!rev||!rev.length)passengerDone(done);else{pTab='home';drawP();}
+    if((!rev||!rev.length)&&!document.getElementById('sh'))passengerDone(done);else if(!document.getElementById('sh')){pTab='home';drawP();}
    } else if(r.arrived&&!active.arrived){
     active.arrived=true;if(pTab==='ride')openRide();else{drawBar();T('Водитель на месте');}
    }
@@ -3085,9 +3089,9 @@ async function dRide(m){
  loadRideContact(r.id,'пассажиру');
  if(!unreadPoll)watchUnread(r.id);
 }
-async function dArrived(){await api('/api/action',{action:'ride-arrived',ride_id:dActive.id});dActive.arrived=true;T('Пассажиру ушло уведомление');dGo('ride');}
+async function dArrived(){if(!dActive||!dActive.id){dGo('inbox');return;}await api('/api/action',{action:'ride-arrived',ride_id:dActive.id});dActive.arrived=true;T('Пассажиру ушло уведомление');dGo('ride');}
 async function dDone(){
- const r=dActive;await api('/api/action',{action:'ride-complete',ride_id:r.id});dActive=null;T('Поездка завершена');
+ const r=dActive;if(!r||!r.id){dGo('inbox');return;}dActive=null;await api('/api/action',{action:'ride-complete',ride_id:r.id});T('Поездка завершена');if(document.getElementById('sh'))return;
  rateSheet(r.id,r.passenger_id,r.passenger_name||'Пассажир','passenger',"dGo('inbox')");
 }
 function dCancel(){
