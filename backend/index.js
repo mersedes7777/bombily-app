@@ -13,6 +13,9 @@ const APP_VER = '110';
 const OWNER   = Number(process.env.OWNER_ID || process.env.OWNER || 8672930773);
 const PORT    = process.env.PORT || 3000;
 const BOT_USERNAME = process.env.BOT_USERNAME || 'bombily_bot';
+// прямая ссылка на приложение: форма заказа открывается поверх группы,
+// её видит только тот, кто нажал. Нужна «главная мини-аппа» в BotFather
+const ORDER_LINK = `https://t.me/${BOT_USERNAME}?startapp=order`;
 const VERSION = 'v70-remind';
 
 const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -170,8 +173,8 @@ async function onUpdate(u) {
 
       if (!st.group_welcome) return;
       const r = await send(cm.chat.id,
-        `👋 ${name}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте в боте — так быстрее и безопаснее.`,
-        { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', url: `https://t.me/${BOT_USERNAME}` }]] } });
+        `👋 ${name}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте кнопкой ниже — адрес увидите только вы и водитель.`,
+        { reply_markup: { inline_keyboard: [[{ text: '🚖 Заказать машину', url: ORDER_LINK }]] } });
       if (r && r.result) delLater(cm.chat.id, r.result.message_id, st.group_welcome_sec ?? 120);
     } catch (e) { glog('приветствие: ' + e.message); }
     return;
@@ -199,8 +202,8 @@ async function onUpdate(u) {
         const st2 = await groupSettings();
         if (city2 && st2.group_welcome) {
           const r2 = await send(chatId,
-            `👋 ${safeName(c.user_name || 'Гость')}, добро пожаловать в <b>Bombily | ${safeName(city2.name)}</b>\n\nМашину вызывайте в боте — так быстрее и безопаснее.`,
-            { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', url: `https://t.me/${BOT_USERNAME}` }]] } });
+            `👋 ${safeName(c.user_name || 'Гость')}, добро пожаловать в <b>Bombily | ${safeName(city2.name)}</b>\n\nМашину вызывайте кнопкой ниже — адрес увидите только вы и водитель.`,
+            { reply_markup: { inline_keyboard: [[{ text: '🚖 Заказать машину', url: ORDER_LINK }]] } });
           if (r2 && r2.result) delLater(chatId, r2.result.message_id, st2.group_welcome_sec ?? 120);
         }
         return;
@@ -2267,7 +2270,10 @@ async function groupFeedPublish(ride) {
     const r = await tg('sendMessage', {
       chat_id: city.group_id, text: groupCardText(ride), parse_mode: 'HTML',
       disable_web_page_preview: true, disable_notification: true,
-      reply_markup: { inline_keyboard: [[{ text: '🚗 Взять заказ', callback_data: `gtake:${ride.id}` }]] }
+      reply_markup: { inline_keyboard: [
+        [{ text: '🚗 Взять заказ (водителям)', callback_data: `gtake:${ride.id}` }],
+        [{ text: '🚖 Мне тоже нужна машина', url: ORDER_LINK }]
+      ] }
     });
     if (r && r.ok) {
       await db.from('ride_feed_group').upsert({
@@ -2287,7 +2293,7 @@ async function groupFeedUpdate(rideId, state) {
     await tg('editMessageText', {
       chat_id: f.chat_id, message_id: f.message_id,
       text: feedText(ride, state), parse_mode: 'HTML', disable_web_page_preview: true,
-      reply_markup: { inline_keyboard: [] }
+      reply_markup: { inline_keyboard: [[{ text: '🚖 Заказать машину', url: ORDER_LINK }]] }
     }).catch(() => {});
     await db.from('ride_feed_group').update({ state }).eq('ride_id', rideId);
   } catch (e) { glog('заказы в группе: ' + e.message); }
@@ -3119,8 +3125,8 @@ async function onGroupMessage(m) {
       const names = m.new_chat_members.filter(u => !u.is_bot).map(u => u.first_name || 'Гость');
       if (names.length) {
         const r = await send(chatId,
-          `👋 ${names.join(', ')}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте в боте — так быстрее и безопаснее.`,
-          { reply_markup: { inline_keyboard: [[{ text: '🚖 Открыть Bombily', url: `https://t.me/${BOT_USERNAME}` }]] } });
+          `👋 ${names.join(', ')}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте кнопкой ниже — адрес увидите только вы и водитель.`,
+          { reply_markup: { inline_keyboard: [[{ text: '🚖 Заказать машину', url: ORDER_LINK }]] } });
         if (r && r.result) delLater(chatId, r.result.message_id, st.group_welcome_sec ?? 120);
       }
     }
@@ -3343,7 +3349,7 @@ async function cityStats(city) {
 
 function pinText(city, s) {
   const head = `🚖 <b>Bombily | ${city}</b>`;
-  const foot = `\n\n👇 Заказы принимаются только в боте`;
+  const foot = `\n\n👇 <b>Вызвать машину — кнопка ниже.</b>\nАдрес в чат писать не нужно: его увидит только водитель.`;
   const h = localHour();
 
   // ночь: цифры прячем, «0 водителей» в три часа выглядит как поломка
@@ -3397,7 +3403,7 @@ async function carsOnLine(cityName) {
 }
 
 async function updatePin(city, renewHours) {
-  const kb = { inline_keyboard: [[{ text: '🚖 Вызвать машину', url: `https://t.me/${BOT_USERNAME}` }]] };
+  const kb = { inline_keyboard: [[{ text: '🚖 Вызвать машину', url: ORDER_LINK }]] };
   const s = await cityStats(city.name);
   const text = pinText(city.name, s);
 
