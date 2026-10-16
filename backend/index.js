@@ -3169,6 +3169,7 @@ async function onGroupMessage(m) {
   try {
     const cm = await tg('getChatMember', { chat_id: chatId, user_id: m.from && m.from.id });
     if (cm && cm.ok && ['creator', 'administrator'].includes(cm.result.status)) isAdminHere = true;
+    if (cm && cm.ok) tagCheck(m, chatId, cm.result).catch(() => {});
   } catch (e) {}
 
   // спам ловим первым делом — до всякой модерации заказов
@@ -3626,6 +3627,53 @@ async function driverGroupsOf(cityName) {
   const { data } = cityName ? await q.eq('name', cityName) : await q;
   const ids = [...new Set((data || []).map(c => c.driver_group_id).filter(Boolean))];
   return ids;
+}
+
+/* ============ метка «Водитель Бомбил» в группе города ============
+   Метка видна всем рядом с именем, как «Админ». Ставит только бот:
+   проверенным водителям — ставит, снятым и забаненным — убирает.
+   Telegram: до 16 знаков, без эмодзи, только для обычных участников. */
+const DRIVER_TAG = 'Водитель Бомбил';
+const tagMemo = new Map();   // кого недавно проверяли — чтобы не дёргать базу на каждое сообщение
+
+async function cityGroupsOf(cityName) {
+  const q = db.from('cities').select('group_id').not('group_id', 'is', null);
+  const { data } = cityName ? await q.eq('name', cityName) : await q;
+  return [...new Set((data || []).map(c => c.group_id).filter(Boolean))];
+}
+
+async function setDriverTag(user, on) {
+  if (!user || !user.telegram_id) return;
+  // меняется город у водителя редко, а снимать метку надо везде — берём все группы
+  const groups = await cityGroupsOf(on ? user.city : null);
+  for (const gid of groups) {
+    const r = await tg('setChatMemberTag', { chat_id: gid, user_id: user.telegram_id, tag: on ? DRIVER_TAG : '' }).catch(() => null);
+    if (r && !r.ok && r.description && !/not found|PARTICIPANT|USER_NOT/i.test(r.description)) {
+      glog(`метка ${safeName(user.name)}: ${r.description}`);
+    }
+  }
+  tagMemo.delete(String(user.telegram_id));
+}
+
+// человек написал в группе — проверяем, правильная ли у него метка
+async function tagCheck(m, chatId, member) {
+  const uid = m.from && m.from.id;
+  if (!uid || !member || member.status === 'creator' || member.status === 'administrator') return;
+  const k = String(uid);
+  const memo = tagMemo.get(k);
+  if (memo && Date.now() - memo < 10 * 60 * 1000) return;
+  tagMemo.set(k, Date.now());
+  if (tagMemo.size > 5000) tagMemo.clear();
+
+  const { data: u, error } = await db.from('users')
+    .select('driver_status,is_banned').eq('telegram_id', uid).maybeSingle();
+  if (error) { tagMemo.delete(k); return; }   // база не ответила — не трогаем метку
+  const want = u && u.driver_status === 'approved' && !u.is_banned ? DRIVER_TAG : '';
+  const have = String(member.tag || m.sender_tag || '');
+  if (have === want) return;
+  // чужие метки, поставленные админами вручную, не трогаем — только «водительские»
+  if (!want && !/водител|бомбил|такси/i.test(have)) return;
+  await tg('setChatMemberTag', { chat_id: chatId, user_id: uid, tag: want }).catch(() => {});
 }
 
 async function kickFromDriverGroups(user, reason) {
@@ -5252,8 +5300,8 @@ http.createServer(async (req, res) => {
         await db.from('users').update({ is_banned: !!body.value, status: 'offline' }).eq('id', tid);
         // заблокировали — из группы водителей вон; разблокировали — зовём обратно
         if (targetUser) {
-          if (body.value) kickFromDriverGroups(targetUser, 'ban').catch(() => {});
-          else if (targetUser.driver_status === 'approved') inviteToDriverGroups(targetUser).catch(() => {});
+          if (body.value) { kickFromDriverGroups(targetUser, 'ban').catch(() => {}); setDriverTag(targetUser, false).catch(() => {}); }
+          else if (targetUser.driver_status === 'approved') { inviteToDriverGroups(targetUser).catch(() => {}); setDriverTag(targetUser, true).catch(() => {}); }
         }
         return json(res, 200, { ok: true });
       }
@@ -5309,14 +5357,14 @@ http.createServer(async (req, res) => {
           // снимаем его открытые предложения
           await db.from('offers').update({ status: 'cancelled' }).eq('driver_id', tid).eq('status', 'pending');
           // и убираем из группы водителей
-          if (targetUser) kickFromDriverGroups(targetUser, 'revoke').catch(() => {});
+          if (targetUser) { kickFromDriverGroups(targetUser, 'revoke').catch(() => {}); setDriverTag(targetUser, false).catch(() => {}); }
         }
 
         await db.from('users').update(upd).eq('id', tid);
 
         // допуск открыли — зовём в группу водителей
         if (body.status === 'approved' && targetUser) {
-          inviteToDriverGroups({ ...targetUser, ...upd }).catch(() => {});
+          inviteToDriverGroups({ ...targetUser, ...upd }).catch(() => {}); setDriverTag({ ...targetUser, ...upd }, true).catch(() => {});
         }
 
         // сообщаем человеку
