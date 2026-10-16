@@ -19,8 +19,8 @@ const ORDER_LINK = `https://t.me/${BOT_USERNAME}?startapp=order`;
 const BOT_ORDER_LINK = `https://t.me/${BOT_USERNAME}?start=botorder`;
 // две кнопки на выбор: приложение или переписка с ботом
 const ORDER_KB = { inline_keyboard: [[
-  { text: '🚖 Заказать', url: ORDER_LINK },
-  { text: '💬 Через бота', url: BOT_ORDER_LINK }
+  { text: '🚖 Заказать', url: ORDER_LINK, style: 'success' },
+  { text: '💬 Через бота', url: BOT_ORDER_LINK, style: 'primary' }
 ]] };
 const VERSION = 'v70-remind';
 
@@ -2294,8 +2294,8 @@ async function groupFeedPublish(ride) {
       chat_id: city.group_id, text: groupCardText(ride), parse_mode: 'HTML',
       disable_web_page_preview: true, disable_notification: true,
       reply_markup: { inline_keyboard: [
-        [{ text: '🚗 Взять заказ (водителям)', callback_data: `gtake:${ride.id}` }],
-        [{ text: '🚖 Заказать', url: ORDER_LINK }, { text: '💬 Через бота', url: BOT_ORDER_LINK }]
+        [{ text: '🚗 Взять заказ (водителям)', callback_data: `gtake:${ride.id}`, style: 'primary' }],
+        [{ text: '🚖 Заказать', url: ORDER_LINK, style: 'success' }, { text: '💬 Через бота', url: BOT_ORDER_LINK }]
       ] }
     });
     if (r && r.ok) {
@@ -2357,7 +2357,7 @@ async function groupTake(cq, rideId) {
     `${ride.passenger_price ? `\n💰 Пассажир предлагает: <b>${ride.passenger_price} ₽</b>` : ''}` +
     `${ride.comment ? `\n💬 ${safeName(ride.comment)}` : ''}`,
     { reply_markup: { inline_keyboard: [
-      [{ text: '✅ Назвать цену', callback_data: `take:${ride.id}` }],
+      [{ text: '✅ Назвать цену', callback_data: `take:${ride.id}`, style: 'success' }],
       [{ text: '💬 Уточнить у пассажира', url: `https://t.me/${BOT_USERNAME}?start=ask_${ride.id}` }],
       [wa('Открыть в приложении', 'driver')]
     ] } });
@@ -3537,7 +3537,7 @@ function driverCardText(d, state, reviews) {
 function driverCardKb(d, state) {
   if (state !== 'free') return {};
   return { reply_markup: { inline_keyboard: [[
-    { text: `🚖 Вызвать ${d.name || 'водителя'}`, url: `https://t.me/${BOT_USERNAME}?start=drv_${d.id}` }
+    { text: `🚖 Вызвать ${d.name || 'водителя'}`, url: `https://t.me/${BOT_USERNAME}?start=drv_${d.id}`, style: 'success' }
   ]] } };
 }
 
