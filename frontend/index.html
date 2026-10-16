@@ -4595,6 +4595,16 @@ async function finCities(c){
   <button class="btn" onclick="saveDpost()">Сохранить</button>
  </div>
  <div class="obar" style="margin:14px 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Запретить рекламу в чате</div>
+   <div class="obhint">Объявления, анкеты и номера телефонов убираются, автору приходит объяснение в личку. Второй раз за сутки — предупреждение, третий — сутки без права писать. Перевозчиков бот зовёт оформиться водителем. Заказы поездок не трогает.</div>
+  </div><div class="tg ${SETTINGS.group_no_ads!==false?'on':''}" onclick="togGroup('group_no_ads')"><b></b></div></div>
+
+ <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Заказы в чате города</div>
+   <div class="obhint">Новая заявка появляется в общей группе без адреса, с кнопкой «Взять заказ». Проверенному водителю бот присылает адрес в личку, остальным предлагает пройти верификацию. Когда заказ взяли — карточка меняется на «принят».</div>
+  </div><div class="tg ${SETTINGS.group_orders_on?'on':''}" onclick="togGroup('group_orders_on')"><b></b></div></div>
+
+ <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
    <div class="l">Удалять заказы из чата</div>
    <div class="obhint">${SETTINGS.group_order_mode==='reply'
      ?'Сейчас <b>мягкий режим</b>: сообщение с заказом остаётся в чате, а бот отвечает под ним, как оформить в боте. Ответ бота сам исчезает через пару минут.'
@@ -4723,7 +4733,7 @@ async function togOrderMode(){
  aFin(document.getElementById('main'));
 }
 async function togGroup(field){
- const v=!(field==='group_clean_service'?SETTINGS[field]!==false:SETTINGS[field]);
+ const v=!(['group_clean_service','group_no_ads','antispam_on','antispam_ban','winback_users_on','driver_feed_enabled'].includes(field)?SETTINGS[field]!==false:SETTINGS[field]);
  const r=await api('/api/admin',{action:'settings-update',fields:{[field]:v}});
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
  if(r.settings)SETTINGS=r.settings; else SETTINGS[field]=v;

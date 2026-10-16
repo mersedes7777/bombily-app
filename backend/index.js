@@ -217,6 +217,13 @@ async function onUpdate(u) {
       return;
     }
 
+    // «Взять заказ» под карточкой в общей группе — отвечаем сами, окошком
+    if (cq.data && cq.data.startsWith('gtake:')) {
+      try { await groupTake(cq, cq.data.slice(6)); }
+      catch (e) { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Не получилось, попробуйте ещё раз.', show_alert: true }); }
+      return;
+    }
+
     // «какие машины на линии» — окошко видит только нажавший, закреп не трогаем
     if (cq.data && cq.data.startsWith('cars:')) {
       const cityName = cq.data.slice(5);
@@ -536,6 +543,20 @@ async function onUpdate(u) {
     if (param === 'chat' || !param) {
       const d = await draftGet(chat);
       if (d) { await coNextStep(chat, d); return; }
+    }
+
+    // пришёл из группы по кнопке «Взять заказ», но ещё не водитель
+    if (param === 'verify') {
+      await send(chat,
+        '🚗 <b>Брать заказы могут только проверенные водители</b>
+
+' +
+        'Пройдите верификацию — это бесплатно и займёт пару минут: ФИО, телефон, фото прав и машины.
+
+' +
+        'После проверки заказы будут приходить вам сами — с адресом и ценой пассажира.',
+        { reply_markup: { inline_keyboard: [[wa('🚗 Пройти верификацию', 'driver')]] } });
+      return;
     }
 
     // кнопки из чата: /start driver, /start order — сразу нужный экран
@@ -2217,6 +2238,101 @@ async function adHandle(m, chatId, city, text) {
   }
 }
 
+
+/* ---------- карточки заказов в общей группе города ----------
+   Без адреса: группа открытая, туда вступает кто угодно. Адрес получает
+   только проверенный водитель — в личку, после нажатия «Взять заказ».
+   Остальным бот предлагает пройти верификацию. Заодно группа видит,
+   что заказы идут и их разбирают. */
+
+function groupCardText(r) {
+  const kind = r.kind === 'delivery' ? '📦 Доставка' : r.to_city ? '🛣 Межгород' : '🚕 Поездка';
+  const when = r.scheduled_at
+    ? `\n⏰ На ${new Date(r.scheduled_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+    : '';
+  const to = r.to_city ? ` → ${safeName(r.to_city)}` : '';
+  return `🔔 <b>Новая заявка</b>\n${kind} · ${safeName(r.city)}${to}${when}\n\n` +
+         `Хотите взять заказ — нажмите кнопку.\n<i>Адрес увидит только проверенный водитель.</i>`;
+}
+
+async function groupFeedPublish(ride) {
+  try {
+    const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (!st || !st.group_orders_on) return;
+    const { data: city } = await db.from('cities').select('group_id').eq('name', ride.city).maybeSingle();
+    if (!city || !city.group_id) return;
+    const r = await tg('sendMessage', {
+      chat_id: city.group_id, text: groupCardText(ride), parse_mode: 'HTML',
+      disable_web_page_preview: true, disable_notification: true,
+      reply_markup: { inline_keyboard: [[{ text: '🚗 Взять заказ', callback_data: `gtake:${ride.id}` }]] }
+    });
+    if (r && r.ok) {
+      await db.from('ride_feed_group').upsert({
+        ride_id: ride.id, chat_id: city.group_id, message_id: r.result.message_id, state: 'open'
+      });
+    }
+  } catch (e) { glog('заказы в группе: ' + e.message); }
+}
+
+async function groupFeedUpdate(rideId, state) {
+  try {
+    const { data: f } = await db.from('ride_feed_group').select('*').eq('ride_id', rideId).maybeSingle();
+    if (!f || f.state === state) return;
+    const { data: ride } = await db.from('rides').select('*').eq('id', rideId).maybeSingle();
+    if (!ride) return;
+    // текст «взяли за 4 минуты» / «не состоялся» — тот же, что в канале водителей, без адреса
+    await tg('editMessageText', {
+      chat_id: f.chat_id, message_id: f.message_id,
+      text: feedText(ride, state), parse_mode: 'HTML', disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [] }
+    }).catch(() => {});
+    await db.from('ride_feed_group').update({ state }).eq('ride_id', rideId);
+  } catch (e) { glog('заказы в группе: ' + e.message); }
+}
+
+// нажали «Взять заказ» в группе. Ответ во всплывающем окне видит только нажавший
+async function groupTake(cq, rideId) {
+  const uid = cq.from.id;
+  const answer = (text, extra) => tg('answerCallbackQuery', { callback_query_id: cq.id, text, show_alert: true, ...(extra || {}) });
+
+  const { data: ride, error: e1 } = await db.from('rides')
+    .select('id,status,driver_id,kind,city,to_city,from_address,to_address,passenger_price,scheduled_at,comment')
+    .eq('id', rideId).maybeSingle();
+  if (e1) return answer('Сервис временно недоступен, попробуйте через минуту.');
+  if (!ride || ride.driver_id || !String(ride.status || '').startsWith('created')) {
+    return answer('Этот заказ уже взяли или отменили.');
+  }
+
+  const { data: u } = await db.from('users')
+    .select('id,role,driver_status,is_banned').eq('telegram_id', uid).maybeSingle();
+  if (u && u.is_banned) return answer('Нет доступа.');
+
+  // не водитель — ведём на верификацию: кнопка сразу открывает бота
+  if (!u || u.driver_status !== 'approved') {
+    if (u && u.driver_status === 'pending') {
+      return answer('Ваша заявка на водителя ещё на проверке. Как одобрим — заказы начнут приходить вам сами.');
+    }
+    return tg('answerCallbackQuery', { callback_query_id: cq.id, url: `https://t.me/${BOT_USERNAME}?start=verify` });
+  }
+
+  // проверенный водитель — адрес и действия в личку
+  const kind = ride.kind === 'delivery' ? '📦 Доставка' : ride.to_city ? `🛣 Межгород в ${safeName(ride.to_city)}` : '🚕 Поездка';
+  const when = ride.scheduled_at
+    ? `\n⏰ На ${new Date(ride.scheduled_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : '';
+  const dm = await send(uid,
+    `${kind} · ${safeName(ride.city)}${when}\n` +
+    `📍 ${safeName(ride.from_address)}\n🏁 ${safeName(ride.to_address)}` +
+    `${ride.passenger_price ? `\n💰 Пассажир предлагает: <b>${ride.passenger_price} ₽</b>` : ''}` +
+    `${ride.comment ? `\n💬 ${safeName(ride.comment)}` : ''}`,
+    { reply_markup: { inline_keyboard: [
+      [{ text: '✅ Назвать цену', callback_data: `take:${ride.id}` }],
+      [{ text: '💬 Уточнить у пассажира', url: `https://t.me/${BOT_USERNAME}?start=ask_${ride.id}` }],
+      [wa('Открыть в приложении', 'driver')]
+    ] } });
+  if (dm && dm.ok) return answer('Отправил заказ вам в личку — там адрес и кнопка «Назвать цену».');
+  return tg('answerCallbackQuery', { callback_query_id: cq.id, url: `https://t.me/${BOT_USERNAME}?start=driver` });
+}
+
 /* ---------- long polling ---------- */
 let offset = 0;
 async function poll() {
@@ -3616,11 +3732,11 @@ async function feedLoop() {
 
       if (!feedSeen.has(r.id)) {
         feedSeen.add(r.id);
-        if (r.status === 'created') await feedPublish(r);
+        if (r.status === 'created') { await feedPublish(r); await groupFeedPublish(r); }
         continue;
       }
-      if (['confirmed', 'in_progress', 'completed'].includes(r.status)) await feedUpdate(r.id, 'taken');
-      else if (String(r.status).startsWith('cancel')) await feedUpdate(r.id, 'gone');
+      if (['confirmed', 'in_progress', 'completed'].includes(r.status)) { await feedUpdate(r.id, 'taken'); await groupFeedUpdate(r.id, 'taken'); }
+      else if (String(r.status).startsWith('cancel') || r.status === 'expired') { await feedUpdate(r.id, 'gone'); await groupFeedUpdate(r.id, 'gone'); }
     }
     feedStarted = 1;
 
@@ -6149,7 +6265,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban','captcha_on','captcha_minutes','group_order_mode','group_no_ads'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban','captcha_on','captcha_minutes','group_order_mode','group_no_ads','group_orders_on'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });
