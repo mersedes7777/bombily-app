@@ -19,8 +19,8 @@ const ORDER_LINK = `https://t.me/${BOT_USERNAME}?startapp=order`;
 const BOT_ORDER_LINK = `https://t.me/${BOT_USERNAME}?start=botorder`;
 // две кнопки на выбор: приложение или переписка с ботом
 const ORDER_KB = { inline_keyboard: [[
-  { text: '📱 В приложении', url: ORDER_LINK },
-  { text: '💬 В чате', url: BOT_ORDER_LINK }
+  { text: '🚖 Заказать', url: ORDER_LINK },
+  { text: '💬 Через бота', url: BOT_ORDER_LINK }
 ]] };
 const VERSION = 'v70-remind';
 
@@ -179,7 +179,7 @@ async function onUpdate(u) {
 
       if (!st.group_welcome) return;
       const r = await send(cm.chat.id,
-        `👋 ${name}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте кнопками ниже — в приложении или в чате с ботом. Адрес увидите только вы и водитель.`,
+        `👋 ${name}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте кнопками ниже. Адрес увидите только вы и водитель.`,
         { reply_markup: ORDER_KB });
       if (r && r.result) delLater(cm.chat.id, r.result.message_id, st.group_welcome_sec ?? 120);
     } catch (e) { glog('приветствие: ' + e.message); }
@@ -208,7 +208,7 @@ async function onUpdate(u) {
         const st2 = await groupSettings();
         if (city2 && st2.group_welcome) {
           const r2 = await send(chatId,
-            `👋 ${safeName(c.user_name || 'Гость')}, добро пожаловать в <b>Bombily | ${safeName(city2.name)}</b>\n\nМашину вызывайте кнопками ниже — в приложении или в чате с ботом. Адрес увидите только вы и водитель.`,
+            `👋 ${safeName(c.user_name || 'Гость')}, добро пожаловать в <b>Bombily | ${safeName(city2.name)}</b>\n\nМашину вызывайте кнопками ниже. Адрес увидите только вы и водитель.`,
             { reply_markup: ORDER_KB });
           if (r2 && r2.result) delLater(chatId, r2.result.message_id, st2.group_welcome_sec ?? 120);
         }
@@ -2295,7 +2295,7 @@ async function groupFeedPublish(ride) {
       disable_web_page_preview: true, disable_notification: true,
       reply_markup: { inline_keyboard: [
         [{ text: '🚗 Взять заказ (водителям)', callback_data: `gtake:${ride.id}` }],
-        [{ text: '📱 Заказать в приложении', url: ORDER_LINK }, { text: '💬 В чате', url: BOT_ORDER_LINK }]
+        [{ text: '🚖 Заказать', url: ORDER_LINK }, { text: '💬 Через бота', url: BOT_ORDER_LINK }]
       ] }
     });
     if (r && r.ok) {
@@ -3148,7 +3148,7 @@ async function onGroupMessage(m) {
       const names = m.new_chat_members.filter(u => !u.is_bot).map(u => u.first_name || 'Гость');
       if (names.length) {
         const r = await send(chatId,
-          `👋 ${names.join(', ')}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте кнопками ниже — в приложении или в чате с ботом. Адрес увидите только вы и водитель.`,
+          `👋 ${names.join(', ')}, добро пожаловать в <b>Bombily | ${city.name}</b>\n\nЗдесь новости и объявления. Машину вызывайте кнопками ниже. Адрес увидите только вы и водитель.`,
           { reply_markup: ORDER_KB });
         if (r && r.result) delLater(chatId, r.result.message_id, st.group_welcome_sec ?? 120);
       }
@@ -3371,8 +3371,8 @@ async function cityStats(city) {
 }
 
 function pinText(city, s) {
-  const head = `🚖 <b>Bombily | ${city}</b>`;
-  const foot = `\n\n👇 <b>Вызвать машину:</b> в приложении или в чате с ботом — как удобнее.\nАдрес в чат писать не нужно: его увидит только водитель.`;
+  const head = `🚖 <b>Вызвать машину — кнопки внизу</b> 👇\n<i>Бомбилы · ${city}</i>`;
+  const foot = `\n\n🔒 Адрес видит только водитель — в чат его писать не нужно.`;
   const h = localHour();
 
   // ночь: цифры прячем, «0 водителей» в три часа выглядит как поломка
