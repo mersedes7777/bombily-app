@@ -7,14 +7,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"
-        onerror="window.__sbFail=1"></script>
+<!-- библиотека базы лежит рядом с приложением: не зависим от чужих CDN,
+     которые бывают недоступны у части операторов и через VPN -->
+<script src="./supabase.js" onerror="window.__sbFail=1"></script>
 
 <script>
 // библиотека обязательна. если основной источник недоступен —
 // перебираем запасные и только потом сдаёмся
 window.__libReady = (function(){
   var MIRRORS = [
+    'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
     'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js',
     'https://cdn.skypack.dev/@supabase/supabase-js@2',
     'https://esm.sh/@supabase/supabase-js@2?bundle'
