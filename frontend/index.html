@@ -927,7 +927,7 @@ body[data-t="light"] .pa,body[data-t="light"] .dcard .ava{background:#e7ebe6;}
 .sumline.sl2{margin:9px 0 0;font-size:13px;gap:7px;}
 .sumline.sl2 b{font-size:13.5px;}
 /* главная кнопка «Вызвать машину» */
-.cta.cta3{height:auto;min-height:70px;padding:12px 18px 12px 13px;justify-content:flex-start;gap:13px;text-align:left;}
+.cta.cta3{height:auto;min-height:70px;padding:12px 20px 12px 22px;justify-content:flex-start;gap:13px;text-align:left;}
 .cta3 .cic{width:48px;height:48px;border-radius:15px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.14);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:31px;line-height:1;}
 .cta3 .ctt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
 .cta3 .ctt b{font-size:17px;font-weight:700;letter-spacing:-.01em;}
@@ -1737,7 +1737,7 @@ async function home(m){
   <div><h1 class="cityh" onclick="cityPick()">${esc(me.city)||'Город не выбран'}<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></h1><div class="sumline sl2"><span class="bpx"></span><span><b id="c1b">…</b> <span id="c1w">водителей</span> на линии</span><s></s><span><b id="c2">…</b> <span id="c2w">заявок</span></span></div></div>
  </div>
  <div class="hero">
-  <button class="cta cta3" onclick="targetDrv=null;orderKind='ride';interCity=false;schedOn=false;pTab='order';drawP()"><span class="cic">🚕</span><span class="ctt"><b>Вызвать машину</b><small>увидят все водители на линии</small></span><svg viewBox="0 0 24 24"><path d="M5 12h13"/><path d="m12.5 6 6 6-6 6"/></svg></button>
+  <button class="cta cta3" onclick="targetDrv=null;orderKind='ride';interCity=false;schedOn=false;pTab='order';drawP()"><span class="ctt"><b>Вызвать машину</b><small>заявку увидят все водители на линии</small></span><svg viewBox="0 0 24 24"><path d="M5 12h13"/><path d="m12.5 6 6 6-6 6"/></svg></button>
   <div class="qtiles">
    <button class="qt" id="delbtn" onclick="targetDrv=null;orderKind='delivery';interCity=false;schedOn=false;pTab='order';drawP()"><svg viewBox="0 0 24 24"><path d="M3.5 8.5 12 4l8.5 4.5v7L12 20l-8.5-4.5z"/><path d="M3.5 8.5 12 13l8.5-4.5M12 13v7"/></svg><b>Доставка</b><span id="delcnt">&nbsp;</span></button>
    <button class="qt" onclick="targetDrv=null;orderKind='ride';interCity=true;schedOn=false;pTab='order';drawP()"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.5"/><path d="M8.5 19h8a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7h8"/><circle cx="18" cy="5" r="2.5"/></svg><b>Межгород</b><span>в другой город</span></button>
