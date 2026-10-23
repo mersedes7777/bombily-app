@@ -465,6 +465,21 @@ async function onUpdate(u) {
     return;
   }
 
+  // сводки — посмотреть прямо сейчас (только владельцу, в личку)
+  if (text === '/report') {
+    if (chat !== OWNER) return;
+    try { await sendDailyReport(chat); } catch (e) { await send(chat, '❌ Не получилось собрать сводку: ' + e.message); }
+    return;
+  }
+  if (text === '/weekly') {
+    if (chat !== OWNER) return;
+    try {
+      const n = await sendWeeklyReports(chat);
+      if (!n) await send(chat, 'За прошлую неделю показывать нечего — заявок не было.');
+    } catch (e) { await send(chat, '❌ Не получилось собрать итоги недели: ' + e.message); }
+    return;
+  }
+
   // проверка меток: есть ли у бота право и проставить метки всем водителям сразу
   if (text === '/tags') {
     if (chat !== OWNER) return;
@@ -4472,6 +4487,185 @@ function scheduleBackup() {
 }
 scheduleBackup();
 
+/* ---------- сводки в Telegram (v162) ----------
+   утром в 9:00 — владельцу итоги вчерашнего дня,
+   по понедельникам в 10:00 — итоги недели в группе водителей каждого города.
+   Отметка «уже отправлено» хранится в settings — после перезапуска не дублируем. */
+const RP_MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const RP_WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const rpYmd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const rpDay0 = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+
+// что случилось с заявками за отрезок времени (город — по желанию)
+async function rpStats(from, to, city) {
+  let q = db.from('rides').select('id,status,price,city,created_at,driver_id')
+    .gte('created_at', from.toISOString()).lt('created_at', to.toISOString()).limit(5000);
+  if (city) q = q.eq('city', city);
+  const { data: rows } = await q;
+  const list = rows || [];
+  const waitIds = list.filter(r => r.status === 'created').map(r => r.id);
+  const offersBy = {};
+  for (let i = 0; i < waitIds.length; i += 200) {
+    const { data: offs } = await db.from('offers').select('ride_id').in('ride_id', waitIds.slice(i, i + 200));
+    (offs || []).forEach(o => { offersBy[o.ride_id] = (offersBy[o.ride_id] || 0) + 1; });
+  }
+  const s = { total: list.length, done: 0, money: 0, noOffers: 0, notPicked: 0, cancelP: 0, cancelD: 0, going: 0,
+    byHour: Array(24).fill(0), lostByHour: Array(24).fill(0), missByHour: Array(24).fill(0), byDriver: {} };
+  const now = Date.now();
+  for (const r of list) {
+    const st = String(r.status || '');
+    const h = new Date(r.created_at).getHours();     // часы по Москве (TZ задан в начале файла)
+    s.byHour[h]++;
+    if (st === 'completed') {
+      s.done++; s.money += Number(r.price) || 0;
+      if (r.driver_id) s.byDriver[r.driver_id] = (s.byDriver[r.driver_id] || 0) + 1;
+    } else if (st === 'confirmed' || st === 'in_progress') s.going++;
+    else if (st === 'created') {
+      if (now - new Date(r.created_at).getTime() < 30 * 60000) s.going++;
+      else { if (offersBy[r.id]) s.notPicked++; else { s.noOffers++; s.missByHour[h]++; } s.lostByHour[h]++; }
+    } else if (st.includes('cancelled')) {
+      if (st.includes('driver')) { s.cancelD++; s.missByHour[h]++; } else s.cancelP++;
+      s.lostByHour[h]++;
+    }
+  }
+  s.lost = s.noOffers + s.notPicked + s.cancelP + s.cancelD;
+  return s;
+}
+async function rpNames(ids) {
+  if (!ids.length) return {};
+  const { data } = await db.from('users').select('id,name').in('id', ids);
+  const m = {}; (data || []).forEach(u => { m[u.id] = u.name; });
+  return m;
+}
+// два самых «горячих» отрезка по 3 часа: «с 7 до 10 и с 17 до 20»
+function rpPeak(h) {
+  const w = [];
+  for (let i = 0; i <= 21; i++) w.push([h[i] + h[i + 1] + h[i + 2], i]);
+  w.sort((a, b) => b[0] - a[0]);
+  if (!w[0][0]) return '';
+  const w1 = w[0][1];
+  const x = w.find(z => z[0] > 0 && Math.abs(z[1] - w1) >= 3);
+  return [w1].concat(x ? [x[1]] : []).sort((a, b) => a - b).map(st => `с ${st} до ${st + 3}`).join(' и ');
+}
+async function rpCount(table, build) {
+  try { let q = db.from(table).select('*', { count: 'exact', head: true }); q = build(q); const { count } = await q; return count || 0; }
+  catch (e) { return 0; }
+}
+
+async function dailyReportText() {
+  const t0 = rpDay0(new Date());
+  const y0 = new Date(t0.getTime() - 864e5), yy0 = new Date(t0.getTime() - 2 * 864e5);
+  const [s, p, newU, pend, cmp, sup, onl] = await Promise.all([
+    rpStats(y0, t0), rpStats(yy0, y0),
+    rpCount('users', q => q.gte('created_at', y0.toISOString()).lt('created_at', t0.toISOString())),
+    rpCount('users', q => q.eq('driver_status', 'pending')),
+    rpCount('complaints', q => q.in('status', ['new', 'pending'])),
+    rpCount('support_msgs', q => q.eq('answered', false)),
+    rpCount('users', q => q.eq('status', 'online'))
+  ]);
+  const L = [`📊 <b>Итоги за вчера</b> · ${y0.getDate()} ${RP_MON[y0.getMonth()]}, ${RP_WD[y0.getDay()]}`, ''];
+  if (!s.total) L.push('Заявок не было.');
+  else {
+    L.push(`Заявок: <b>${s.total}</b> <i>(позавчера ${p.total})</i>`);
+    L.push(`Доехали: <b>${s.done}</b> из ${s.total}`);
+    if (s.lost) {
+      const why = [[s.noOffers, 'никто не откликнулся'], [s.notPicked, 'не выбрали водителя'], [s.cancelP, 'отменил пассажир'], [s.cancelD, 'отказался водитель']]
+        .filter(x => x[0]).map(x => `${x[1]} — ${x[0]}`).join(', ');
+      L.push(`Потеряли: <b>${s.lost}</b> (${why})`);
+    }
+    L.push(`Заработали водители: <b>${s.money.toLocaleString('ru')} ₽</b>`);
+  }
+  L.push(`Новых людей: <b>${newU}</b>`);
+  const top = Object.entries(s.byDriver).sort((a, b) => b[1] - a[1])[0];
+  if (top) {
+    const nm = await rpNames([top[0]]);
+    L.push('', `🏆 Больше всех возил: <b>${safeName(nm[top[0]] || 'водитель')}</b> — ${top[1]} ${plural(top[1], ['поездка', 'поездки', 'поездок'])}`);
+  }
+  const att = [];
+  if (pend) att.push(`${pend} ${plural(pend, ['водитель ждёт', 'водителя ждут', 'водителей ждут'])} проверки`);
+  if (cmp) att.push(`${cmp} ${plural(cmp, ['жалоба', 'жалобы', 'жалоб'])}`);
+  if (sup) att.push(`${sup} ${plural(sup, ['обращение', 'обращения', 'обращений'])} в поддержку`);
+  if (s.noOffers >= 2) att.push(`${s.noOffers} ${plural(s.noOffers, ['заявка осталась', 'заявки остались', 'заявок остались'])} совсем без ответа водителей`);
+  if (!onl) att.push('на линии сейчас никого');
+  L.push('', att.length ? '⚠️ <b>Требует внимания:</b>\n' + att.map(a => '• ' + a).join('\n') : '✅ Ничего срочного');
+  return L.join('\n');
+}
+async function sendDailyReport(chat) {
+  const text = await dailyReportText();
+  return send(chat, text, { reply_markup: { inline_keyboard: [[wa('📊 Открыть статистику', 'stat', { id: chat })]] } });
+}
+
+// итоги прошлой недели (пн–вс) по одному городу
+async function weeklyReport(city) {
+  const t0 = rpDay0(new Date());
+  const dow = (t0.getDay() + 6) % 7;                       // понедельник = 0
+  const thisMon = new Date(t0.getTime() - dow * 864e5);
+  const lastMon = new Date(thisMon.getTime() - 7 * 864e5), prevMon = new Date(lastMon.getTime() - 7 * 864e5);
+  const [s, p] = await Promise.all([rpStats(lastMon, thisMon, city), rpStats(prevMon, lastMon, city)]);
+  const sun = new Date(thisMon.getTime() - 864e5);
+  const per = lastMon.getMonth() === sun.getMonth()
+    ? `${lastMon.getDate()}–${sun.getDate()} ${RP_MON[sun.getMonth()]}`
+    : `${lastMon.getDate()} ${RP_MON[lastMon.getMonth()]} – ${sun.getDate()} ${RP_MON[sun.getMonth()]}`;
+  const L = [`📈 <b>Итоги недели · ${safeName(city)}</b>`, per, ''];
+  if (!s.total) { L.push('За неделю заявок не было.'); return { text: L.join('\n'), total: 0 }; }
+  L.push(`Поездок: <b>${s.done}</b> <i>(неделей раньше — ${p.done})</i>`);
+  L.push(`Заявок: <b>${s.total}</b>, из них уехали ${s.done}`);
+  const top = Object.entries(s.byDriver).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  if (top.length) {
+    const nm = await rpNames(top.map(x => x[0]));
+    L.push('', '🏆 <b>Больше всех возили:</b>');
+    top.forEach((x, i) => L.push(`${i + 1}. ${safeName(nm[x[0]] || 'водитель')} — ${x[1]} ${plural(x[1], ['поездка', 'поездки', 'поездок'])}`));
+  }
+  const pk = rpPeak(s.byHour);
+  if (pk) L.push('', `⏰ Чаще всего заказывают ${pk} часов.`);
+  const miss = s.noOffers + s.cancelD;          // люди хотели уехать, а машины не нашлось
+  if (miss) {
+    const lp = rpPeak(s.missByHour);
+    L.push(`😔 Без машины остались ${miss} ${plural(miss, ['человек', 'человека', 'человек'])}${lp ? ` — чаще всего ${lp} часов` : ''}. Выходите на линию в это время — заказы ждут!`);
+  }
+  L.push('', 'Хорошей недели! 🚕');
+  return { text: L.join('\n'), total: s.total };
+}
+// previewChat — прислать всё себе в личку, в группы ничего не отправлять
+async function sendWeeklyReports(previewChat) {
+  const { data: cities } = await db.from('cities').select('*').eq('active', true);
+  let sent = 0;
+  for (const c of cities || []) {
+    const r0 = await weeklyReport(c.name);
+    if (previewChat) {
+      if (!c.driver_group_id && !r0.total) continue;
+      await send(previewChat, r0.text + (c.driver_group_id ? '' : '\n\n<i>У города нет группы водителей — туда это не уйдёт.</i>'));
+      sent++; continue;
+    }
+    if (!c.driver_group_id || !r0.total) continue;
+    const r = await send(c.driver_group_id, r0.text, {
+      reply_markup: { inline_keyboard: [[{ text: '🚗 Выйти на линию', url: `https://t.me/${BOT_USERNAME}?startapp=driver` }]] }
+    });
+    if (r && r.ok) sent++; else console.error('weekly', c.name, r && r.description);
+  }
+  return sent;
+}
+// раз в 5 минут смотрим, не пора ли отправить
+async function reportTick() {
+  try {
+    const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (!st || !('report_daily_last' in st)) return;   // миграция db-25 ещё не выполнена
+    const now = new Date();
+    const h = now.getHours();
+    const today = rpYmd(now);
+    if (st.report_daily_on !== false && h >= 9 && h < 22 && st.report_daily_last !== today) {
+      await db.from('settings').update({ report_daily_last: today }).eq('id', 1);
+      await sendDailyReport(OWNER);
+    }
+    if (st.report_weekly_on !== false && now.getDay() === 1 && h >= 10 && h < 21 && st.report_weekly_last !== today) {
+      await db.from('settings').update({ report_weekly_last: today }).eq('id', 1);
+      await sendWeeklyReports();
+    }
+  } catch (e) { console.error('report', e.message); }
+}
+setInterval(reportTick, 5 * 60000);
+setTimeout(reportTick, 90 * 1000);
+
 setInterval(() => { const t = Date.now(); for (const [k, v] of rateMap) if (t - v.t > 300000) rateMap.delete(k); }, 300000);
 
 function readBody(req) {
@@ -6383,7 +6577,7 @@ http.createServer(async (req, res) => {
       if (act === 'settings-update' && isAdminUp(me)) {
         const f = body.fields || {};
         const allowed = {};
-        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban','captcha_on','captcha_minutes','group_order_mode','group_no_ads','group_orders_on'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['paid_mode','price_1','price_3','price_7','price_30','ref_enabled','ref_bonus','idle_hours','community_enabled','group_moderate','group_clean_service','group_welcome','pin_enabled','pin_minutes','require_sub','pin_renew_hours','group_del_sec','group_welcome_sec','docs_keep_days','dpost_minutes','driver_feed_enabled','winback_users_on','winback_first_days','winback_next_days','antispam_on','antispam_ban','captcha_on','captcha_minutes','group_order_mode','group_no_ads','group_orders_on','report_daily_on','report_weekly_on'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
         await db.from('settings').update(allowed).eq('id', 1);
         const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
         return json(res, 200, { ok: true, settings: data });

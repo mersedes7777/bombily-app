@@ -1165,6 +1165,31 @@ nav{padding-top:7px;}
 .st-ride .r4{font-size:12.5px;color:var(--dim);margin:6px 0 8px;line-height:1.45;}
 .st-ride .r4 b{color:var(--ink);font-family:'Roboto Mono',monospace;}
 
+/* ===== v160: меню «Ещё» и «Обращения» ===== */
+.st-cnt{font-style:normal;font-family:'Roboto Mono',monospace;font-size:11px;font-weight:700;background:var(--red);color:#fff;border-radius:99px;padding:1px 6px;margin-left:4px;vertical-align:1px;}
+.mo-g{font-size:12.5px;font-weight:600;color:var(--dim);padding:6px 22px 8px;}
+.mo-card{background:var(--surf);border-radius:18px;margin:0 18px 14px;overflow:hidden;}
+.mo-i{display:flex;align-items:center;gap:12px;padding:13px 14px;cursor:pointer;}
+.mo-i+.mo-i{border-top:1px solid var(--line);}
+.mo-i:active{background:var(--card2);}
+.mo-ic{width:36px;height:36px;border-radius:11px;background:var(--gs);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.mo-ic svg{width:19px;height:19px;stroke:var(--g);fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+.mo-i .t{flex:1;min-width:0;}
+.mo-i .t b{display:block;font-size:14.5px;font-weight:600;}
+.mo-i .t span{display:block;font-size:12px;color:var(--dim2);margin-top:2px;line-height:1.35;}
+.mo-i .chev{width:16px;height:16px;stroke:var(--dim2);fill:none;stroke-width:2;flex-shrink:0;}
+#inboxc .head{display:none;}
+
+/* ===== v160: заработок водителя ===== */
+.st-per.e5 div{font-size:12.5px;padding:10px 2px;}
+.st-bars.e .c i{background:var(--g);}
+.e-trip{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);}
+.st-ct+.e-trip{border-top:none;padding-top:8px;}
+.e-trip .t{flex:1;min-width:0;}
+.e-trip .t b{display:block;font-size:14px;font-weight:600;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.e-trip .t span{display:block;font-size:12px;color:var(--dim2);margin-top:2px;}
+.e-trip .p{font-family:'Roboto Mono',monospace;font-size:14px;font-weight:700;white-space:nowrap;flex-shrink:0;}
+
 </style>
 </head>
 <body>
@@ -1590,6 +1615,7 @@ async function boot(){
   if(pendingShift){const ps=pendingShift;pendingShift=null;setTimeout(()=>{if(ps.sid)try{localStorage.setItem('bmb_shift_seen',ps.sid);}catch(e){}shiftDone(ps.mins,ps.from,ps.to);},500);}
   if(START==='order'){targetDrv=null;pTab=active?'ride':'order';drawP();}
   if(START==='profile'){pTab='profile';drawP();}
+  if(START==='stat'&&isStaff()){setRole('admin');aTab=canSee('stats')?'stat':'over';statView='total';drawA();}
   if(START==='driver'){ if(isDrv()){setRole('driver');focusReq(qs.get('ride'));} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
   window.__booted=true;
   if(HOME_ON)setTimeout(checkHome,1200);
@@ -3463,38 +3489,134 @@ async function myRev(m){
 }
 
 let ePeriod='today',eFrom='',eTo='';
-async function earn(m){
- const{data}=await db.from('rides').select('*').eq('driver_id',me.id).eq('status','completed').order('created_at',{ascending:false}).limit(500);
- const rows=data||[];
- const now=new Date();
- let a,b,title;
- if(ePeriod==='today'){a=new Date();a.setHours(0,0,0,0);b=new Date();b.setHours(23,59,59,999);title='Сегодня';}
- else if(ePeriod==='week'){a=new Date(now-6*864e5);a.setHours(0,0,0,0);b=new Date();b.setHours(23,59,59,999);title='7 дней';}
- else if(ePeriod==='month'){a=new Date(now-29*864e5);a.setHours(0,0,0,0);b=new Date();b.setHours(23,59,59,999);title='30 дней';}
- else if(ePeriod==='all'){a=new Date(2000,0,1);b=new Date(2999,0,1);title='За всё время';}
- else{a=eFrom?new Date(eFrom+'T00:00:00'):new Date(2000,0,1);b=eTo?new Date(eTo+'T23:59:59'):new Date();title='Период';}
- const sel=rows.filter(r=>{const t=new Date(r.created_at);return t>=a&&t<=b;});
- const sum=x=>x.reduce((s,r)=>s+(Number(r.price)||0),0);
- const avg=sel.length?Math.round(sum(sel)/sel.length):0;
- const byDay={};
- sel.forEach(r=>{const k=new Date(r.created_at).toLocaleDateString('ru',{day:'2-digit',month:'2-digit'});byDay[k]=byDay[k]||{s:0,n:0};byDay[k].s+=Number(r.price)||0;byDay[k].n++;});
- m.innerHTML=`<div class="head"><h2>Мой заработок</h2><span class="m">${title}</span></div>
- <div class="seg">
-  <div class="${ePeriod==='today'?'on':''}" onclick="setPer('today')">Сегодня</div>
-  <div class="${ePeriod==='week'?'on':''}" onclick="setPer('week')">7 дней</div>
-  <div class="${ePeriod==='month'?'on':''}" onclick="setPer('month')">30 дней</div>
-  <div class="${ePeriod==='all'?'on':''}" onclick="setPer('all')">Всё</div>
-  <div class="${ePeriod==='custom'?'on':''}" onclick="setPer('custom')">Период</div>
- </div>
- ${ePeriod==='custom'?`<div class="dt"><input type="date" id="ef" value="${eFrom}" onchange="eFrom=this.value;earn(document.getElementById('main'))"><input type="date" id="et" value="${eTo}" onchange="eTo=this.value;earn(document.getElementById('main'))"></div>`:''}
- <div class="ern"><div class="hs"><div class="n g">${sum(sel)} ₽</div><div class="l">заработано · ${sel.length} поездок</div></div><div class="hs"><div class="n a">${avg} ₽</div><div class="l">средний чек</div></div></div>
- <div class="sec">По дням</div>
- ${Object.keys(byDay).length?Object.entries(byDay).map(([k,v])=>`<div class="card"><div style="flex:1"><div class="nm">${k}</div><div class="sub">${v.n} поездок</div></div><div class="price">${v.s} ₽</div></div>`).join(''):'<div class="empty">За этот период поездок не было</div>'}
- <div class="sec">Поездки</div>
- ${sel.length?sel.slice(0,30).map(r=>`<div class="card"><div style="flex:1;min-width:0"><div class="nm" style="font-size:14px">${esc(r.from_address)} → ${esc(r.to_address)}</div><div class="sub">${new Date(r.created_at).toLocaleString('ru',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} · ${esc(r.passenger_name)}</div></div><div class="price">${r.price||'—'} ₽</div></div>`).join(''):'<div class="empty"><b>Пусто</b>Завершённые поездки появятся здесь.</div>'}
- <div style="height:20px"></div>`;
+// «Мой заработок» водителя (v160): период → главные цифры → по дням → когда больше заказов → поездки
+let eTok=0,eSel=null,eRows=null,eDem=null,eDemCity=null;
+const E_LEN={today:1,week:7,month:30};
+async function eDemand(){
+ // спрос по часам в городе за 30 дней — когда выгоднее выходить на линию
+ if(eDem&&eDemCity===me.city)return eDem;
+ try{
+  const since=new Date(Date.now()-30*864e5).toISOString();
+  const{data}=await db.from('rides').select('created_at').eq('city',me.city).gte('created_at',since).limit(3000);
+  const h=Array(24).fill(0);
+  (data||[]).forEach(r=>{h[new Date(r.created_at).getHours()]++;});
+  eDem=h;eDemCity=me.city;return h;
+ }catch(e){return null;}
 }
-function setPer(p){ePeriod=p;earn(document.getElementById('main'));}
+function eRange(){
+ const now=new Date();
+ const d0=x=>{const t=new Date(x);t.setHours(0,0,0,0);return t;};
+ const d1=x=>{const t=new Date(x);t.setHours(23,59,59,999);return t;};
+ if(ePeriod==='all')return {a:new Date(2000,0,1),b:d1(now),len:0,title:'за всё время'};
+ if(ePeriod==='custom'){
+  const a=eFrom?d0(eFrom+'T12:00:00'):d0(now),b=eTo?d1(eTo+'T12:00:00'):d1(now);
+  const len=Math.max(1,Math.round((d0(b)-a)/864e5)+1);
+  return {a,b,len,pa:new Date(a.getTime()-len*864e5),pb:new Date(a.getTime()-1),title:stPeriodText(ldstr(a),ldstr(b))};
+ }
+ const len=E_LEN[ePeriod]||1;
+ const a=d0(new Date(now.getTime()-(len-1)*864e5)),b=d1(now);
+ return {a,b,len,pa:new Date(a.getTime()-len*864e5),pb:new Date(a.getTime()-1),title:stPeriodText(ldstr(a),ldstr(b))};
+}
+function ePerSheet(){
+ const old=document.getElementById('sh');if(old)old.remove();
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ const mx=ldstr(new Date());
+ m.innerHTML=`<div class="sheet"><h3>Свой период</h3><div class="s">Выберите первый и последний день</div>
+ <div class="st-dates"><label><span>С</span><input type="date" id="ef" value="${eFrom||ldstr(new Date(Date.now()-6*864e5))}" max="${mx}"></label><label><span>По</span><input type="date" id="et" value="${eTo||mx}" max="${mx}"></label></div>
+ <div class="sa"><button class="c" onclick="closeSh()">Отмена</button><button class="o" onclick="eApply()">Показать</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+function eApply(){
+ const f=document.getElementById('ef')?.value,t=document.getElementById('et')?.value;
+ if(!f||!t)return T('Выберите обе даты');
+ if(f>t)return T('Первый день позже последнего');
+ eFrom=f;eTo=t;ePeriod='custom';eSel=null;closeSh();earn(document.getElementById('main'));
+}
+function setPer(p){if(p==='custom'){ePerSheet();return;}ePeriod=p;eSel=null;earn(document.getElementById('main'));}
+async function earn(m){
+ const tok=++eTok;
+ const R=eRange();
+ const tabs=[['today','Сегодня'],['week','Неделя'],['month','Месяц'],['all','Всё'],['custom','Период']];
+ const top=`<div class="head st-h"><div><h2>Мой заработок</h2><div class="st-sub">${ePeriod==='today'?'сегодня, ':''}${R.title}</div></div></div>
+ <div class="st-per e5">${tabs.map(([k,l])=>`<div class="${ePeriod===k?'on':''}" onclick="setPer('${k}')">${l}</div>`).join('')}</div>`;
+ m.innerHTML=top+'<div class="st-load">Считаем…</div>';
+ const [res,dem]=await Promise.all([
+  db.from('rides').select('*').eq('driver_id',me.id).eq('status','completed').order('created_at',{ascending:false}).limit(500),
+  eDemand()
+ ]);
+ if(tok!==eTok||role!=='driver'||dTab!=='earn')return;
+ const rows=(res&&res.data)||[];
+ const inR=(r,a,b)=>{const t=new Date(r.created_at);return t>=a&&t<=b;};
+ const sel=rows.filter(r=>inR(r,R.a,R.b));
+ const prev=R.pa?rows.filter(r=>inR(r,R.pa,R.pb)):null;
+ const sum=x=>x.reduce((s,r)=>s+(Number(r.price)||0),0);
+ const money=sum(sel),avg=sel.length?Math.round(money/sel.length):0;
+ const cmpW={today:'вчера',week:'прошлая неделя',month:'прошлые 30 дней',custom:'прошлый такой же период'}[ePeriod];
+ // по дням (или по месяцам — за всё время)
+ let bars=[],unitTxt='';
+ if(ePeriod==='all'){
+  const byM={};sel.forEach(r=>{const d=new Date(r.created_at);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');(byM[k]=byM[k]||{s:0,n:0});byM[k].s+=Number(r.price)||0;byM[k].n++;});
+  const ks=Object.keys(byM).sort().slice(-12);
+  bars=ks.map(k=>{const [y,mo]=k.split('-');return {k,lbl:['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'][+mo-1],full:['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'][+mo-1]+' '+y,s:byM[k].s,n:byM[k].n,we:false};});
+  unitTxt='по месяцам';
+ }else if(R.len>1){
+  const byD={};sel.forEach(r=>{const k=ldstr(new Date(r.created_at));(byD[k]=byD[k]||{s:0,n:0});byD[k].s+=Number(r.price)||0;byD[k].n++;});
+  for(let i=0;i<R.len&&i<120;i++){const d=new Date(R.a.getTime()+i*864e5+12*3600e3);const k=ldstr(d);const v=byD[k]||{s:0,n:0};bars.push({k,lbl:R.len<=10?ST_WD[d.getDay()]+'<br>'+d.getDate():(i%5===0||i===R.len-1?String(d.getDate()):''),full:stDayTxt(k,true),s:v.s,n:v.n,we:d.getDay()===0||d.getDay()===6});}
+  unitTxt='по дням';
+ }
+ eRows=bars;
+ const best=bars.slice().sort((a,b)=>b.s-a.s)[0];
+ const kp=`<div class="st-kpis">
+  ${stKpi('Заработал',money,prev?sum(prev):null,' ₽')}
+  ${stKpi('Поездок',sel.length,prev?prev.length:null,'')}
+  ${stKpi('Средняя поездка',avg,null,' ₽',sel.length?'сколько в среднем за одну поездку':'')}
+  ${R.len>1||ePeriod==='all'?`<div class="st-kpi"><div class="k">${ePeriod==='all'?'Лучший месяц':'Лучший день'}</div><div class="v">${best&&best.s?stFmt(best.s)+'<small> ₽</small>':'—'}</div>${best&&best.s?`<div class="x">${best.full}</div>`:''}</div>`
+   :`<div class="st-kpi"><div class="k">Ваш рейтинг</div><div class="v">${Number(me.rating||5).toFixed(1).replace('.',',')}<small> ★</small></div><div class="x">оценка пассажиров</div></div>`}
+ </div>
+ ${prev?`<div class="st-cmpnote">Сравниваем с периодом «${cmpW}» — ${stPeriodText(ldstr(R.pa),ldstr(R.pb))}</div>`:''}`;
+ const ch=bars.length?`<div class="st-card">
+  <div class="st-ct"><h3>Заработок ${unitTxt}</h3></div>
+  <div id="ech"></div>
+ </div>`:'';
+ // когда больше заказов в городе
+ let demC='';
+ if(dem&&dem.some(x=>x)){
+  const mx=Math.max(...dem);
+  // два самых «горячих» отрезка по 3 часа, которые не пересекаются
+  const win=[];for(let i=0;i<=21;i++)win.push([dem[i]+dem[i+1]+dem[i+2],i]);
+  win.sort((a,b)=>b[0]-a[0]);
+  const w1=win[0][1],w2x=win.find(x=>x[0]>0&&Math.abs(x[1]-w1)>=3);
+  const ws=[w1].concat(w2x?[w2x[1]]:[]).sort((a,b)=>a-b);
+  const tops=[];ws.forEach(st=>{tops.push(st,st+1,st+2);});
+  const txt=ws.map(st=>'с '+st+' до '+(st+3)).join(' и ');
+  demC=`<div class="st-card">
+   <div class="st-ct"><h3>Когда больше заказов</h3><span>${esc(me.city)} · 30 дней</span></div>
+   <div class="st-bars h">${dem.map((v,i)=>`<div class="c ${tops.includes(i)?'pk':''}"><i style="height:${v?Math.max(4,Math.round(v/mx*100)):0}%"></i></div>`).join('')}</div>
+   <div class="st-ax">${dem.map((v,i)=>`<span>${i%3===0?i:''}</span>`).join('')}</div>
+   <div class="st-tip">Чаще всего заказывают <b>${txt} часов</b>. Будьте на линии в это время — заказов больше.</div>
+  </div>`;
+ }
+ const trips=`<div class="st-card">
+  <div class="st-ct"><h3>Поездки</h3>${sel.length?`<span>${sel.length} ${plural(sel.length,['поездка','поездки','поездок'])}</span>`:''}</div>
+  ${sel.length?sel.slice(0,40).map(r=>`<div class="e-trip">
+    <div class="t"><b>${esc(r.from_address)} → ${esc(r.to_address)}</b><span>${new Date(r.created_at).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}${r.passenger_name?' · '+esc(r.passenger_name):''}${r.kind==='delivery'?' · доставка':''}${r.to_city?' · в '+esc(r.to_city):''}</span></div>
+    <div class="p">${r.price?stFmt(r.price)+' ₽':'—'}</div>
+   </div>`).join('')+(sel.length>40?`<div class="st-empty">и ещё ${sel.length-40}</div>`:''):'<div class="st-empty">За этот период поездок не было. Завершённые поездки появятся здесь.</div>'}
+ </div>`;
+ m.innerHTML=top+kp+ch+demC+trips+'<div style="height:24px"></div>';
+ eDrawChart();
+}
+function eDrawChart(){
+ const box=document.getElementById('ech');
+ if(!box||!eRows)return;
+ const mx=Math.max(1,...eRows.map(r=>r.s));
+ const few=eRows.length<=12;
+ const sel=eSel!==null&&eRows[eSel]?eSel:null;
+ box.innerHTML=`<div class="st-bars d e ${few?'few':''}">${eRows.map((r,i)=>`<div class="c ${r.we?'we':''} ${sel===i?'sel':''}" onclick="eSel=${i};eDrawChart()">${few&&r.s?`<em>${r.s>=1000?(Math.round(r.s/100)/10).toString().replace('.',',')+'к':r.s}</em>`:''}<i style="height:${r.s?Math.max(4,Math.round(r.s/mx*100)):0}%"></i></div>`).join('')}</div>
+ <div class="st-ax">${eRows.map(r=>`<span class="${r.we?'we':''}">${r.lbl}</span>`).join('')}</div>
+ <div class="st-tip">${sel!==null?`<b>${eRows[sel].full}</b> — ${eRows[sel].n} ${plural(eRows[sel].n,['поездка','поездки','поездок'])}, ${stFmt(eRows[sel].s)} ₽`:'Нажмите на столбик, чтобы увидеть подробности'}</div>`;
+}
+
 function dProfHTML(){
  const act=subActive();
  const until=me.sub_until?new Date(me.sub_until):null;
@@ -3651,30 +3773,58 @@ async function loadPerms(){
  if(!r.error){MYPERMS={owner:!!r.owner,perms:r.perms||[],groups:r.groups||{}};}
 }
 // какая вкладка панели какому разделу принадлежит
-const TAB_PERM={over:null,apps:'drivers',cmp:'complaints',ppl:'users',stat:'stats',fin:'settings'};
+// вкладки панели (v160): Обзор · Люди · Обращения · Статистика · Ещё
+const TAB_PERM={over:null,ppl:'users',stat:'stats'};
+// «Ещё»: разделы бывших «Финансов» по смыслу; у каждого — своё право
+const MORE_GROUPS=[
+ ['Города и группы',[['city','Города и группы Telegram','ссылки, закреп, заказы в чате, карточки водителей','cities']]],
+ ['Продвижение',[['mail','Рассылка в бота','написать всем или части людей','broadcast'],['src','Метки и QR-коды','откуда приходят люди и кто из них заказывает','refs'],['promo','Промокоды','бесплатные дни и скидки','promos'],['ref','Рефералка','бонус за приглашённого водителя','refs'],['back','Возврат водителей','кто перестал платить и давно не заходил','broadcast']]],
+ ['Деньги',[['sub','Подписка и тарифы','платно или бесплатно, когда снимать с линии','settings'],['bal','Баланс водителей','начислить или списать вручную','balance']]],
+ ['Система',[['rep','Сводки в Telegram','утренняя сводка вам и итоги недели водителям','settings'],['log','Журнал действий','что делали администраторы','audit']]]
+];
+const MORE_ICO={city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
+ promo:'<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',ref:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',back:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+ sub:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',bal:'<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',rep:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',log:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>'};
+function moreAllowed(id){
+ for(const g of MORE_GROUPS)for(const it of g[1])if(it[0]===id)return canSee(it[3]);
+ return false;
+}
+function moreItems(){const out=[];MORE_GROUPS.forEach(g=>g[1].forEach(it=>{if(canSee(it[3]))out.push(it);}));return out;}
+function inboxAllowed(){return canSee('drivers')||canSee('complaints')||canSee('support');}
+function tabAllowed(t){
+ if(t==='over')return true;
+ if(t==='inbox')return inboxAllowed();
+ if(t==='more')return moreItems().length>0;
+ if(t==='fin')return moreAllowed(finTab);
+ return !TAB_PERM[t]||canSee(TAB_PERM[t]);
+}
 function firstAllowedTab(){
- for(const t of ['over','apps','cmp','ppl','stat','fin'])
-  if(!TAB_PERM[t]||canSee(TAB_PERM[t]))return t;
+ for(const t of ['over','inbox','ppl','stat','more'])if(tabAllowed(t))return t;
  return 'over';
+}
+function inboxCount(){
+ const c=ADMC||{};
+ return (canSee('drivers')?(c.apps||0):0)+(canSee('complaints')?(c.complaints||0):0)+(canSee('support')?(c.support||0):0);
 }
 function drawA(){
  document.getElementById('abar').innerHTML='';
- const TB=[];
- const push=(id,perm,html)=>{if(!perm||canSee(perm))TB.push(html);};
- if(!TAB_PERM[aTab]||canSee(TAB_PERM[aTab])){}else{aTab=firstAllowedTab();}
+ // старые адреса вкладок ведут в «Обращения»
+ if(aTab==='apps'||aTab==='cmp'){inTab=aTab;aTab='inbox';}
+ if(!tabAllowed(aTab))aTab=firstAllowedTab();
+ const ic=inboxCount();
+ const on=t=>aTab===t||(t==='more'&&aTab==='fin');
  document.getElementById('nav').innerHTML=`
- <button class="nb ${aTab==='over'?'active':''}" onclick="aGo('over')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Обзор</button>
- <button class="nb ${aTab==='apps'?'active':''}" style="${canSee('drivers')?'':'display:none'}" onclick="aGo('apps')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Заявки${ADMC.apps?`<i class="cnt">${ADMC.apps}</i>`:''}</button>
- <button class="nb ${aTab==='cmp'?'active':''}" style="${canSee('complaints')?'':'display:none'}" onclick="aGo('cmp')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>Жалобы${ADMC.complaints?`<i class="cnt">${ADMC.complaints}</i>`:''}</button>
- <button class="nb ${aTab==='ppl'?'active':''}" style="${canSee('users')?'':'display:none'}" onclick="aGo('ppl')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Люди</button>
- <button class="nb ${aTab==='stat'?'active':''}" style="${canSee('stats')?'':'display:none'}" onclick="aGo('stat')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Статистика</button>
- <button class="nb ${aTab==='fin'?'active':''}" style="${canSee('settings')?'':'display:none'}" onclick="aGo('fin')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Финансы</button>
+ <button class="nb ${on('over')?'active':''}" onclick="aGo('over')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Обзор</button>
+ ${tabAllowed('ppl')?`<button class="nb ${on('ppl')?'active':''}" onclick="aGo('ppl')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Люди</button>`:''}
+ ${tabAllowed('inbox')?`<button class="nb ${on('inbox')?'active':''}" onclick="aGo('inbox')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>Обращения${ic?`<i class="cnt">${ic>99?'99+':ic}</i>`:''}</button>`:''}
+ ${tabAllowed('stat')?`<button class="nb ${on('stat')?'active':''}" onclick="aGo('stat')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Статистика</button>`:''}
+ ${tabAllowed('more')?`<button class="nb ${on('more')?'active':''}" onclick="aGo('more')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>Ещё</button>`:''}
 `;
  const m=document.getElementById('main');m.innerHTML='<div class="empty">Загрузка…</div>';
  if(aTab==='over')aOver(m);
- if(aTab==='apps')aApps(m);
- if(aTab==='cmp')aCmp(m);
+ if(aTab==='inbox')aInbox(m);
  if(aTab==='ppl')aPpl(m);
+ if(aTab==='more')aMore(m);
  if(aTab==='fin')aFin(m);
  if(aTab==='stat')aStat(m);
 }
@@ -3693,26 +3843,47 @@ setInterval(()=>{
  });
 },30000);
 
-// обновить только значки-счётчики в нижних кнопках панели
+// обновить только значок-счётчик на «Обращениях»
 function paintAdminBadges(){
- const c=window.ADMC||{};
- const map={apps:c.apps||0,cmp:c.complaints||0};
- Object.keys(map).forEach(k=>{
-  const b=document.querySelector(`.nb[onclick*="aGo('${k}')"]`);
-  if(!b)return;
-  let dot=b.querySelector('.nbadge');
-  if(map[k]>0){
-   if(!dot){dot=document.createElement('span');dot.className='nbadge';b.appendChild(dot);}
-   dot.textContent=map[k]>99?'99+':map[k];
-  }else if(dot)dot.remove();
- });
+ const b=document.querySelector(`.nb[onclick*="aGo('inbox')"]`);
+ if(!b)return;
+ const n=inboxCount();
+ let dot=b.querySelector('.cnt');
+ if(n>0){
+  if(!dot){dot=document.createElement('i');dot.className='cnt';b.appendChild(dot);}
+  dot.textContent=n>99?'99+':n;
+ }else if(dot)dot.remove();
 }
-async function supportList(){
- const _r=await api('/api/admin',{action:'support-list'});
- const data=_r.items||[];
- const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Обращения в поддержку</h3><div class="s">Новые сообщения от пользователей. Выберите, кому ответить.</div>
- ${(data&&data.length)?data.map(s=>`<div class="cp">
+// «Обращения»: проверка водителей, жалобы, поддержка — всё, где ждут ответа
+let inTab='apps';
+async function aInbox(m){
+ const c=ADMC||{};
+ const tabs=[];
+ if(canSee('drivers'))tabs.push(['apps','Водители',c.apps||0]);
+ if(canSee('complaints'))tabs.push(['cmp','Жалобы',c.complaints||0]);
+ if(canSee('support'))tabs.push(['sup','Поддержка',c.support||0]);
+ if(!tabs.find(t=>t[0]===inTab))inTab=tabs.length?tabs[0][0]:'apps';
+ m.innerHTML=`<div class="head st-h"><div><h2>Обращения</h2><div class="st-sub">всё, где ждут вашего решения</div></div></div>
+ ${tabs.length>1?`<div class="st-per">${tabs.map(t=>`<div class="${inTab===t[0]?'on':''}" onclick="inTab='${t[0]}';aInbox(document.getElementById('main'))">${t[1]}${t[2]?` <i class="st-cnt">${t[2]>99?'99+':t[2]}</i>`:''}</div>`).join('')}</div>`:''}
+ <div id="inboxc"><div class="empty">Загрузка…</div></div>`;
+ const box=document.getElementById('inboxc');
+ if(inTab==='apps')return aApps(box);
+ if(inTab==='cmp')return aCmp(box);
+ if(inTab==='sup')return aSup(box);
+}
+// «Ещё»: меню разделов по группам
+function aMore(m){
+ const groups=MORE_GROUPS.map(g=>[g[0],g[1].filter(it=>canSee(it[3]))]).filter(g=>g[1].length);
+ m.innerHTML=`<div class="head st-h"><div><h2>Ещё</h2><div class="st-sub">настройки и инструменты</div></div></div>
+ ${groups.map(g=>`<div class="mo-g">${g[0]}</div><div class="mo-card">${g[1].map(it=>`<div class="mo-i" onclick="finTab='${it[0]}';aGo('fin')">
+   <span class="mo-ic"><svg viewBox="0 0 24 24">${MORE_ICO[it[0]]||''}</svg></span>
+   <div class="t"><b>${it[1]}</b><span>${it[2]}</span></div>
+   <svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+  </div>`).join('')}</div>`).join('')}
+ <div style="height:24px"></div>`;
+}
+function supItemsHTML(data){
+ return (data&&data.length)?data.map(s=>`<div class="cp">
    <div style="display:flex;align-items:center;gap:10px">
     <div class="ava" id="sav${s.from_user||s.id}">${esc(s.from_name)[0]||'?'}</div>
     <div style="flex:1;min-width:0">
@@ -3727,9 +3898,9 @@ async function supportList(){
     ${s.from_user?`<button class="acbtn" onclick="closeSh();userCard('${s.from_user}')">Карточка</button>`:''}
    </div>
    <div class="ra"><button class="o" onclick="answerSupport('${s.id}','${s.from_user||''}','${s.from_tg}','${esc(s.from_name)}')">Ответить</button><button class="c" onclick="markAnswered('${s.id}')">Скрыть</button></div>
-  </div>`).join(''):'<div class="empty"><b>Нет новых обращений</b>Сообщения из бота появятся здесь.</div>'}
- <div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div></div>`;
- document.getElementById('device').appendChild(m);
+  </div>`).join(''):'<div class="empty"><b>Нет новых обращений</b>Сообщения из бота появятся здесь.</div>';
+}
+function loadSupAvatars(data){
  const ids=(data||[]).map(s=>s.from_user).filter(Boolean);
  if(ids.length)api('/api/admin',{action:'avatars',ids}).then(r=>{
   if(!r||!r.map)return;
@@ -3741,6 +3912,31 @@ async function supportList(){
   });
  }).catch(()=>{});
 }
+async function supportList(){
+ const _r=await api('/api/admin',{action:'support-list'});
+ const data=_r.items||[];
+ const old=document.getElementById('sh');if(old)old.remove();
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet" style="max-height:88vh;overflow-y:auto"><h3>Обращения в поддержку</h3><div class="s">Новые сообщения от пользователей. Выберите, кому ответить.</div>
+ ${supItemsHTML(data)}
+ <div class="sa"><button class="o" onclick="closeSh()">Закрыть</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+ loadSupAvatars(data);
+}
+// вкладка «Обращения → Поддержка»: тот же список, но прямо на экране
+async function aSup(box){
+ box.innerHTML='<div class="empty">Загрузка…</div>';
+ const _r=await api('/api/admin',{action:'support-list'});
+ if(!box.isConnected)return;
+ if(_r.error){box.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
+ const data=_r.items||[];
+ box.innerHTML=`<div style="padding:4px 0 24px">${supItemsHTML(data)}</div>`;
+ loadSupAvatars(data);
+}
+function supRefresh(){
+ if(role==='admin'&&aTab==='inbox'){loadAdminCounts().then(()=>drawA()).catch(()=>drawA());return;}
+ supportList();
+}
 function answerSupport(sid,uid,tg,name){
  const m=document.createElement('div');m.className='mask';m.id='sh2';
  m.innerHTML=`<div class="sheet"><h3>Ответ для ${esc(name)}</h3><div class="s">Ответ придёт человеку в бота.</div><textarea class="ta" id="ansmsg" placeholder="Ваш ответ" style="min-height:100px"></textarea><div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="sendSupportAns('${sid}','${uid}','${tg}')">Отправить</button></div></div>`;
@@ -3751,33 +3947,35 @@ async function sendSupportAns(sid,uid,tg){
  if(!t)return T('Введите ответ');
  const r=await api('/api/admin',{action:'support-answer',to_user:uid||null,to_tg:tg||null,text:t,support_id:sid});
  if(r.error)return T(r.error==='no_user'?'Не удалось найти пользователя':'Ошибка');
- document.getElementById('sh2').remove();T('Ответ отправлен');supportList();
+ document.getElementById('sh2').remove();T('Ответ отправлен');supRefresh();
 }
-async function markAnswered(sid){const r=await api('/api/admin',{action:'support-hide',support_id:sid});if(r.error)return T('Ошибка');T('Скрыто');const sh=document.getElementById('sh');if(sh)sh.remove();supportList();}
+async function markAnswered(sid){const r=await api('/api/admin',{action:'support-hide',support_id:sid});if(r.error)return T('Ошибка');T('Скрыто');supRefresh();}
 async function aOver(m){
  m.innerHTML='<div class="empty">Загрузка…</div>';
  const since=new Date(Date.now()-30*60000).toISOString();
  const cnt=q=>q.then(r=>r.count||0).catch(()=>0);
- const [s,sc,cmpR,rvR,waiting,going]=await Promise.all([
-  api('/api/admin',{action:'stats'}).catch(()=>null),
-  api('/api/admin',{action:'support-count'}).catch(()=>null),
+ const [s,sc,cmpR,rvR,waiting,going,onl,pend]=await Promise.all([
+  canSee('stats')?api('/api/admin',{action:'stats'}).catch(()=>null):Promise.resolve(null),
+  canSee('support')?api('/api/admin',{action:'support-count'}).catch(()=>null):Promise.resolve(null),
   db.from('complaints').select('id').in('status',['new','pending']).then(r=>r,()=>({data:[]})),
   db.from('reviews').select('*').eq('visible',true).order('created_at',{ascending:false}).limit(5).then(r=>r,()=>({data:[]})),
   cnt(db.from('rides').select('*',{count:'exact',head:true}).eq('status','created').gte('created_at',since)),
-  cnt(db.from('rides').select('*',{count:'exact',head:true}).in('status',['confirmed','in_progress']))
+  cnt(db.from('rides').select('*',{count:'exact',head:true}).in('status',['confirmed','in_progress'])),
+  cnt(db.from('users').select('*',{count:'exact',head:true}).eq('status','online')),
+  cnt(db.from('users').select('*',{count:'exact',head:true}).eq('driver_status','pending'))
  ]);
  if(aTab!=='over'||role!=='admin')return;
  const S=s&&!s.error?s:null;
- const online=S?S.drivers.online:0;
+ const online=onl;
  const sup=(sc&&sc.count)||0;
  const cmp=((cmpR&&cmpR.data)||[]).length;
- const apps=S?S.drivers.pending:(window.ADMC?ADMC.apps:0);
+ const apps=pend;
  const rv=(rvR&&rvR.data)||[];
  const now=new Date();
  const att=[];
- if(apps&&canSee('drivers'))att.push(['aGo(\'apps\')','Водители ждут проверки',apps,'документы новых водителей','am']);
- if(cmp&&canSee('complaints'))att.push(['aGo(\'cmp\')','Жалобы',cmp,'нужно разобрать','red']);
- if(sup)att.push(['supportList()','Обращения в поддержку',sup,'люди написали в бота','am']);
+ if(apps&&canSee('drivers'))att.push(['inTab=\'apps\';aGo(\'inbox\')','Водители ждут проверки',apps,'документы новых водителей','am']);
+ if(cmp&&canSee('complaints'))att.push(['inTab=\'cmp\';aGo(\'inbox\')','Жалобы',cmp,'нужно разобрать','red']);
+ if(sup&&canSee('support'))att.push(['inTab=\'sup\';aGo(\'inbox\')','Обращения в поддержку',sup,'люди написали в бота','am']);
  const yd=(a,b)=>`<span class="st-was">вчера ${stFmt(b)}</span>`;
  m.innerHTML=`<div class="head st-h"><div><h2>Обзор</h2><div class="st-sub">${now.getDate()} ${ST_MON[now.getMonth()]}, ${['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'][now.getDay()]}</div></div></div>
 
@@ -4866,22 +5064,36 @@ async function finLog(c){
  <div style="height:20px"></div>`;
 }
 async function aFin(m){
- const seg=[['sub','Подписка'],['promo','Промокоды'],['ref','Рефералка'],['bal','Баланс'],['back','Возврат'],['city','Города'],['mail','Рассылка'],['src','Реклама']];
- if(isOwner())seg.push(['log','🔒 Журнал']);
- m.innerHTML=`<div class="head"><h2>Финансы</h2><span class="m">${SETTINGS.paid_mode?'платно':'бесплатно'}</span></div>
- <div class="minifilter">${[['','все'],['ordered','заказывали'],['never','ни разу'],['repeat','повторно']].map(f=>`<span class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</span>`).join('')}</div>
- <div class="seg">${seg.map(s=>`<div class="${finTab===s[0]?'on':''}" onclick="finTab='${s[0]}';aFin(document.getElementById('main'))">${s[1]}</div>`).join('')}</div>
+ const it=moreItems().find(x=>x[0]===finTab);
+ if(!it){aGo('more');return;}
+ m.innerHTML=`<button class="st-back" onclick="aGo('more')"><svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg>Ещё</button>
+ <div class="head st-h" style="padding-top:2px"><div><h2>${it[1]}</h2><div class="st-sub">${it[2]}</div></div></div>
  <div id="fincont"><div class="empty">Загрузка…</div></div>`;
  const c=document.getElementById('fincont');
  if(finTab==='src')return finSrc(c);
  if(finTab==='mail')return finMail(c);
  if(finTab==='city')return finCities(c);
  if(finTab==='log')return finLog(c);
+ if(finTab==='rep')return finReports(c);
  if(finTab==='sub')finSub(c);
  else if(finTab==='promo')finPromo(c);
  else if(finTab==='ref')finRef(c);
  else if(finTab==='bal')finBal(c);
  else if(finTab==='back')finBack(c);
+}
+// сводки в Telegram: утренняя — владельцу, итоги недели — в группу водителей
+function finReports(c){
+ const d=SETTINGS.report_daily_on!==false,w=SETTINGS.report_weekly_on!==false;
+ c.innerHTML=`
+ <div class="obar" style="margin:6px 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Утренняя сводка мне</div>
+   <div class="obhint">Каждый день в 9:00 бот пишет владельцу в личку: сколько вчера было заявок и поездок, сколько потеряли и почему, кто больше всех возил, что требует внимания.</div>
+  </div><div class="tg ${d?'on':''}" onclick="togGroup('report_daily_on')"><b></b></div></div>
+ <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Итоги недели водителям</div>
+   <div class="obhint">По понедельникам в 10:00 — сообщение в группе водителей каждого города: сколько поездок за неделю, кто больше всех возил, в какие часы больше заказов и когда не хватало машин. Заработок каждого водителя не показывается.</div>
+  </div><div class="tg ${w?'on':''}" onclick="togGroup('report_weekly_on')"><b></b></div></div>
+ <div class="note" style="margin:0 18px 10px">Как это выглядит — напишите боту <b>/report</b> (утренняя сводка) или <b>/weekly</b> (итоги недели). Оба придут только вам в личку, в группу ничего не уйдёт.</div>`;
 }
 let bcAud='all',bcCity='all',bcCities=null;
 const AUD=[['all','Всем'],['drivers','Водителям'],['passengers','Пассажирам'],['never','Кто ни разу не заказывал'],['ordered','Кто уже заказывал']];
@@ -5270,7 +5482,7 @@ async function togOrderMode(){
  aFin(document.getElementById('main'));
 }
 async function togGroup(field){
- const v=!(['group_clean_service','group_no_ads','antispam_on','antispam_ban','winback_users_on','driver_feed_enabled'].includes(field)?SETTINGS[field]!==false:SETTINGS[field]);
+ const v=!(['group_clean_service','group_no_ads','antispam_on','antispam_ban','winback_users_on','driver_feed_enabled','report_daily_on','report_weekly_on'].includes(field)?SETTINGS[field]!==false:SETTINGS[field]);
  const r=await api('/api/admin',{action:'settings-update',fields:{[field]:v}});
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
  if(r.settings)SETTINGS=r.settings; else SETTINGS[field]=v;
