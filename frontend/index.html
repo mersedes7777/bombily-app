@@ -1190,6 +1190,15 @@ nav{padding-top:7px;}
 .e-trip .t span{display:block;font-size:12px;color:var(--dim2);margin-top:2px;}
 .e-trip .p{font-family:'Roboto Mono',monospace;font-size:14px;font-weight:700;white-space:nowrap;flex-shrink:0;}
 
+/* ===== v161: группы и бот ===== */
+.st-ev{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);}
+.st-sub2+.st-ev{border-top:none;}
+.st-ev>i{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.st-ev .t{flex:1;min-width:0;}
+.st-ev .t b{display:block;font-size:13.5px;font-weight:600;}
+.st-ev .t>span{display:block;font-size:12px;color:var(--dim2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.st-ev .tm{font-size:11px;color:var(--dim2);flex-shrink:0;}
+
 </style>
 </head>
 <body>
@@ -4775,11 +4784,12 @@ async function aStatMain(m){
  const head=()=>`<div class="head st-h"><div><h2>Статистика</h2><div class="st-sub">${stPeriodText()}${statCity!=='all'?' · '+esc(statCity):' · все города'}</div></div></div>`;
  m.innerHTML=head()+stControls()+`<div class="st-load">Считаем…</div>`;
  const uq=(a,b)=>{let q=db.from('users').select('*',{count:'exact',head:true}).gte('created_at',new Date(a+'T00:00:00').toISOString()).lte('created_at',new Date(b+'T23:59:59').toISOString());if(city!=='all')q=q.eq('city',city);return q.then(r=>r.count).catch(()=>null);};
- const [s,p,dr,u1,u0]=await Promise.all([
+ const [s,p,dr,u1,u0,tgs]=await Promise.all([
   api('/api/admin',{action:'rides-stats',from:statFrom,to:statTo,city}),
   api('/api/admin',{action:'rides-stats',from:pFrom,to:pTo,city}).catch(()=>null),
   api('/api/admin',{action:'drivers-stats',from:statFrom,to:statTo,city,vehicle:'all'}).catch(()=>null),
-  uq(statFrom,statTo),uq(pFrom,pTo)
+  uq(statFrom,statTo),uq(pFrom,pTo),
+  api('/api/admin',{action:'tg-stats',from:statFrom,to:statTo,city}).catch(()=>null)
  ]);
  if(!ACTfun){await loadActivity().catch(()=>{});}
  if(tok!==stTok||aTab!=='stat'||role!=='admin')return;
@@ -4891,8 +4901,42 @@ async function aStatMain(m){
   ${f.total-f.ordered>0?`<div class="st-warn" onclick="aGo('ppl')"><b>${stFmt(f.total-f.ordered)} ${plural(f.total-f.ordered,['человек зашёл','человека зашли','человек зашли'])} и ни разу не заказали</b><span>Их список — во вкладке «Люди» → «Ни разу». Часто заходили, когда машин на линии не было</span></div>`:''}
  </div>`:'';
 
- m.innerHTML=head()+stControls()+kpis+fates+chart+drv+qual+kinds+fun+'<div style="height:24px"></div>';
+ m.innerHTML=head()+stControls()+kpis+fates+chart+drv+qual+kinds+stTgCard(tgs)+fun+'<div style="height:24px"></div>';
  stDrawChart();
+}
+
+// группы и бот: кто вступил, кто вышел, кто пришёл в бота
+function stTgCard(t){
+ if(!t||t.error)return '';
+ if(t.missing)return `<div class="st-card"><div class="st-ct"><h3>Группы и бот</h3></div><div class="st-empty">Журнал ещё не включён: нужно выполнить в Supabase файл db-26-tg-events.sql.</div></div>`;
+ const G=(t.groups||[]).slice().sort((a,b)=>(a.type===b.type?0:a.type==='city'?-1:1)||(b.join-a.join));
+ const since=t.since?ldstr(new Date(t.since)):null;
+ const note=!since?'Записи появятся, когда кто-нибудь вступит в группу или нажмёт /start в боте.'
+  :(since>statFrom?`Записываем с ${stDayTxt(since)} — раньше данных нет.`:'');
+ const ago=x=>new Date(x).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+ const what=e=>e.kind==='join'?`вступление в ${e.type==='drivers'?'группу водителей':'группу'} ${esc(e.city||'')}`
+  :e.kind==='leave'?`выход из ${e.type==='drivers'?'группы водителей':'группы'} ${esc(e.city||'')}`
+  :(e.is_new?'новый в боте':'снова зашёл в бота');
+ const col=e=>e.kind==='join'?'var(--g)':e.kind==='leave'?'var(--red)':(e.is_new?'var(--blue)':'var(--dim2)');
+ return `<div class="st-card">
+  <div class="st-ct"><h3>Группы и бот</h3></div>
+  ${note?`<div class="st-cmpnote" style="padding:2px 0 8px">${note}</div>`:''}
+  ${G.length?G.map(g=>{const net=g.join-g.leave;return `<div class="st-row" style="cursor:default">
+    <span class="dot" style="background:${g.type==='drivers'?'var(--am)':'var(--g)'}"></span>
+    <div class="t"><b>${g.type==='drivers'?'Водители · ':'Группа · '}${esc(g.city)}</b><span>вступили ${g.join} · вышли ${g.leave}</span></div>
+    <div class="n" style="color:${net>0?'var(--g)':net<0?'var(--red)':'inherit'}">${net>0?'+':''}${net}<span>за период</span></div>
+   </div>`;}).join(''):'<div class="st-empty" style="padding-top:4px">В группы за этот период никто не вступал и не выходил.</div>'}
+  <div class="st-kinds" style="margin-top:12px">
+   <div><b>${t.startsNew||0}</b><span>новых пришли в бота</span><i>всего /start: ${t.starts||0}</i></div>
+   <div><b>${t.opened||0}</b><span>из них открыли приложение</span><i>${t.startsNew?Math.round(t.opened/t.startsNew*100):0}%</i></div>
+   <div><b>${t.ordered||0}</b><span>сделали заявку</span><i>${t.startsNew?Math.round(t.ordered/t.startsNew*100):0}%</i></div>
+  </div>
+  ${(t.recent||[]).length?`<div class="st-sub2">Последние</div>${t.recent.slice(0,15).map(e=>`<div class="st-ev">
+    <i style="background:${col(e)}"></i>
+    <div class="t"><b>${esc(e.name)||'Без имени'} <span class="idtag">#${esc(e.tag)}</span></b><span>${what(e)}${e.source?' · '+esc(e.source):''}</span></div>
+    <span class="tm">${ago(e.created_at)}</span>
+   </div>`).join('')}`:''}
+ </div>`;
 }
 // график: по дням (заявки и поездки) или по часам
 function stDrawChart(){

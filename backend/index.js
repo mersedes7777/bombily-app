@@ -156,6 +156,16 @@ async function onUpdate(u) {
       const was = cm.old_chat_member && cm.old_chat_member.status;
       const now = cm.new_chat_member && cm.new_chat_member.status;
       const joined = now === 'member' && ['left', 'kicked'].includes(was);
+      const left = ['member', 'restricted', 'administrator'].includes(was) && ['left', 'kicked'].includes(now);
+      const who0 = cm.new_chat_member && cm.new_chat_member.user;
+      if ((joined || left) && who0 && !who0.is_bot) {
+        groupKind(cm.chat.id).then(g => {
+          if (!g) return;
+          tgLog({ kind: joined ? 'join' : 'leave', tg_id: who0.id, name: String(who0.first_name || '').slice(0, 64),
+            username: who0.username || null, chat_id: cm.chat.id, city: g.city, chat_type: g.type,
+            source: cm.invite_link ? String(cm.invite_link.name || 'по ссылке-приглашению').slice(0, 48) : (cm.via_join_request ? 'по заявке' : null) });
+        }).catch(() => {});
+      }
       if (!joined) return;
 
       const who = cm.new_chat_member.user;
@@ -581,6 +591,16 @@ async function onUpdate(u) {
   }
 
   if (text.startsWith('/start')) {
+    // журнал: кто пришёл в бота и откуда (первый раз или снова)
+    (async () => {
+      try {
+        const arg0 = text.split(/\s+/)[1] || '';
+        const { count } = await db.from('tg_events').select('*', { count: 'exact', head: true }).eq('kind', 'start').eq('tg_id', chat);
+        const { data: u0 } = await db.from('users').select('id').eq('telegram_id', chat).maybeSingle();
+        await tgLog({ kind: 'start', tg_id: chat, name: String((m.from && m.from.first_name) || '').slice(0, 64),
+          username: (m.from && m.from.username) || null, source: arg0 ? arg0.slice(0, 48) : null, is_new: !count && !u0 });
+      } catch (e) {}
+    })();
     // метка источника: /start src_chatname
     const arg = text.split(' ')[1] || '';
     if (arg.startsWith('src_')) {
@@ -3153,6 +3173,17 @@ const groupCache = new Map([
   ['-1003876675606', { name: 'Енакиево', group_link: 't.me/bombily_enk' }],
   ['-1004308723949', { name: 'Горловка', group_link: 't.me/bombily_gorlovka' }]
 ]);
+/* ---------- журнал: вступления в группы и /start (v163) ---------- */
+async function tgLog(row) { try { await db.from('tg_events').insert(row); } catch (e) {} }
+async function groupKind(chatId) {
+  try {
+    const { data } = await db.from('cities').select('name,group_id,driver_group_id')
+      .or(`group_id.eq.${Number(chatId)},driver_group_id.eq.${Number(chatId)}`).limit(1);
+    const c = data && data[0];
+    if (!c) return null;
+    return { city: c.name, type: String(c.driver_group_id) === String(chatId) ? 'drivers' : 'city' };
+  } catch (e) { return null; }
+}
 async function cityByGroup(chatId) {
   try {
     const { data, error } = await db.from('cities').select('name,group_link').eq('group_id', chatId).maybeSingle();
@@ -4199,7 +4230,7 @@ const ACT_PERM = {
 
   'settings-update':'settings','save-settings':'settings',
 
-  'stats':'stats','days-stats':'stats','rides-stats':'stats','drivers-stats':'stats',
+  'stats':'stats','days-stats':'stats','rides-stats':'stats','drivers-stats':'stats','tg-stats':'stats',
 
   'audit-list':'audit','audit-actors':'audit','audit-clear':'audit'
 };
@@ -4427,7 +4458,7 @@ const BACKUP_TABLES = [
   'users', 'contacts', 'rides', 'offers', 'reviews', 'messages', 'shifts',
   'cars', 'complaints', 'payments', 'promos', 'sources', 'settings',
   'cities', 'broadcasts', 'audit_log', 'support_msgs', 'admin_msgs',
-  'group_pins', 'winback_queue', 'reports', 'pending_refs', 'pending_src'
+  'group_pins', 'winback_queue', 'reports', 'pending_refs', 'pending_src', 'tg_events'
 ];
 
 async function makeBackup() {
@@ -4576,6 +4607,12 @@ async function dailyReportText() {
     L.push(`Заработали водители: <b>${s.money.toLocaleString('ru')} ₽</b>`);
   }
   L.push(`Новых людей: <b>${newU}</b>`);
+  const [jn, lv, stn] = await Promise.all([
+    rpCount('tg_events', q => q.eq('kind', 'join').gte('created_at', y0.toISOString()).lt('created_at', t0.toISOString())),
+    rpCount('tg_events', q => q.eq('kind', 'leave').gte('created_at', y0.toISOString()).lt('created_at', t0.toISOString())),
+    rpCount('tg_events', q => q.eq('kind', 'start').eq('is_new', true).gte('created_at', y0.toISOString()).lt('created_at', t0.toISOString()))
+  ]);
+  if (jn || lv || stn) L.push(`Группы: вступили <b>${jn}</b>, вышли <b>${lv}</b> · в бота пришли: <b>${stn}</b>`);
   const top = Object.entries(s.byDriver).sort((a, b) => b[1] - a[1])[0];
   if (top) {
     const nm = await rpNames([top[0]]);
@@ -6335,6 +6372,48 @@ http.createServer(async (req, res) => {
       }
 
       // судьба заявок: что стало с каждой
+      // кто вступал в группы и приходил в бота
+      if (act === 'tg-stats') {
+        const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 6 * 864e5).toISOString();
+        const to   = body.to   ? new Date(body.to   + 'T23:59:59').toISOString() : new Date().toISOString();
+        const { data: ev, error: evErr } = await db.from('tg_events').select('*').gte('created_at', from).lte('created_at', to)
+          .order('created_at', { ascending: false }).limit(20000);
+        if (evErr) return json(res, 200, { ok: true, missing: true });
+        const city = body.city && body.city !== 'all' ? body.city : null;
+        const list = (ev || []).filter(e => e.kind === 'start' || !city || e.city === city);
+        const groups = {}, byDay = {}, newIds = new Set();
+        let starts = 0, startsNew = 0;
+        for (const e of list) {
+          const day = new Date(new Date(e.created_at).getTime() + 3 * 3600e3).toISOString().slice(0, 10);
+          byDay[day] = byDay[day] || { join: 0, leave: 0, start: 0 };
+          if (e.kind === 'join' || e.kind === 'leave') {
+            const k = (e.city || '—') + '|' + (e.chat_type || 'city');
+            groups[k] = groups[k] || { city: e.city || '—', type: e.chat_type || 'city', join: 0, leave: 0 };
+            groups[k][e.kind]++; byDay[day][e.kind]++;
+          } else if (e.kind === 'start') {
+            starts++; byDay[day].start++;
+            if (e.is_new) { startsNew++; if (e.tg_id) newIds.add(e.tg_id); }
+          }
+        }
+        // кто из новых потом открыл приложение и сделал заявку
+        let opened = 0, ordered = 0;
+        const ids = [...newIds];
+        for (let i = 0; i < ids.length; i += 200) {
+          const { data: us } = await db.from('users').select('id').in('telegram_id', ids.slice(i, i + 200));
+          const uids = (us || []).map(u => u.id);
+          opened += uids.length;
+          if (uids.length) {
+            const { data: rr } = await db.from('rides').select('passenger_id').in('passenger_id', uids).limit(5000);
+            ordered += new Set((rr || []).map(r => r.passenger_id)).size;
+          }
+        }
+        const { data: first } = await db.from('tg_events').select('created_at').order('created_at', { ascending: true }).limit(1);
+        const recent = list.slice(0, 40).map(e => ({ kind: e.kind, name: e.name, username: e.username, city: e.city, type: e.chat_type,
+          source: e.source, is_new: e.is_new, created_at: e.created_at, tag: String(e.tg_id || '').slice(-4) }));
+        return json(res, 200, { ok: true, groups: Object.values(groups), byDay, starts, startsNew, opened, ordered, recent,
+          since: first && first[0] ? first[0].created_at : null });
+      }
+
       if (act === 'rides-stats') {
         const from = body.from ? new Date(body.from + 'T00:00:00').toISOString() : new Date(Date.now() - 29 * 864e5).toISOString();
         const to   = body.to   ? new Date(body.to   + 'T23:59:59').toISOString() : new Date().toISOString();
