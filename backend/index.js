@@ -161,6 +161,7 @@ async function onUpdate(u) {
       if ((joined || left) && who0 && !who0.is_bot) {
         groupKind(cm.chat.id).then(g => {
           if (!g) return;
+          if (joined) invOnJoin(cm, who0, g).catch(() => {});
           tgLog({ kind: joined ? 'join' : 'leave', tg_id: who0.id, name: String(who0.first_name || '').slice(0, 64),
             username: who0.username || null, chat_id: cm.chat.id, city: g.city, chat_type: g.type,
             source: cm.invite_link ? String(cm.invite_link.name || 'по ссылке-приглашению').slice(0, 48) : (cm.via_join_request ? 'по заявке' : null) });
@@ -367,6 +368,7 @@ async function onUpdate(u) {
       const p = cq.data.split(':');
       if (String(chat) !== String(OWNER)) { await send(chat, 'Только владелец.'); return; }
       const r = await tg('unbanChatMember', { chat_id: Number(p[1]), user_id: Number(p[2]), only_if_banned: true });
+      if (r && r.ok) invUnspam(Number(p[2])).catch(() => {});
       await send(chat, r && r.ok ? '✅ Разбанен. Слово из его сообщения стоит убрать из фильтра — напишите разработчику.' : 'Не получилось разбанить.');
       return;
     }
@@ -1553,6 +1555,7 @@ async function spamHandle(m, chatId, city, st, res) {
       await tg('banChatSenderChat', { chat_id: chatId, sender_chat_id: m.sender_chat.id }).catch(() => {});
     } else if (uid) {
       await tg('banChatMember', { chat_id: chatId, user_id: uid }).catch(() => {});
+      invSpam(uid).catch(() => {});
     }
   }
 
@@ -2512,8 +2515,13 @@ async function notifyLoop() {
           const tid = await tgIdOf(ride.passenger_id);
           const dtg = await tgIdOf(o.driver_id);
           const carTxt = o.car ? `\n🚗 ${safeName(o.car)}` : '';
+          let rankTxt = '';
+          if (ranksReady && RCFG.feat.offerBadge) {
+            const { data: du } = await db.from('users').select('*').eq('id', o.driver_id).maybeSingle();
+            if (du && du.rank_code && !du.rank_paused && RANK_NAMES[du.rank_code]) rankTxt = `\n🏅 Звание: ${RANK_NAMES[du.rank_code]}`;
+          }
           let sent = null;
-          if (tid) sent = await send(tid, `💰 <b>${safeName(o.driver_name) || 'Водитель'} назвал цену: ${o.price} ₽</b>${carTxt}\nМаршрут: ${safeName(ride.to_address)}`,
+          if (tid) sent = await send(tid, `💰 <b>${safeName(o.driver_name) || 'Водитель'} назвал цену: ${o.price} ₽</b>${carTxt}${rankTxt}\nМаршрут: ${safeName(ride.to_address)}`,
             { reply_markup: { inline_keyboard: [
               [{ text: `✅ Согласен, ${o.price} ₽`, callback_data: `acc:${o.id}` }],
               ...(dtg ? [[{ text: '✍️ Написать водителю', callback_data: `ask:${o.ride_id}:${dtg}` }]] : []),
@@ -4215,7 +4223,8 @@ const PERM_GROUPS = {
   cities:     'Города и ссылки на группы',
   settings:   'Общие настройки',
   stats:      'Отчёты и статистика',
-  audit:      'Журнал действий'
+  audit:      'Журнал действий',
+  ranks:      'Ранги и баллы: правила, журнал баллов, ручные начисления'
 };
 
 // какое действие к какому разделу относится
@@ -4251,7 +4260,10 @@ const ACT_PERM = {
 
   'stats':'stats','days-stats':'stats','rides-stats':'stats','drivers-stats':'stats','tg-stats':'stats',
 
-  'audit-list':'audit','audit-actors':'audit','audit-clear':'audit'
+  'audit-list':'audit','audit-actors':'audit','audit-clear':'audit',
+
+  'rank-cfg-get':'ranks','rank-cfg-set':'ranks','ranks-recalc':'ranks','points-list':'ranks','points-drivers':'ranks',
+  'points-driver':'ranks','points-adjust':'ranks','points-void':'ranks','inv-list':'ranks'
 };
 
 function isOwner(u) {
@@ -4300,6 +4312,12 @@ const showVal = v => {
 
 async function audit(me, action, tid, targetName, details) {
   try {
+    if (me && action === undefined && 'actor_id' in me) {      // вызов одним объектом
+      await db.from('audit_log').insert({ actor_id: me.actor_id || null, actor_name: me.actor_name || null, actor_role: me.actor_role || 'staff',
+        action: me.action || null, target_id: me.target_id || null, target_name: me.target_name || null,
+        details: me.details ? String(me.details).slice(0, 1000) : null });
+      return;
+    }
     await db.from('audit_log').insert({
       actor_id: me.id, actor_name: me.name, actor_role: me.staff_role || 'staff',
       action, target_id: tid || null, target_name: targetName || null,
@@ -4477,7 +4495,7 @@ const BACKUP_TABLES = [
   'users', 'contacts', 'rides', 'offers', 'reviews', 'messages', 'shifts',
   'cars', 'complaints', 'payments', 'promos', 'sources', 'settings',
   'cities', 'broadcasts', 'audit_log', 'support_msgs', 'admin_msgs',
-  'group_pins', 'winback_queue', 'reports', 'pending_refs', 'pending_src', 'tg_events', 'points'
+  'group_pins', 'winback_queue', 'reports', 'pending_refs', 'pending_src', 'tg_events', 'points', 'inv_links', 'invitees'
 ];
 
 async function makeBackup() {
@@ -4632,6 +4650,23 @@ async function dailyReportText() {
     rpCount('tg_events', q => q.eq('kind', 'start').eq('is_new', true).gte('created_at', y0.toISOString()).lt('created_at', t0.toISOString()))
   ]);
   if (jn || lv || stn) L.push(`Группы: вступили <b>${jn}</b>, вышли <b>${lv}</b> · в бота пришли: <b>${stn}</b>`);
+  if (ranksReady) {
+    try {
+      const pr = await ptAll(() => db.from('points').select('driver_id,delta,reason,meta').neq('reason', 'start')
+        .gte('created_at', y0.toISOString()).lt('created_at', t0.toISOString()).order('id'), 10);
+      const plus = pr.filter(x => x.delta > 0).reduce((a, x) => a + x.delta, 0);
+      const minus = pr.filter(x => x.delta < 0).reduce((a, x) => a + x.delta, 0);
+      const ups = pr.filter(x => x.reason === 'rank_up');
+      const inv = await rpCount('invitees', q => q.gte('joined_at', y0.toISOString()).lt('joined_at', t0.toISOString()));
+      let line = `🏅 Баллы: +${plus}${minus ? ` / −${-minus}` : ''}`;
+      if (ups.length) {
+        const nm = await rpNames([...new Set(ups.map(x => x.driver_id))]);
+        line += ` · новые звания: ${ups.slice(0, 5).map(x => `${safeName(nm[x.driver_id] || 'водитель')} — ${RANK_NAMES[x.meta] || x.meta}`).join(', ')}`;
+      }
+      if (inv) line += ` · по приглашениям пришли: ${inv}`;
+      if (plus || minus || ups.length || inv) L.push(line);
+    } catch (e) {}
+  }
   const top = Object.entries(s.byDriver).sort((a, b) => b[1] - a[1])[0];
   if (top) {
     const nm = await rpNames([top[0]]);
@@ -4722,32 +4757,93 @@ async function reportTick() {
 setInterval(reportTick, 5 * 60000);
 setTimeout(reportTick, 90 * 1000);
 
-/* ---------- ранги и баллы водителей (v164) ----------
-   Баллы копятся за всё время в закрытой таблице points: каждая строка — за что и сколько.
-   Ранги: Бронза → Серебро → Золото → Платина → Алмаз. С «Золота» нужны ещё рейтинг,
-   мало отказов (за последние 3 месяца) и стаж. Месяц без поездок — ранг на паузе,
-   пока водитель не сделает 5 поездок. Пока миграция db-27 не выполнена — всё молчит. */
-const RANKS = [
-  { code: 'bronze',   name: 'Бронза',  pts: 50 },
-  { code: 'silver',   name: 'Серебро', pts: 250 },
-  { code: 'gold',     name: 'Золото',  pts: 1000, rating: 4.7, cancel: 10 },
-  { code: 'platinum', name: 'Платина', pts: 3000, rating: 4.8, cancel: 5, days: 180 },
-  { code: 'diamond',  name: 'Алмаз',   pts: 8000, rating: 4.9, cancel: 3, days: 365 }
-];
-const RANK_IDX = Object.fromEntries(RANKS.map((r, i) => [r.code, i]));
+/* ---------- ранги и баллы водителей (v165) ----------
+   Все цифры — в settings.rank_cfg: их меняет владелец в панели «Ещё → Ранги и баллы».
+   Если там пусто — работают значения по умолчанию ниже.
+   Баллы — в закрытой таблице points: каждая строка — за что и сколько.
+   Ранги: Бронза → Серебро → Золото → Платина → Алмаз. Месяц без поездок — ранг на паузе,
+   пока водитель не сделает 5 поездок. Пока миграция db-27/28 не выполнена — всё молчит. */
+const RANK_CODES = ['bronze', 'silver', 'gold', 'platinum', 'diamond'];
+const RANK_NAMES = { bronze: 'Бронза', silver: 'Серебро', gold: 'Золото', platinum: 'Платина', diamond: 'Алмаз' };
 const RANK_GEN = { bronze: 'Бронзы', silver: 'Серебра', gold: 'Золота', platinum: 'Платины', diamond: 'Алмаза' };
+const RANK_IDX = Object.fromEntries(RANK_CODES.map((c, i) => [c, i]));
 const RANK_TAG = { bronze: 'Бомбила Бронза', silver: 'Бомбила Серебро', gold: 'Бомбила Золото', platinum: 'Бомбила Платина', diamond: 'Бомбила Алмаз' };
-const PT = { ride: 5, peak: 1, star: 1, fast: 1, ref: 10, cancel: -15, complaint: -30,
-  dayCap: 40, perPassenger: 2, minMinutes: 5, pauseDays: 30, unpauseRides: 5, earlyHours: 2, noshowMin: 10 };
-let ranksReady = false;      // таблица points есть — миграция db-27 выполнена
+const RANK_DEF = {
+  pts: { ride: 5, peak: 1, star: 1, fast: 1, ref: 10, invJoin: 1, invRide: 10, cancel: -15, complaint: -30, invSpam: -10 },
+  lim: { dayCap: 40, perPassenger: 2, minMinutes: 5, fastSec: 60, freeCant: 1, noshowMin: 10, earlyHours: 2,
+    pauseDays: 30, unpauseRides: 5, invMonthCap: 30, invStayDays: 7, invBurst: 5 },
+  peak: [[7, 10], [17, 21]],
+  ranks: {
+    bronze:   { pts: 50,   rides: 5 },
+    silver:   { pts: 250,  rides: 30 },
+    gold:     { pts: 1000, rides: 120, rating: 4.7, cancel: 10 },
+    platinum: { pts: 3000, rides: 350, rating: 4.8, cancel: 5, days: 180 },
+    diamond:  { pts: 8000, rides: 900, rating: 4.9, cancel: 3, days: 365 }
+  },
+  feat: { invites: true, minRides: true, offerBadge: true, topList: true }
+};
+// пределы для каждого числа — чтобы опечатка в панели ничего не сломала
+const RANK_LIM = {
+  pts: { ride: [0, 100], peak: [0, 50], star: [0, 50], fast: [0, 50], ref: [0, 500], invJoin: [0, 100], invRide: [0, 500],
+    cancel: [-500, 0], complaint: [-1000, 0], invSpam: [-500, 0] },
+  lim: { dayCap: [0, 1000], perPassenger: [1, 20], minMinutes: [0, 60], fastSec: [10, 600], freeCant: [0, 7], noshowMin: [3, 60],
+    earlyHours: [0, 72], pauseDays: [7, 365], unpauseRides: [1, 50], invMonthCap: [0, 1000], invStayDays: [1, 60], invBurst: [2, 100] },
+  rank: { pts: [1, 1000000], rides: [0, 100000], rating: [0, 5], cancel: [0, 100], days: [0, 3650] }
+};
+function rankCfgClean(x) {
+  const src = x && typeof x === 'object' ? x : {};
+  const out = JSON.parse(JSON.stringify(RANK_DEF));
+  const num = (v, [a, b], dflt) => {
+    const n = Number(v);
+    if (v === '' || v === null || v === undefined || typeof v === 'boolean' || !isFinite(n)) return dflt;
+    return Math.min(b, Math.max(a, n));
+  };
+  for (const g of ['pts', 'lim']) for (const k of Object.keys(RANK_DEF[g])) out[g][k] = Math.round(num(src[g] && src[g][k], RANK_LIM[g][k], RANK_DEF[g][k]));
+  if (Array.isArray(src.peak)) {
+    out.peak = src.peak.filter(p => Array.isArray(p) && p.length === 2)
+      .map(([a, b]) => [Math.round(num(a, [0, 23], -1)), Math.round(num(b, [1, 24], -1))])
+      .filter(([a, b]) => a >= 0 && b > a).slice(0, 3);
+  }
+  for (const c of RANK_CODES) {
+    const s = (src.ranks && src.ranks[c]) || {}, d = RANK_DEF.ranks[c], o = {};
+    o.pts = Math.round(num(s.pts, RANK_LIM.rank.pts, d.pts));
+    o.rides = Math.round(num(s.rides, RANK_LIM.rank.rides, d.rides));
+    for (const k of ['rating', 'cancel', 'days']) {
+      const v = Object.prototype.hasOwnProperty.call(s, k) ? s[k] : d[k];
+      if (v === null || v === undefined || v === '' || v === false) continue;        // условие выключено
+      const n = num(v, RANK_LIM.rank[k], null);
+      if (n === null) continue;
+      o[k] = k === 'rating' ? Math.round(n * 10) / 10 : Math.round(n);
+    }
+    out.ranks[c] = o;
+  }
+  // следующий ранг не может быть легче предыдущего
+  for (let i = 1; i < RANK_CODES.length; i++) {
+    const p = out.ranks[RANK_CODES[i - 1]], r = out.ranks[RANK_CODES[i]];
+    if (r.pts <= p.pts) r.pts = p.pts + 1;
+    if (r.rides < p.rides) r.rides = p.rides;
+  }
+  for (const k of Object.keys(RANK_DEF.feat)) out.feat[k] = src.feat && src.feat[k] !== undefined ? !!src.feat[k] : RANK_DEF.feat[k];
+  return out;
+}
+let RCFG = rankCfgClean(null);
+async function rankCfgLoad() {
+  try {
+    const { data, error } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    if (!error && data) RCFG = rankCfgClean(data.rank_cfg);
+  } catch (e) {}
+}
+const ranksList = () => RANK_CODES.map(c => ({ code: c, name: RANK_NAMES[c], ...RCFG.ranks[c] }));
+let ranksReady = false;      // таблица points есть — миграция выполнена
 
 // метка в группе города: по рангу, а без ранга или на паузе — обычная
 const rankTag = u => (u && u.rank_code && !u.rank_paused && RANK_TAG[u.rank_code]) || DRIVER_TAG;
-const ptPeak = d => { const h = new Date(d).getHours(); return (h >= 7 && h < 10) || (h >= 17 && h < 21); };   // часы по Москве
+const ptPeak = d => { const h = new Date(d).getHours(); return RCFG.peak.some(([a, b]) => h >= a && h < b); };   // часы по Москве
 const ptRoute = r => r ? `${String(r.from_address || '').slice(0, 50)} → ${String(r.to_address || '').slice(0, 50)}` : '';
 const ptDay0 = () => { const x = new Date(); x.setHours(0, 0, 0, 0); return x.toISOString(); };
 const ptWeek0 = () => { const x = new Date(); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString(); };
 const ptMonth0 = () => { const x = new Date(); x.setHours(0, 0, 0, 0); x.setDate(1); return x.toISOString(); };
+const ptCap = () => RCFG.lim.dayCap > 0 ? RCFG.lim.dayCap : Infinity;
 
 // записать баллы; уникальный ключ не даёт начислить дважды за одно и то же
 async function ptAdd(driverId, delta, reason, note, uniq, extra = {}) {
@@ -4777,6 +4873,15 @@ async function ptToday(driverId) {
     .in('reason', ['ride', 'star']).gte('created_at', ptDay0()).limit(1000);
   return (data || []).reduce((a, x) => a + (x.delta || 0), 0);
 }
+// сколько настоящих поездок засчитано (для «минимума поездок»)
+const ptRides = rows => rows.reduce((a, x) => {
+  if (x.reason === 'ride') return a + 1;
+  if (x.reason === 'start') {
+    const m = String(x.meta || '').match(/rides:(\d+)/) || String(x.note || '').match(/за (\d+)/);
+    return a + (m ? Number(m[1]) : Math.round((x.delta || 0) / 5));
+  }
+  return a;
+}, 0);
 
 // поездка завершена — начисляем баллы водителю
 async function awardRide(rideId) {
@@ -4784,30 +4889,32 @@ async function awardRide(rideId) {
   try {
     const { data: r } = await db.from('rides').select('*').eq('id', rideId).maybeSingle();
     if (!r || r.status !== 'completed' || !r.driver_id) return;
+    const P = RCFG.pts, L = RCFG.lim;
     const uniq = 'ride:' + r.id;
     const base = { ride_id: String(r.id), peer_id: r.passenger_id ? String(r.passenger_id) : null };
     const route = ptRoute(r);
     if (r.auto_closed) { await ptAdd(r.driver_id, 0, 'ride_auto', route, uniq, base); return; }
     const t0 = new Date(r.confirmed_at || r.created_at).getTime();
     const t1 = r.completed_at ? new Date(r.completed_at).getTime() : Date.now();
-    if (t1 - t0 < PT.minMinutes * 60000) { await ptAdd(r.driver_id, 0, 'ride_short', route, uniq, base); return; }
+    if (t1 - t0 < L.minMinutes * 60000) { await ptAdd(r.driver_id, 0, 'ride_short', route, uniq, base); return; }
     if (r.passenger_id) {
       const { count: same } = await db.from('points').select('*', { count: 'exact', head: true })
         .eq('driver_id', String(r.driver_id)).eq('peer_id', String(r.passenger_id)).eq('reason', 'ride').gte('created_at', ptDay0());
-      if ((same || 0) >= PT.perPassenger) { await ptAdd(r.driver_id, 0, 'ride_same', route, uniq, base); return; }
+      if ((same || 0) >= L.perPassenger) { await ptAdd(r.driver_id, 0, 'ride_same', route, uniq, base); return; }
     }
-    let pts = PT.ride; const tags = [];
-    if (ptPeak(r.scheduled_at || r.confirmed_at || r.created_at)) { pts += PT.peak; tags.push('peak'); }
-    try {
+    let pts = P.ride; const tags = [];
+    if (P.peak && ptPeak(r.scheduled_at || r.confirmed_at || r.created_at)) { pts += P.peak; tags.push('peak'); }
+    if (P.fast) try {
       const { data: of } = await db.from('offers').select('created_at').eq('ride_id', r.id).eq('driver_id', r.driver_id)
         .order('created_at', { ascending: true }).limit(1);
-      if (of && of[0] && of[0].created_at && new Date(of[0].created_at) - new Date(r.created_at) < 60000) { pts += PT.fast; tags.push('fast'); }
+      if (of && of[0] && of[0].created_at && new Date(of[0].created_at) - new Date(r.created_at) < L.fastSec * 1000) { pts += P.fast; tags.push('fast'); }
     } catch (e) {}
-    const give = Math.max(0, Math.min(pts, PT.dayCap - await ptToday(r.driver_id)));
+    const give = Math.max(0, Math.min(pts, ptCap() - await ptToday(r.driver_id)));
     if (give < pts) tags.push('cap');
     const ok = await ptAdd(r.driver_id, give, 'ride', route, uniq, { ...base, meta: tags.join(',') || null });
     if (!ok) return;                                   // за эту поездку уже начисляли
     await refBonusCheck(r.driver_id);
+    await invFirstRide(r);
     await rankRecalc(r.driver_id);
   } catch (e) { console.error('awardRide', e.message); }
 }
@@ -4818,23 +4925,24 @@ async function awardStar(rideId, driverId) {
     const find = async () => (await db.from('points').select('delta').eq('driver_id', String(driverId)).eq('uniq_key', 'ride:' + rideId).limit(1)).data;
     let rr = await find();
     if (!rr || !rr[0]) { await awardRide(rideId); rr = await find(); }   // отзыв пришёл раньше, чем баллы за поездку
-    if (!rr || !rr[0] || rr[0].delta <= 0) return rankRecalc(driverId);
-    if (PT.dayCap - await ptToday(driverId) <= 0) return rankRecalc(driverId);
+    if (!RCFG.pts.star || !rr || !rr[0] || rr[0].delta <= 0) return rankRecalc(driverId);
+    if (ptCap() - await ptToday(driverId) <= 0) return rankRecalc(driverId);
     const { data: r } = await db.from('rides').select('id,from_address,to_address,passenger_id').eq('id', rideId).maybeSingle();
-    await ptAdd(driverId, PT.star, 'star', ptRoute(r), 'star:' + rideId, { ride_id: String(rideId), peer_id: r && r.passenger_id ? String(r.passenger_id) : null });
+    await ptAdd(driverId, RCFG.pts.star, 'star', ptRoute(r), 'star:' + rideId, { ride_id: String(rideId), peer_id: r && r.passenger_id ? String(r.passenger_id) : null });
     await rankRecalc(driverId);
   } catch (e) { console.error('awardStar', e.message); }
 }
-// приглашённый водитель сделал 10 поездок — +10 тому, кто его привёл
+// приглашённый водитель сделал 10 поездок — бонус тому, кто его привёл
 async function refBonusCheck(driverId) {
   try {
+    if (!RCFG.pts.ref) return;
     const { data: u } = await db.from('users').select('id,name,ref_by').eq('id', driverId).maybeSingle();
     if (!u || !u.ref_by) return;
     const { data: inv } = await db.from('users').select('id,driver_status').eq('id', u.ref_by).maybeSingle();
     if (!inv || inv.driver_status !== 'approved') return;
     const { count } = await db.from('rides').select('*', { count: 'exact', head: true }).eq('driver_id', driverId).eq('status', 'completed');
     if ((count || 0) < 10) return;
-    if (await ptAdd(inv.id, PT.ref, 'ref', u.name, 'ref:' + driverId)) await rankRecalc(inv.id);
+    if (await ptAdd(inv.id, RCFG.pts.ref, 'ref', u.name, 'ref:' + driverId)) await rankRecalc(inv.id);
   } catch (e) {}
 }
 
@@ -4842,11 +4950,12 @@ async function refBonusCheck(driverId) {
 async function driverCancelPoints(drv, ride, reason) {
   if (!ranksReady) return null;
   try {
+    const P = RCFG.pts, L = RCFG.lim;
     const uniq = 'cancel:' + ride.id + ':' + drv.id;
     const base = { ride_id: String(ride.id), peer_id: ride.passenger_id ? String(ride.passenger_id) : null, meta: reason };
     const route = ptRoute(ride);
-    // заказ на время, до которого больше 2 часов, — пассажир успеет найти другого
-    if (ride.scheduled_at && new Date(ride.scheduled_at) - Date.now() > PT.earlyHours * 3600e3) {
+    // заказ на время, до которого ещё далеко, — пассажир успеет найти другого
+    if (ride.scheduled_at && L.earlyHours > 0 && new Date(ride.scheduled_at) - Date.now() > L.earlyHours * 3600e3) {
       await ptAdd(drv.id, 0, 'cancel_early', route, uniq, base); return { delta: 0, kind: 'early' };
     }
     if (reason === 'agreed') {
@@ -4860,19 +4969,20 @@ async function driverCancelPoints(drv, ride, reason) {
       return { delta: 0, kind: 'wait' };
     }
     if (reason === 'noshow') {
-      if (ride.arrived_at && Date.now() - new Date(ride.arrived_at).getTime() >= (PT.noshowMin - 1) * 60000) {
+      // минута запаса на разницу часов телефона и сервера — в пользу водителя
+      if (ride.arrived_at && Date.now() - new Date(ride.arrived_at).getTime() >= (L.noshowMin - 1) * 60000) {
         await ptAdd(drv.id, 0, 'cancel_noshow', route, uniq, base); return { delta: 0, kind: 'noshow' };
       }
       reason = 'other'; base.meta = 'noshow_early';
     }
-    if (reason === 'cant') {
+    if (reason === 'cant' && L.freeCant > 0) {
       const { count } = await db.from('points').select('*', { count: 'exact', head: true })
         .eq('driver_id', String(drv.id)).eq('reason', 'cancel_free').gte('created_at', ptWeek0());
-      if (!count) { await ptAdd(drv.id, 0, 'cancel_free', route, uniq, base); return { delta: 0, kind: 'free' }; }
+      if ((count || 0) < L.freeCant) { await ptAdd(drv.id, 0, 'cancel_free', route, uniq, base); return { delta: 0, kind: 'free' }; }
     }
-    const ok = await ptAdd(drv.id, PT.cancel, 'cancel', route, uniq, base);
+    const ok = await ptAdd(drv.id, P.cancel, 'cancel', route, uniq, base);
     if (ok) await rankRecalc(drv.id);
-    return { delta: ok ? PT.cancel : 0, kind: 'penalty' };
+    return { delta: ok ? P.cancel : 0, kind: 'penalty' };
   } catch (e) { console.error('cancelPoints', e.message); return null; }
 }
 // пассажир ответил на «Это так?»
@@ -4888,7 +4998,7 @@ async function cancelConfirm(cq) {
   if (!ptg || String(ptg) !== String(cq.from.id)) return answer('Это не ваш заказ.', true);
   let changed = false;
   if (row.reason === 'cancel_wait') {
-    const { data: upd } = await db.from('points').update(yes ? { reason: 'cancel_ok' } : { reason: 'cancel', delta: PT.cancel, meta: 'denied' })
+    const { data: upd } = await db.from('points').update(yes ? { reason: 'cancel_ok' } : { reason: 'cancel', delta: RCFG.pts.cancel, meta: 'denied' })
       .eq('id', row.id).eq('reason', 'cancel_wait').select('id');
     changed = !!(upd && upd.length);
   }
@@ -4901,29 +5011,31 @@ async function cancelConfirm(cq) {
   if (!changed) return;
   const dtg = await tgIdOf(row.driver_id);
   if (dtg) send(dtg, yes ? '✅ Пассажир подтвердил отмену по договорённости — баллы не списаны.'
-    : `❌ Пассажир не подтвердил отмену по договорённости — списано ${-PT.cancel} баллов.`).catch(() => {});
+    : `❌ Пассажир не подтвердил отмену по договорённости — списано ${-RCFG.pts.cancel} баллов.`).catch(() => {});
   if (!yes) await rankRecalc(row.driver_id);
 }
 // подтверждённая жалоба на водителя (админ вынес предупреждение или бан)
 async function complaintPoints(targetId, complaintId) {
-  if (!ranksReady || !targetId || !complaintId) return;
+  if (!ranksReady || !targetId || !complaintId || !RCFG.pts.complaint) return;
   try {
     const { data: c } = await db.from('complaints').select('*').eq('id', complaintId).maybeSingle();
     if (!c || c.kind === 'review' || String(c.target_id) !== String(targetId)) return;
     const { data: u } = await db.from('users').select('id,driver_status').eq('id', targetId).maybeSingle();
     if (!u || u.driver_status !== 'approved') return;
-    if (await ptAdd(targetId, PT.complaint, 'complaint', String(c.reason || '').slice(0, 100), 'complaint:' + complaintId)) await rankRecalc(targetId);
+    if (await ptAdd(targetId, RCFG.pts.complaint, 'complaint', String(c.reason || '').slice(0, 100), 'complaint:' + complaintId)) await rankRecalc(targetId);
   } catch (e) {}
 }
 
-// пересчитать сумму, ранг и паузу; при смене — метка в группе и сообщение водителю
+// пересчитать сумму, ранг и паузу; смену записываем в журнал баллов,
+// ставим метку в группе и пишем водителю (кроме самого первого раза)
 async function rankRecalc(driverId, opts = {}) {
   if (!ranksReady || !driverId) return null;
   try {
     const { data: u } = await db.from('users').select('*').eq('id', driverId).maybeSingle();
     if (!u) return null;
-    const rows = await ptAll(() => db.from('points').select('delta,reason,created_at').eq('driver_id', String(driverId)).order('id'));
+    const rows = await ptAll(() => db.from('points').select('delta,reason,meta,note,created_at').eq('driver_id', String(driverId)).order('id'));
     const total = rows.reduce((a, x) => a + (x.delta || 0), 0);
+    const rides = ptRides(rows);
     const since90 = Date.now() - 90 * 864e5;
     let done90 = 0, canc90 = 0, pen90 = 0;
     for (const x of rows) {
@@ -4935,23 +5047,25 @@ async function rankRecalc(driverId, opts = {}) {
     const cancelPct = done90 + canc90 ? pen90 / (done90 + canc90) * 100 : 0;
     const days = u.created_at ? (Date.now() - new Date(u.created_at).getTime()) / 864e5 : 0;
     const rating = Number(u.rating) || 5;
+    const minR = RCFG.feat.minRides;
     let rank = null;
-    for (const R of RANKS) {        // каждый следующий ранг строже предыдущего во всём
-      if (total < R.pts || (R.rating && rating < R.rating) || (R.cancel != null && cancelPct >= R.cancel) || (R.days && days < R.days)) break;
+    for (const R of ranksList()) {        // каждый следующий ранг строже предыдущего во всём
+      if (total < R.pts || (minR && rides < (R.rides || 0)) || (R.rating && rating < R.rating)
+        || (R.cancel != null && cancelPct >= R.cancel) || (R.days && days < R.days)) break;
       rank = R.code;
     }
-    // месяц без поездок — пауза, пока не сделает 5 поездок
+    // месяц без поездок — пауза, пока не сделает нужное число поездок
     const { data: last } = await db.from('rides').select('created_at').eq('driver_id', driverId).eq('status', 'completed')
       .order('created_at', { ascending: false }).limit(1);
     const lastAt = last && last[0] ? new Date(last[0].created_at).getTime() : 0;
     let pausedAt = u.rank_paused_at ? new Date(u.rank_paused_at).getTime() : null;
-    if (!pausedAt && rank && lastAt && Date.now() - lastAt > PT.pauseDays * 864e5) pausedAt = Date.now();
+    if (!pausedAt && rank && lastAt && Date.now() - lastAt > RCFG.lim.pauseDays * 864e5) pausedAt = Date.now();
     let sincePause = 0;
     if (pausedAt) {
       const { count } = await db.from('rides').select('*', { count: 'exact', head: true }).eq('driver_id', driverId)
         .eq('status', 'completed').gt('created_at', new Date(pausedAt).toISOString());
       sincePause = count || 0;
-      if (sincePause >= PT.unpauseRides) pausedAt = null;
+      if (sincePause >= RCFG.lim.unpauseRides) pausedAt = null;
     }
     const paused = !!(pausedAt && rank);
     const prevIdx = u.rank_code && u.rank_code in RANK_IDX ? RANK_IDX[u.rank_code] : -1;
@@ -4960,52 +5074,221 @@ async function rankRecalc(driverId, opts = {}) {
     if (changed || Number(u.points_total || 0) !== total || !!u.rank_paused_at !== paused) {
       await db.from('users').update({ points_total: total, rank_code: rank, rank_paused: paused,
         rank_paused_at: paused ? new Date(pausedAt).toISOString() : null }).eq('id', driverId);
+      lbCache.clear();
+    }
+    let evOk = true;
+    if (changed) {
+      const R = rank ? RANK_NAMES[rank] : null, Pn = prevIdx >= 0 ? RANK_NAMES[RANK_CODES[prevIdx]] : null;
+      // события в журнал баллов — видно водителю в истории и владельцу в панели
+      const evs = [];
+      if (newIdx > prevIdx) evs.push(['rank_up', rank, `новое звание — ${R}`]);
+      else if (newIdx < prevIdx) evs.push(['rank_down', rank || 'none', R ? `звание снижено до «${R}»` : `звание «${Pn}» снято`]);
+      if (paused && !u.rank_paused) evs.push(['rank_pause', rank, `«${R}» на паузе: больше ${RCFG.lim.pauseDays} дней без поездок`]);
+      else if (!paused && u.rank_paused && rank) evs.push(['rank_resume', rank, `«${R}» снова действует`]);
+      // ключ с минутой — два одновременных пересчёта не запишут событие дважды
+      if (evs.length) {
+        evOk = false;
+        for (const ev of evs) if (await ptAdd(driverId, 0, ev[0], ev[2], `ev:${ev[0]}:${ev[1]}:${Math.floor(Date.now() / 60000)}`, { meta: ev[1] })) evOk = true;
+      }
     }
     if (changed && u.driver_status === 'approved' && !u.is_banned) {
       setDriverTag({ ...u, rank_code: rank, rank_paused: paused }, true).catch(() => {});
-      if (!opts.silent && u.telegram_id) {
-        const R = rank ? RANKS[newIdx] : null, P = prevIdx >= 0 ? RANKS[prevIdx] : null;
+      if (!opts.silent && evOk && u.telegram_id) {
+        const R = rank ? RANK_NAMES[rank] : null, Pc = prevIdx >= 0 ? RANK_CODES[prevIdx] : null;
         const n = total.toLocaleString('ru');
         let msg = '';
-        if (paused && !u.rank_paused) msg = `⏸ <b>Ранг «${R.name}» на паузе</b>\n\nБольше месяца не было поездок. Сделайте ${PT.unpauseRides} поездок — значок и метка вернутся.`;
-        else if (newIdx > prevIdx && !paused) msg = `🏅 <b>Новый ранг — ${R.name}!</b>\n\nУ вас ${n} ${plural(total, ['балл', 'балла', 'баллов'])}. Значок уже на вашей карточке у пассажиров, метка «${RANK_TAG[rank]}» — в группе города.`;
-        else if (!paused && u.rank_paused && newIdx >= prevIdx) msg = `▶️ <b>Ранг «${R.name}» снова действует</b>\n\nСпасибо, что вернулись на линию!`;
-        else if (newIdx < prevIdx && P) {
-          const why = [];
+        if (paused && !u.rank_paused) msg = `⏸ <b>Ранг «${R}» на паузе</b>\n\nБольше месяца не было поездок. Сделайте ${RCFG.lim.unpauseRides} поездок — значок и метка вернутся.`;
+        else if (newIdx > prevIdx && !paused) msg = `🏅 <b>Новый ранг — ${R}!</b>\n\nУ вас ${n} ${plural(total, ['балл', 'балла', 'баллов'])}. Значок уже на вашей карточке у пассажиров, метка «${RANK_TAG[rank]}» — в группе города.`;
+        else if (!paused && u.rank_paused && newIdx >= prevIdx) msg = `▶️ <b>Ранг «${R}» снова действует</b>\n\nСпасибо, что вернулись на линию!`;
+        else if (newIdx < prevIdx && Pc) {
+          const P = RCFG.ranks[Pc], why = [];
           if (total < P.pts) why.push(`баллов ${n} из ${P.pts.toLocaleString('ru')}`);
+          if (minR && rides < (P.rides || 0)) why.push(`поездок ${rides} из ${P.rides}`);
           if (P.rating && rating < P.rating) why.push(`рейтинг ${rating.toFixed(1).replace('.', ',')} — нужно от ${String(P.rating).replace('.', ',')}`);
           if (P.cancel != null && cancelPct >= P.cancel) why.push(`отказов ${Math.round(cancelPct)}% за 3 месяца — нужно меньше ${P.cancel}%`);
-          msg = `📉 <b>Ранг сейчас — ${R ? R.name : 'без ранга'}</b>\n\nДля «${RANK_GEN[P.code]}» не хватает: ${why.join('; ') || 'условий'}. Ранг вернётся сам, как только всё выполните.`;
+          if (P.days && days < P.days) why.push(`стаж ${Math.floor(days)} дней из ${P.days}`);
+          msg = `📉 <b>Ранг сейчас — ${R || 'без ранга'}</b>\n\nДля «${RANK_GEN[Pc]}» не хватает: ${why.join('; ') || 'условий'}. Ранг вернётся сам, как только всё выполните.`;
         }
         if (msg) send(u.telegram_id, msg, { reply_markup: { inline_keyboard: [[wa('🏅 Мой ранг', 'rank', { id: u.telegram_id })]] } }).catch(() => {});
       }
     }
-    return { total, rank, paused, sincePause, cancelPct: Math.round(cancelPct * 10) / 10, done90, canc90, pen90, days: Math.floor(days), rating };
+    return { total, rank, paused, sincePause, rides, cancelPct: Math.round(cancelPct * 10) / 10, done90, canc90, pen90, days: Math.floor(days), rating };
   } catch (e) { console.error('rankRecalc', e.message); return null; }
 }
 
-// баллы за поездки до запуска рангов — по 5 за поездку и по тем же правилам:
-// не больше 2 поездок с одним пассажиром в день, не больше 8 поездок в день,
-// без коротких и закрытых ботом. Начисляется один раз.
+// баллы за поездки до запуска рангов — по тем же правилам: не больше 2 поездок
+// с одним пассажиром в день, не больше дневного предела, без коротких и закрытых ботом
 async function ptBackfill(driverId) {
   const rides = await ptAll(() => db.from('rides').select('id,passenger_id,created_at,confirmed_at,completed_at,auto_closed')
     .eq('driver_id', driverId).eq('status', 'completed').order('created_at').order('id'), 20);
   const seen = new Set((await ptAll(() => db.from('points').select('ride_id').eq('driver_id', String(driverId))
     .not('ride_id', 'is', null).order('id'), 20)).map(x => String(x.ride_id)));
+  const L = RCFG.lim, per = Math.max(1, RCFG.pts.ride);
+  const dayMax = isFinite(ptCap()) ? Math.floor(ptCap() / per) : Infinity;
   const perDay = {}, perPass = {};
   let n = 0;
   for (const r of rides) {
     if (seen.has(String(r.id)) || r.auto_closed) continue;
-    if (r.confirmed_at && r.completed_at && new Date(r.completed_at) - new Date(r.confirmed_at) < PT.minMinutes * 60000) continue;
+    if (r.confirmed_at && r.completed_at && new Date(r.completed_at) - new Date(r.confirmed_at) < L.minMinutes * 60000) continue;
     const day = rpYmd(new Date(r.created_at)), pk = day + ':' + (r.passenger_id || '-');
-    if ((perPass[pk] || 0) >= PT.perPassenger || (perDay[day] || 0) >= Math.floor(PT.dayCap / PT.ride)) continue;
+    if ((perPass[pk] || 0) >= L.perPassenger || (perDay[day] || 0) >= dayMax) continue;
     perPass[pk] = (perPass[pk] || 0) + 1; perDay[day] = (perDay[day] || 0) + 1; n++;
   }
-  await ptAdd(driverId, n * PT.ride, 'start', `за ${n} ${plural(n, ['поездку', 'поездки', 'поездок'])} до запуска рангов`, 'start');
+  await ptAdd(driverId, n * RCFG.pts.ride, 'start', `за ${n} ${plural(n, ['поездку', 'поездки', 'поездок'])} до запуска рангов`, 'start', { meta: 'rides:' + n });
 }
-// раз в 6 часов: новые водители, пауза за месяц без поездок, рейтинг
+
+/* ---------- приглашения в группу города ----------
+   У каждого водителя своя ссылка. Бот видит, кто по чьей ссылке вошёл (или кто кого добавил).
+   За само вступление — мало и только через неделю, если человек остался и прошёл проверку.
+   Основное — когда друг сделал первую поездку. Защита от накрутки:
+   считаем только новых людей, лимит в месяц, всплеск по одной ссылке — заморозка и сообщение владельцу,
+   приглашённого забанили за спам — штраф пригласившему. */
+const invBurstSent = new Map();
+async function invOnJoin(cm, who, g) {
+  try {
+    if (!ranksReady || !RCFG.feat.invites || !g || g.type !== 'city' || !who || who.is_bot) return;
+    let inviter = null, how = null;
+    const nm = cm.invite_link && cm.invite_link.name;
+    if (nm && /^drv:/.test(nm)) {
+      const { data: l } = await db.from('inv_links').select('driver_id').eq('code', nm.slice(4)).maybeSingle();
+      if (l) { inviter = l.driver_id; how = 'link'; }
+    } else if (cm.from && cm.from.id !== who.id && !cm.from.is_bot) {
+      const { data: a } = await db.from('users').select('id,driver_status').eq('telegram_id', cm.from.id).maybeSingle();
+      if (a && a.driver_status === 'approved') { inviter = a.id; how = 'added'; }
+    }
+    if (!inviter) return;
+    const { data: ex } = await db.from('invitees').select('tg_id').eq('tg_id', who.id).maybeSingle();
+    if (ex) return;                                       // этого человека уже кто-то приводил
+    const { data: inv } = await db.from('users').select('id,name,telegram_id').eq('id', inviter).maybeSingle();
+    if (!inv || String(inv.telegram_id) === String(who.id)) return;
+    let status = 'wait';
+    // уже был в приложении или в группе раньше — это не новый человек
+    const { data: known } = await db.from('users').select('id').eq('telegram_id', who.id).maybeSingle();
+    const { count: wasIn } = await db.from('tg_events').select('*', { count: 'exact', head: true }).eq('kind', 'join')
+      .eq('tg_id', who.id).lt('created_at', new Date(Date.now() - 120000).toISOString());
+    if (known || wasIn) status = 'old';
+    if (status === 'wait') {
+      const { count: recent } = await db.from('invitees').select('*', { count: 'exact', head: true })
+        .eq('inviter_id', String(inviter)).gte('joined_at', new Date(Date.now() - 3600e3).toISOString());
+      if ((recent || 0) >= RCFG.lim.invBurst) {
+        status = 'burst';
+        const k = String(inviter), t = invBurstSent.get(k) || 0;
+        if (Date.now() - t > 3600e3 && OWNER) {
+          invBurstSent.set(k, Date.now());
+          send(OWNER, `⚠️ <b>Подозрительно много вступлений</b>\nПо приглашению водителя ${safeName(inv.name)} за час пришло больше ${RCFG.lim.invBurst} человек (${safeName(g.city)}).\nБаллы за них не начисляются. Посмотреть: Ещё → Ранги и баллы → Друзья.`,
+            { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } }).catch(() => {});
+        }
+      }
+    }
+    await db.from('invitees').insert({ tg_id: who.id, inviter_id: String(inviter), chat_id: cm.chat.id, city: g.city,
+      name: String(who.first_name || '').slice(0, 64), how, status, joined_at: new Date().toISOString() });
+  } catch (e) { console.error('invOnJoin', e.message); }
+}
+// начислить за приглашение — не больше лимита в месяц
+async function invAward(inviterId, pts, reason, note, uniq) {
+  if (!pts) return false;
+  const { data: u } = await db.from('users').select('id,driver_status').eq('id', inviterId).maybeSingle();
+  if (!u || u.driver_status !== 'approved') return false;
+  let give = pts, meta = null;
+  if (pts > 0) {
+    const { data } = await db.from('points').select('delta').eq('driver_id', String(inviterId)).in('reason', ['inv_join', 'inv_ride'])
+      .gte('created_at', ptMonth0()).limit(1000);
+    const used = (data || []).reduce((a, x) => a + (x.delta || 0), 0);
+    give = Math.max(0, Math.min(pts, RCFG.lim.invMonthCap - used));
+    if (give < pts) meta = 'cap';
+  }
+  const ok = await ptAdd(inviterId, give, reason, note, uniq, { meta });
+  if (ok && give) await rankRecalc(inviterId);
+  return ok;
+}
+// через неделю: остался ли человек в группе и прошёл ли проверку
+async function invCheck() {
+  if (!ranksReady || !RCFG.feat.invites) return;
+  try {
+    const cutoff = new Date(Date.now() - RCFG.lim.invStayDays * 864e5).toISOString();
+    const rows = await ptAll(() => db.from('invitees').select('*').eq('status', 'wait').lte('joined_at', cutoff).order('joined_at'), 5);
+    for (const r of rows) {
+      const m = await tg('getChatMember', { chat_id: r.chat_id, user_id: r.tg_id }).catch(() => null);
+      const st = m && m.ok && m.result ? m.result.status : null;
+      if (!st) continue;                                  // телеграм не ответил — проверим в следующий раз
+      let status = 'left';
+      if (st === 'member' || st === 'administrator' || st === 'creator') status = 'ok';
+      else if (st === 'restricted') status = m.result.is_member === false ? 'left' : (m.result.can_send_messages === false ? 'nocap' : 'ok');
+      else if (st === 'kicked') status = 'spam';
+      await db.from('invitees').update({ status, checked_at: new Date().toISOString() }).eq('tg_id', r.tg_id).eq('status', 'wait');
+      if (status === 'ok') await invAward(r.inviter_id, RCFG.pts.invJoin, 'inv_join', r.name, 'invj:' + r.tg_id);
+      if (status === 'spam') await invSpam(r.tg_id);
+    }
+  } catch (e) { console.error('invCheck', e.message); }
+}
+// приглашённого забанили как спамера — штраф пригласившему (один раз)
+async function invSpam(tgId) {
+  try {
+    if (!ranksReady || !RCFG.pts.invSpam) return;
+    const { data: r } = await db.from('invitees').select('*').eq('tg_id', tgId).maybeSingle();
+    if (!r || ['old', 'burst'].includes(r.status)) return;
+    await db.from('invitees').update({ status: 'spam' }).eq('tg_id', tgId);
+    if (await ptAdd(r.inviter_id, RCFG.pts.invSpam, 'inv_spam', r.name, 'invs:' + tgId)) await rankRecalc(r.inviter_id);
+  } catch (e) {}
+}
+// разбанили — «это не спам»: штраф отменяем
+async function invUnspam(tgId) {
+  try {
+    if (!ranksReady) return;
+    const { data: r } = await db.from('invitees').select('*').eq('tg_id', tgId).maybeSingle();
+    if (!r) return;
+    await db.from('invitees').update({ status: 'ok' }).eq('tg_id', tgId).eq('status', 'spam');
+    const { data: row } = await db.from('points').select('*').eq('driver_id', String(r.inviter_id)).eq('uniq_key', 'invs:' + tgId).maybeSingle();
+    if (row && row.reason === 'inv_spam') {
+      await db.from('points').update({ reason: 'void', delta: 0, meta: `inv_spam|${row.delta}|разбанен` }).eq('id', row.id);
+      await rankRecalc(r.inviter_id);
+    }
+  } catch (e) {}
+}
+// первая поездка приглашённого — главный бонус пригласившему
+async function invFirstRide(r) {
+  try {
+    if (!RCFG.feat.invites || !RCFG.pts.invRide || !r.passenger_id) return;
+    const ptg = await tgIdOf(r.passenger_id);
+    if (!ptg) return;
+    const { data: iv } = await db.from('invitees').select('*').eq('tg_id', ptg).maybeSingle();
+    if (!iv || iv.ride_pts || ['old', 'burst', 'spam'].includes(iv.status)) return;
+    if (String(iv.inviter_id) === String(r.driver_id)) return;      // сам себе возил — не считается
+    const { count } = await db.from('rides').select('*', { count: 'exact', head: true }).eq('passenger_id', r.passenger_id).eq('status', 'completed');
+    if ((count || 0) > 1) { await db.from('invitees').update({ ride_pts: true }).eq('tg_id', ptg); return; }   // не первая
+    await db.from('invitees').update({ ride_pts: true }).eq('tg_id', ptg);
+    await invAward(iv.inviter_id, RCFG.pts.invRide, 'inv_ride', iv.name, 'invr:' + ptg);
+  } catch (e) { console.error('invFirstRide', e.message); }
+}
+// личная ссылка водителя в группу его города (создаём один раз)
+async function invLinkFor(me) {
+  const { data: c } = await db.from('cities').select('*').eq('name', me.city).maybeSingle();
+  if (!c || !c.group_id) return { noGroup: true };
+  const { data: l } = await db.from('inv_links').select('*').eq('driver_id', String(me.id)).eq('chat_id', c.group_id).maybeSingle();
+  if (l) return { link: l.link, city: c.name };
+  const code = crypto.randomBytes(6).toString('base64url').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || String(Date.now() % 1e8);
+  const r = await tg('createChatInviteLink', { chat_id: c.group_id, name: 'drv:' + code });
+  if (!r || !r.ok || !r.result) return { error: 'link_failed', why: r && r.description };
+  await db.from('inv_links').insert({ code, driver_id: String(me.id), chat_id: c.group_id, link: r.result.invite_link });
+  return { link: r.result.invite_link, city: c.name };
+}
+async function invStats(driverId) {
+  const rows = await ptAll(() => db.from('invitees').select('status,ride_pts').eq('inviter_id', String(driverId)).order('joined_at'), 5);
+  const { data } = await db.from('points').select('delta').eq('driver_id', String(driverId)).in('reason', ['inv_join', 'inv_ride'])
+    .gte('created_at', ptMonth0()).limit(1000);
+  return {
+    total: rows.filter(x => !['old'].includes(x.status)).length,
+    stayed: rows.filter(x => x.status === 'ok').length,
+    wait: rows.filter(x => x.status === 'wait').length,
+    riding: rows.filter(x => x.ride_pts).length,
+    month: (data || []).reduce((a, x) => a + (x.delta || 0), 0)
+  };
+}
+
+// раз в 6 часов: настройки, новые водители, пауза за месяц без поездок, проверка приглашённых
 async function ranksStart() {
   try {
+    await rankCfgLoad();
     const { error } = await db.from('points').select('id').limit(1);
     if (error) { ranksReady = false; return false; }
     ranksReady = true;
@@ -5017,15 +5300,23 @@ async function ranksStart() {
       if (!has) { await ptBackfill(d.id); silent = true; }   // первый раз — молча, без сообщений водителю
       await rankRecalc(d.id, { silent });
     }
+    await invCheck();
     lbCache.clear();
     return true;
   } catch (e) { console.error('ranksStart', e.message); return ranksReady; }
 }
+let ranksBusy = false;
+async function ranksRun() {
+  if (ranksBusy) return ranksReady;
+  ranksBusy = true;
+  try { return await ranksStart(); } finally { ranksBusy = false; }
+}
 async function ranksLoop() {
-  const ok = await ranksStart();
+  const ok = await ranksRun();
   setTimeout(ranksLoop, ok ? 6 * 3600e3 : 5 * 60e3);     // пока миграции нет — проверяем каждые 5 минут
 }
 setTimeout(ranksLoop, 40 * 1000);
+setInterval(() => { invCheck().catch(() => {}); }, 3600e3);   // приглашённых проверяем раз в час
 
 // доска почёта: водители города по баллам — за этот месяц или за всё время
 const lbCache = new Map();
@@ -5034,8 +5325,7 @@ async function leaderboard(period, city) {
   const c = lbCache.get(key);
   if (c && Date.now() - c.t < 60000) return c.rows;
   const us = await ptAll(() => {
-    let q = db.from('users').select('*')
-      .eq('driver_status', 'approved').eq('is_banned', false);
+    let q = db.from('users').select('*').eq('driver_status', 'approved').or('is_banned.is.null,is_banned.eq.false');
     if (city) q = q.eq('city', city);
     return q.order('id');
   }, 5);
@@ -5063,7 +5353,151 @@ async function rankInfo(me) {
   const board = await leaderboard('month', me.city);
   const pl = board.find(x => String(x.id) === String(me.id));
   return { ...st, month: mrows.reduce((a, x) => a + (x.delta || 0), 0), today: await ptToday(me.id),
-    place: pl ? pl.place : null, of: board.length, hist: hist || [], ranks: RANKS, pt: PT };
+    place: pl ? pl.place : null, of: board.length, hist: hist || [], ranks: ranksList(),
+    pt: { ...RCFG.pts, ...RCFG.lim }, peak: RCFG.peak, feat: RCFG.feat };
+}
+
+/* ---------- панель «Ранги и баллы» (право ranks) ---------- */
+const PT_GROUPS = {
+  ride: ['ride', 'ride_auto', 'ride_short', 'ride_same', 'star', 'start'],
+  cancel: ['cancel', 'cancel_wait', 'cancel_ok', 'cancel_free', 'cancel_noshow', 'cancel_early'],
+  inv: ['inv_join', 'inv_ride', 'inv_spam', 'ref'],
+  adm: ['adjust', 'void'],
+  rank: ['rank_up', 'rank_down', 'rank_pause', 'rank_resume'],
+  pen: ['cancel', 'complaint', 'inv_spam']
+};
+// что поменялось в правилах — коротко, для журнала действий
+function rankCfgDiff(a, b) {
+  const out = [];
+  const lbl = { ride: 'поездка', peak: 'час пик', star: '5★', fast: 'быстрый ответ', ref: 'привёл водителя', invJoin: 'друг вступил',
+    invRide: 'друг поехал', cancel: 'отказ', complaint: 'жалоба', invSpam: 'привёл спамера', dayCap: 'предел в день',
+    perPassenger: 'поездок с одним пассажиром', minMinutes: 'мин. длительность', fastSec: 'быстрый ответ, сек', freeCant: 'бесплатных «не могу» в неделю',
+    noshowMin: 'ждать пассажира, мин', earlyHours: 'отказ заранее, ч', pauseDays: 'пауза через, дней', unpauseRides: 'поездок до снятия паузы',
+    invMonthCap: 'за друзей в месяц', invStayDays: 'друг должен пробыть, дней', invBurst: 'вступлений в час до заморозки',
+    invites: 'баллы за друзей', minRides: 'минимум поездок', offerBadge: 'значок на цене', topList: 'Золото выше в списке' };
+  for (const g of ['pts', 'lim', 'feat']) for (const k of Object.keys(b[g])) if (a[g][k] !== b[g][k]) out.push(`${lbl[k] || k}: ${a[g][k]} → ${b[g][k]}`);
+  if (JSON.stringify(a.peak) !== JSON.stringify(b.peak)) out.push(`часы пик: ${b.peak.map(p => p.join('–')).join(', ') || 'нет'}`);
+  for (const c of RANK_CODES) for (const k of ['pts', 'rides', 'rating', 'cancel', 'days']) {
+    if (a.ranks[c][k] !== b.ranks[c][k]) out.push(`${RANK_NAMES[c]} ${({ pts: 'баллы', rides: 'поездки', rating: 'рейтинг', cancel: 'отказы %', days: 'стаж' })[k]}: ${a.ranks[c][k] ?? '—'} → ${b.ranks[c][k] ?? '—'}`);
+  }
+  return out.join('; ');
+}
+async function rankAdmin(me, act, body) {
+  if (act === 'rank-cfg-get') return { ok: true, ready: ranksReady, cfg: RCFG, def: RANK_DEF, lim: RANK_LIM, names: RANK_NAMES };
+  if (act === 'rank-cfg-set') {
+    const next = rankCfgClean(body.cfg);
+    const diff = rankCfgDiff(RCFG, next);
+    if (!diff) return { ok: true, cfg: RCFG, same: true };
+    const { error } = await db.from('settings').update({ rank_cfg: next }).eq('id', 1);
+    if (error) return { code: 500, ok: false, error: /rank_cfg/.test(error.message) ? 'no_column' : 'save_failed' };
+    RCFG = next; lbCache.clear();
+    await audit(me, 'rank-cfg', null, null, diff);
+    ranksRun().catch(() => {});                          // пересчитать всех по новым правилам
+    return { ok: true, cfg: RCFG, diff };
+  }
+  if (!ranksReady) return { ok: true, missing: true };
+  if (act === 'ranks-recalc') {
+    await audit(me, 'ranks-recalc', null, null, 'пересчёт всех водителей');
+    ranksRun().catch(() => {});
+    return { ok: true };
+  }
+  if (act === 'points-list') {
+    const since = body.since ? new Date(body.since).toISOString() : null;
+    const grp = body.group === 'pen' ? null : (PT_GROUPS[body.group] || null);   // «штрафы» — все минусы, и ручные тоже
+    let ids = null;
+    if (body.driver_id) ids = [String(body.driver_id)];
+    else if (body.q) {
+      const q = String(body.q).trim().slice(0, 40).replace(/[%,()]/g, '');
+      const { data: us } = await db.from('users').select('id').ilike('name', `%${q}%`).limit(50);
+      ids = (us || []).map(u => String(u.id));
+      if (!ids.length) return { ok: true, rows: [], names: {}, sum: { plus: 0, minus: 0, n: 0 } };
+    }
+    const build = () => {
+      let q = db.from('points').select('*');
+      if (since) q = q.gte('created_at', since);
+      if (grp) q = q.in('reason', grp);
+      if (body.group === 'pen') q = q.lt('delta', 0);
+      if (ids) q = q.in('driver_id', ids);
+      return q;
+    };
+    const off = Math.max(0, Number(body.offset) || 0);
+    const { data: rows } = await build().order('id', { ascending: false }).range(off, off + 59);
+    // итоги по фильтру
+    const all = await ptAll(() => { let q = db.from('points').select('delta'); if (since) q = q.gte('created_at', since); if (grp) q = q.in('reason', grp); if (body.group === 'pen') q = q.lt('delta', 0); if (ids) q = q.in('driver_id', ids); return q.order('id'); }, 30);
+    const sum = { plus: 0, minus: 0, n: all.length };
+    all.forEach(x => { if (x.delta > 0) sum.plus += x.delta; else sum.minus += x.delta; });
+    const uids = [...new Set((rows || []).flatMap(x => [x.driver_id, x.peer_id, x.created_by]).filter(Boolean))];
+    const names = {};
+    for (let i = 0; i < uids.length; i += 100) {
+      const { data: us } = await db.from('users').select('id,name,telegram_id,rank_code,rank_paused').in('id', uids.slice(i, i + 100));
+      (us || []).forEach(u => { names[u.id] = { name: u.name, tag: String(u.telegram_id || '').slice(-4), rank: u.rank_code, paused: u.rank_paused }; });
+    }
+    return { ok: true, rows: rows || [], names, sum, more: (rows || []).length === 60 };
+  }
+  if (act === 'points-drivers') {
+    const us = await ptAll(() => {
+      let q = db.from('users').select('*').eq('driver_status', 'approved');
+      if (body.city && body.city !== 'all') q = q.eq('city', body.city);
+      return q.order('id');
+    }, 5);
+    const mon = await ptAll(() => db.from('points').select('driver_id,delta').neq('reason', 'start').gte('created_at', ptMonth0()).order('id'), 100);
+    const m = {}; mon.forEach(x => { m[x.driver_id] = (m[x.driver_id] || 0) + (x.delta || 0); });
+    const rows = us.map(u => ({ id: u.id, name: u.name, tag: String(u.telegram_id || '').slice(-4), city: u.city, car: u.car,
+      rank: u.rank_code || null, paused: !!u.rank_paused, total: u.points_total || 0, month: m[String(u.id)] || 0, banned: !!u.is_banned }))
+      .sort((a, b) => b.total - a.total);
+    return { ok: true, rows };
+  }
+  if (act === 'points-driver') {
+    const id = String(body.driver_id || '');
+    const { data: u } = await db.from('users').select('*').eq('id', id).maybeSingle();
+    if (!u) return { code: 404, ok: false, error: 'no_user' };
+    const info = await rankRecalc(id) || {};
+    const { data: hist } = await db.from('points').select('*').eq('driver_id', id).order('id', { ascending: false }).limit(150);
+    const mrows = await ptAll(() => db.from('points').select('delta').eq('driver_id', id).neq('reason', 'start').gte('created_at', ptMonth0()).order('id'), 10);
+    const inv = await invStats(id);
+    const staff = [...new Set((hist || []).map(x => x.created_by).filter(Boolean))];
+    const names = {};
+    if (staff.length) { const { data: s } = await db.from('users').select('id,name').in('id', staff); (s || []).forEach(x => { names[x.id] = x.name; }); }
+    return { ok: true, user: { id: u.id, name: u.name, tag: String(u.telegram_id || '').slice(-4), city: u.city, car: u.car, rating: u.rating, created_at: u.created_at, driver_status: u.driver_status },
+      info, hist: hist || [], month: mrows.reduce((a, x) => a + (x.delta || 0), 0), inv, names, ranks: ranksList(), feat: RCFG.feat };
+  }
+  if (act === 'points-adjust') {
+    const id = String(body.driver_id || '');
+    const delta = Math.round(Number(body.delta) || 0);
+    const note = String(body.note || '').trim().slice(0, 140);
+    if (!delta || Math.abs(delta) > 100000) return { code: 400, ok: false, error: 'bad_delta' };
+    if (!note) return { code: 400, ok: false, error: 'need_note' };
+    const { data: u } = await db.from('users').select('id,name,telegram_id').eq('id', id).maybeSingle();
+    if (!u) return { code: 404, ok: false, error: 'no_user' };
+    const ok = await ptAdd(id, delta, 'adjust', note, null, { created_by: String(me.id), meta: me.name || null });
+    if (!ok) return { code: 500, ok: false, error: 'save_failed' };
+    await audit(me, 'points-adjust', id, u.name, `${delta > 0 ? '+' : ''}${delta} баллов: ${note}`);
+    const info = await rankRecalc(id);
+    if (body.notify !== false && u.telegram_id) {
+      send(u.telegram_id, `${delta > 0 ? '🎁' : '➖'} <b>${delta > 0 ? 'Вам начислено' : 'У вас списано'} ${Math.abs(delta)} ${plural(Math.abs(delta), ['балл', 'балла', 'баллов'])}</b>\nПричина: ${safeName(note)}`,
+        { reply_markup: { inline_keyboard: [[wa('🏅 Мой ранг', 'rank', { id: u.telegram_id })]] } }).catch(() => {});
+    }
+    return { ok: true, info };
+  }
+  if (act === 'points-void') {
+    const { data: row } = await db.from('points').select('*').eq('id', body.id).maybeSingle();
+    if (!row) return { code: 404, ok: false, error: 'no_row' };
+    if (row.reason === 'void') return { ok: true, already: true };
+    if (/^rank_/.test(row.reason)) return { code: 400, ok: false, error: 'is_event' };
+    await db.from('points').update({ reason: 'void', delta: 0, meta: `${row.reason}|${row.delta}|${String(me.name || '').slice(0, 40)}` }).eq('id', row.id);
+    const { data: u } = await db.from('users').select('name').eq('id', row.driver_id).maybeSingle();
+    await audit(me, 'points-void', row.driver_id, u && u.name, `отменена запись: ${row.reason} ${row.delta > 0 ? '+' : ''}${row.delta}${row.note ? ' · ' + row.note : ''}`);
+    const info = await rankRecalc(row.driver_id);
+    return { ok: true, info };
+  }
+  if (act === 'inv-list') {
+    const { data: rows } = await db.from('invitees').select('*').order('joined_at', { ascending: false }).limit(200);
+    const ids = [...new Set((rows || []).map(x => x.inviter_id))];
+    const names = {};
+    if (ids.length) { const { data: us } = await db.from('users').select('id,name,telegram_id').in('id', ids); (us || []).forEach(u => { names[u.id] = u.name; }); }
+    return { ok: true, rows: rows || [], names };
+  }
+  return { code: 400, ok: false, error: 'unknown' };
 }
 
 setInterval(() => { const t = Date.now(); for (const [k, v] of rateMap) if (t - v.t > 300000) rateMap.delete(k); }, 300000);
@@ -5592,6 +6026,14 @@ http.createServer(async (req, res) => {
       if (me.driver_status !== 'approved') return json(res, 200, { ok: true, notDriver: true });
       return json(res, 200, { ok: true, ...(await rankInfo(me)) });
     }
+    if (req.url === '/api/invite') {
+      if (!ranksReady) return json(res, 200, { ok: true, missing: true });
+      if (me.driver_status !== 'approved') return json(res, 200, { ok: true, notDriver: true });
+      if (!RCFG.feat.invites) return json(res, 200, { ok: true, off: true });
+      const l = await invLinkFor(me);
+      const stats = await invStats(me.id);
+      return json(res, 200, { ok: true, ...l, stats, cap: RCFG.lim.invMonthCap, join: RCFG.pts.invJoin, ride: RCFG.pts.invRide, stay: RCFG.lim.invStayDays });
+    }
     if (req.url === '/api/leaderboard') {
       if (!ranksReady) return json(res, 200, { ok: true, missing: true });
       const period = body.period === 'all' ? 'all' : 'month';
@@ -5879,6 +6321,13 @@ http.createServer(async (req, res) => {
           details: 'нет права на раздел ' + (ACT_PERM[act] || 'владельца')
         });
         return json(res, 403, { error: 'no_perm', need: ACT_PERM[act] || 'owner' });
+      }
+
+      // ранги и баллы: правила, журнал баллов, ручные начисления
+      if (/^(rank-|points-|ranks-|inv-list$)/.test(String(act || ''))) {
+        const r = await rankAdmin(me, act, body);
+        const code = r.code || 200; delete r.code;
+        return json(res, code, r);
       }
 
 // выдать или снять права разделов (только владелец)

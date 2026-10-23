@@ -1286,6 +1286,69 @@ body[data-t="light"] .rk-c-platinum{--mt:#1d9a90;}body[data-t="light"] .rk-c-dia
 .opt2 b{display:block;font-size:14px;font-weight:600;}
 .opt2 span{display:block;font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45;}
 .opt2 em{font-style:normal;font-weight:700;}.opt2 em.g{color:var(--g);}.opt2 em.r{color:var(--red);}
+
+/* ===== v163: приглашения и панель «Ранги и баллы» ===== */
+.rk-inv .st-say{margin:6px 0 10px;}
+.inv-link{font-family:'Roboto Mono',monospace;font-size:13px;background:var(--card2);border-radius:12px;padding:11px 12px;word-break:break-all;user-select:all;-webkit-user-select:all;}
+.inv-btns{display:flex;gap:8px;margin-top:10px;}
+.inv-btns button{flex:1;border-radius:12px;padding:12px;font-family:Golos Text,sans-serif;font-size:13.5px;font-weight:700;cursor:pointer;border:none;}
+.inv-btns .c{background:transparent;border:1px solid var(--line2);color:var(--ink);}
+.inv-btns .o{background:var(--g);color:var(--onac,#04140a);}
+.inv-st{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px;}
+.inv-st div,.pj-sum div,.pj-ranks div{background:var(--card2);border-radius:12px;padding:9px 10px;min-width:0;}
+.inv-st b,.pj-sum b{display:block;font-size:18px;font-weight:700;}
+.inv-st span,.pj-sum span{display:block;font-size:11.5px;color:var(--dim2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pj-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 18px 12px;}
+.sheet .pj-sum{margin:12px 0 0;}
+.pj-sum b.p,.pj-kv b.p,.pj-row .v.p{color:var(--g);}.pj-sum b.m,.pj-kv b.m,.pj-row .v.m{color:var(--red);}
+.pj-ranks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 18px 10px;}
+.pj-ranks div{display:flex;align-items:center;gap:8px;}
+.pj-ranks i{font-style:normal;display:flex;flex-direction:column;min-width:0;}
+.pj-ranks b{font-size:16px;font-weight:700;line-height:1.1;}
+.pj-ranks span{font-size:11px;color:var(--dim2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pj-search{display:flex;gap:8px;margin:0 18px 12px;}
+.pj-search input{flex:1;min-width:0;background:var(--surf);border:1px solid var(--line2);border-radius:12px;padding:11px 12px;color:var(--ink);font-family:Golos Text,sans-serif;font-size:14px;}
+.pj-search button{background:var(--surf);border:1px solid var(--line2);border-radius:12px;padding:0 14px;color:var(--ink);font-family:Golos Text,sans-serif;font-weight:600;font-size:13.5px;cursor:pointer;}
+.pj-list{padding-top:6px;padding-bottom:6px;}
+.pj-row{display:flex;align-items:center;gap:11px;padding:11px 0;border-top:1px solid var(--line);cursor:pointer;}
+.pj-list .pj-row:first-child{border-top:none;}
+.pj-row .t{flex:1;min-width:0;}
+.pj-row .t b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pj-row .t>span{display:block;font-size:12px;color:var(--dim2);margin-top:2px;line-height:1.35;}
+.pj-row .t>span.w{color:var(--ink);font-size:12.5px;}
+.pj-row .t>span.d{font-size:11px;}
+.pj-row .v{font-family:'Roboto Mono',monospace;font-weight:700;font-size:14px;color:var(--dim2);flex-shrink:0;}
+.pj-row .v2{text-align:right;flex-shrink:0;}
+.pj-row .v2 b{display:block;font-family:'Roboto Mono',monospace;font-size:14px;}
+.pj-row .v2 small{display:block;font-size:11px;color:var(--dim2);margin-top:2px;}
+.pj-more{display:block;width:calc(100% - 36px);margin:0 18px 16px;padding:13px;border-radius:14px;background:var(--surf);border:1px solid var(--line2);color:var(--ink);font-family:Golos Text,sans-serif;font-weight:600;font-size:14px;cursor:pointer;}
+.pj-kv{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:13.5px;}
+.pj-kv span{color:var(--dim);flex-shrink:0;}.pj-kv b{text-align:right;font-weight:600;min-width:0;word-break:break-word;}
+.pjd-top{display:flex;align-items:center;gap:12px;}
+.pjd-top h3{margin:0 0 2px;}
+.pj-adj{display:flex;flex-direction:column;gap:8px;}
+.pj-sign{display:flex;gap:4px;background:var(--surf);border-radius:12px;padding:4px;}
+.pj-sign div{flex:1;text-align:center;padding:9px 4px;border-radius:9px;font-size:13.5px;font-weight:600;color:var(--dim);cursor:pointer;}
+.pj-sign div.on{background:var(--g);color:var(--onac,#04140a);}
+.pj-sign div.on.m{background:var(--red);color:#fff;}
+.pj-adj input:not([type=checkbox]){background:var(--surf);border:1px solid var(--line2);border-radius:12px;padding:11px 12px;color:var(--ink);font-family:Golos Text,sans-serif;font-size:14px;}
+.pj-chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);}
+.pj-chk input{accent-color:var(--g);width:18px;height:18px;}
+.pj-save{border:none;border-radius:12px;padding:13px;font-weight:700;font-size:14px;background:var(--g);color:var(--onac,#04140a);cursor:pointer;font-family:Golos Text,sans-serif;}
+.pj-x{background:none;border:1px solid var(--line2);border-radius:8px;color:var(--dim);width:28px;height:28px;flex-shrink:0;cursor:pointer;margin-left:6px;}
+.pj-tg{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--line);}
+.st-ct+.pj-tg{border-top:none;}
+.pj-tg b{display:block;font-size:14px;font-weight:600;}.pj-tg span{display:block;font-size:12px;color:var(--dim2);margin-top:2px;}
+.pj-f{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--line);}
+.st-ct+.pj-f{border-top:none;}
+.pj-f .l{flex:1;min-width:0;font-size:13.5px;line-height:1.35;}
+.pj-f .l small{display:block;font-size:11px;color:var(--dim2);margin-top:2px;}
+.pj-num{width:76px;flex-shrink:0;background:var(--card2);border:1px solid var(--line2);border-radius:10px;padding:9px 10px;color:var(--ink);font-family:'Roboto Mono',monospace;font-size:14px;text-align:right;}
+.pj-neg{font-family:'Roboto Mono',monospace;color:var(--dim);font-size:14px;flex-shrink:0;}
+.pj-actions{display:flex;gap:8px;margin:4px 18px 12px;}
+.pj-actions button{flex:1;border-radius:14px;padding:14px;font-family:Golos Text,sans-serif;font-weight:700;font-size:14px;cursor:pointer;border:none;}
+.pj-actions .c{background:transparent;border:1px solid var(--line2);color:var(--dim);}
+.pj-actions .o{background:var(--g);color:var(--onac,#04140a);}
 </style>
 </head>
 <body>
@@ -2389,7 +2452,7 @@ async function openRide(){
  m.innerHTML=`<div class="wait"><div class="bea"><i></i><i></i><i></i><b></b></div><h3>${r.target_driver_id?'Ждём ответ водителя':'Ищем свободных'}</h3><p>${esc(r.from_address)} → ${esc(r.to_address)}</p>${r.passenger_price?`<div class="mypr">Ваша цена: <b>${r.passenger_price} ₽</b></div>`:''}${r.comment?`<div class="mycom">💬 ${esc(r.comment)}</div>`:''}<div class="cd" id="rcd"></div></div><div class="list">${(offs&&offs.length)?offs.map(o=>{
   const same=r.passenger_price&&Number(o.price)===Number(r.passenger_price);
   const less=r.passenger_price&&Number(o.price)<Number(r.passenger_price);
-  return `<div class="card"><div class="ava">${DAV[o.driver_id]?`<img src="${esc(DAV[o.driver_id])}" alt="">`:(esc(o.driver_name)[0]||'?')}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div>${same?'<div class="okpr">согласен на вашу цену</div>':less?'<div class="okpr">дешевле вашей цены</div>':''}</div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}',${o.price})">Принять</button></div></div>`;
+  return `<div class="card"><div class="ava">${DAV[o.driver_id]?`<img src="${esc(DAV[o.driver_id])}" alt="">`:(esc(o.driver_name)[0]||'?')}</div><div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}${rkOffer(o.driver_id)}</div><div class="sub">${esc(o.car)||'—'}</div>${same?'<div class="okpr">согласен на вашу цену</div>':less?'<div class="okpr">дешевле вашей цены</div>':''}</div><div style="text-align:right"><div class="price">${o.price} ₽</div><button class="pick" style="margin-top:6px" onclick="accept('${o.id}','${o.driver_id}',${o.price})">Принять</button></div></div>`;
  }).join(''):'<div class="empty">Ждём предложений по цене…</div>'}</div><div style="padding:0 18px 24px"><button class="btn dang" onclick="cancelRide()">Отменить заявку</button></div>`;
  startCd(r.created_at);
 }
@@ -2661,9 +2724,9 @@ async function loadDrvAvatars(ids){
  if(!need.length)return;
  need.forEach(id=>{DAV[id]=null;});
  try{
-  const{data}=await db.from('users').select('id,avatar').in('id',need);
+  const{data}=await db.from('users').select('*').in('id',need);
   let ch=false;
-  (data||[]).forEach(u=>{if(u.avatar){DAV[u.id]=u.avatar;ch=true;}});
+  (data||[]).forEach(u=>{if(u.avatar){DAV[u.id]=u.avatar;ch=true;}if(u.rank_code){DRK[u.id]={rank:u.rank_code,paused:!!u.rank_paused};ch=true;}});
   if(ch&&role==='passenger'&&pTab==='ride')openRide();
  }catch(e){}
 }
@@ -2809,7 +2872,7 @@ async function loadPlanOffers(r){
  }
  box.innerHTML=`<div class="sec" style="padding-left:0">Предложения · ${offs.length}</div>`+
   offs.map(o=>`<div class="card" style="margin:0 0 8px"><div class="ava">${esc(o.driver_name)[0]||'?'}</div>
-   <div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}</div><div class="sub">${esc(o.car)||'—'}</div></div>
+   <div style="flex:1;min-width:0"><div class="nm">${esc(o.driver_name)}${rkOffer(o.driver_id)}</div><div class="sub">${esc(o.car)||'—'}</div></div>
    <div style="text-align:right"><div class="price">${o.price} ₽</div>
    <button class="pick" style="margin-top:6px" onclick="acceptPlan('${o.id}','${o.driver_id}',${o.price},'${r.id}')">Принять</button></div></div>`).join('');
 }
@@ -3112,15 +3175,24 @@ function closeChat(){
 
 
 /* ===== v162: ранги и баллы водителей ===== */
+/* v163: правила из настроек, приглашения, панель владельца «Ранги и баллы» */
 const RK=[['bronze','Бронза'],['silver','Серебро'],['gold','Золото'],['platinum','Платина'],['diamond','Алмаз']];
 const RK_NAME=Object.fromEntries(RK);
 const RK_GEN={bronze:'Бронзы',silver:'Серебра',gold:'Золота',platinum:'Платины',diamond:'Алмаза'},RK_ACC={bronze:'Бронзу',silver:'Серебро',gold:'Золото',platinum:'Платину',diamond:'Алмаз'};
 const RK_I=Object.fromEntries(RK.map((r,i)=>[r[0],i]));
 const RK_MON=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
 // что даёт каждый ранг — только то, что уже работает
-const RK_GIVE={bronze:['Значок на вашей карточке у пассажиров','Метка «Бомбила Бронза» в группе города'],silver:['Метка «Бомбила Серебро»'],gold:['Выше в списке «Свободные водители»','Метка «Бомбила Золото»'],platinum:['Ещё выше в списке','Метка «Бомбила Платина»'],diamond:['В самом верху списка','Метка «Бомбила Алмаз»']};
+function rkGive(code){
+ const g={bronze:['Значок на вашей карточке у пассажиров','Метка «Бомбила Бронза» в группе города'],silver:['Метка «Бомбила Серебро»'],gold:['Метка «Бомбила Золото»'],platinum:['Метка «Бомбила Платина»'],diamond:['Метка «Бомбила Алмаз»']}[code].slice();
+ if(rkFeat('offerBadge')&&code==='bronze')g.splice(1,0,'Звание видно пассажиру рядом с вашей ценой');
+ if(rkFeat('topList')){if(code==='gold')g.unshift('Выше в списке «Свободные водители»');if(code==='platinum')g.unshift('Ещё выше в списке');if(code==='diamond')g.unshift('В самом верху списка');}
+ return g;
+}
 const RK_OK='<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',RK_NO='<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
 const rkNum=n=>String(n).replace('.',',');
+// настройки рангов — из settings.rank_cfg (меняет владелец), пока пусто — всё включено
+const rkCfg=()=>(typeof SETTINGS!=='undefined'&&SETTINGS&&SETTINGS.rank_cfg)||{};
+const rkFeat=k=>{const f=rkCfg().feat;return !f||f[k]===undefined?true:!!f[k];};
 // значок ранга: медаль, у Алмаза — камень; серый — на паузе
 function rkBadge(code,size,gray){
  size=size||40;
@@ -3135,7 +3207,10 @@ function rkPill(code,paused){
  return `<span class="rkp ${paused?'rk-gray':'rk-c-'+code}">${rkBadge(code,12,paused)}${RK_NAME[code]}</span>`;
 }
 // вес для списка «Свободные водители»: Золото и выше — наверх
-const rkWeight=d=>d&&d.rank_code&&!d.rank_paused&&RK_I[d.rank_code]>=2?RK_I[d.rank_code]:0;
+const rkWeight=d=>rkFeat('topList')&&d&&d.rank_code&&!d.rank_paused&&RK_I[d.rank_code]>=2?RK_I[d.rank_code]:0;
+// звание на предложении цены (данные — из loadDrvAvatars)
+const DRK={};
+const rkOffer=id=>rkFeat('offerBadge')&&DRK[id]&&!DRK[id].paused?rkPill(DRK[id].rank,false):'';
 
 let rkSeg='me',rkTok=0,lbPer='month';
 function rkGo(s){rkSeg=s;rankView(document.getElementById('main'));}
@@ -3155,19 +3230,20 @@ async function rankView(m){
  const j=await api('/api/rank',{});
  if(tok!==rkTok||role!=='driver'||dTab!=='rank')return;
  box.innerHTML=rkMeHTML(j);
+ if(j&&!j.error&&!j.missing&&!j.notDriver&&(!j.feat||j.feat.invites!==false))rkInvLoad(tok);
 }
 function rkMeHTML(j){
  if(!j||j.error)return '<div class="empty"><b>Не удалось загрузить</b>Проверьте интернет и откройте ещё раз.</div>';
  if(j.missing)return '<div class="empty"><b>Ранги скоро заработают</b>Загляните чуть позже.</div>';
  if(j.notDriver)return '<div class="empty"><b>Ранги — для водителей</b>Появятся после проверки документов.</div>';
- const R=j.ranks||[],PTx=j.pt||{};
+ const R=j.ranks||[],X=j.pt||{},F=j.feat||{},minR=F.minRides!==false;
  const i=RK_I[j.rank]!=null?RK_I[j.rank]:-1;
  const cur=i>=0?R[i]:null,nxt=R[i+1]||null,total=j.total||0;
  const from=cur?cur.pts:0;
  const pct=nxt?Math.max(2,Math.min(100,Math.round((total-from)/Math.max(1,nxt.pts-from)*100))):100;
  const mon=RK_MON[new Date().getMonth()];
  const sg=n=>(n>0?'+':n<0?'−':'')+stFmt(Math.abs(n||0));
- const left=Math.max(0,(PTx.unpauseRides||5)-(j.sincePause||0));
+ const left=Math.max(0,(X.unpauseRides||5)-(j.sincePause||0));
  // главное
  let h=`<div class="rk-hero">
   <div class="rk-top">${rkBadge(j.rank,56,j.paused)}<div><b>${cur?cur.name:'Пока без ранга'}</b><span>${cur?(i+1)+'-й ранг из 5':'первый ранг — Бронза'}${j.paused?' · на паузе':''}</span></div></div>
@@ -3176,57 +3252,112 @@ function rkMeHTML(j){
   <div class="rk-next">${total<nxt.pts?`до «${RK_GEN[nxt.code]}» — <b>${stFmt(nxt.pts-total)} ${plural(nxt.pts-total,['балл','балла','баллов'])}</b>`:`баллов на «${RK_ACC[nxt.code]}» хватает — <b>остальные условия ниже</b>`}</div>`
   :'<div class="rk-next"><b>Это высший ранг.</b> Дальше — только держать уровень.</div>'}
   ${j.paused?`<div class="rk-pause">Больше месяца не было поездок, поэтому значок серый и метка в группе обычная. Сделайте ещё <b>${left} ${plural(left,['поездку','поездки','поездок'])}</b> — всё вернётся.</div>`:''}
-  <div class="rk-mini"><div><b>${sg(j.month)}</b><span>за ${mon}</span></div><div><b>${j.today||0}<small> из ${PTx.dayCap||40}</small></b><span>сегодня</span></div><div><b>${j.place?j.place+'<small> из '+(j.of||j.place)+'</small>':'—'}</b><span>место</span></div></div>
+  <div class="rk-mini"><div><b>${sg(j.month)}</b><span>за ${mon}</span></div><div><b>${j.today||0}${X.dayCap?`<small> из ${X.dayCap}</small>`:''}</b><span>сегодня</span></div><div><b>${j.place?j.place+'<small> из '+(j.of||j.place)+'</small>':'—'}</b><span>место</span></div></div>
  </div>`;
  // условия следующего ранга
  if(nxt){
   const it=[[total>=nxt.pts,`${stFmt(nxt.pts)} баллов`,`сейчас ${stFmt(total)}`]];
+  if(minR&&nxt.rides)it.push([(j.rides||0)>=nxt.rides,`${stFmt(nxt.rides)} ${plural(nxt.rides,['поездка','поездки','поездок'])}`,`засчитано ${stFmt(j.rides||0)}`]);
   if(nxt.rating)it.push([(j.rating||5)>=nxt.rating,`Рейтинг от ${rkNum(nxt.rating)}`,`сейчас ${rkNum(Number(j.rating||5).toFixed(1))}`]);
   if(nxt.cancel!=null){const all=(j.done90||0)+(j.canc90||0);it.push([(j.cancelPct||0)<nxt.cancel,`Отказов меньше ${nxt.cancel}%`,all?`сейчас ${rkNum(j.cancelPct||0)}% — ${j.pen90||0} из ${all} ${plural(all,['заказа','заказов','заказов'])} за 3 месяца`:'за 3 месяца отказов не было']);}
-  if(nxt.days){const mo=Math.floor((j.days||0)/30);it.push([(j.days||0)>=nxt.days,nxt.days>=365?'В сервисе от года':'В сервисе от полугода',mo?`сейчас ${mo} ${plural(mo,['месяц','месяца','месяцев'])}`:'вы с нами меньше месяца']);}
+  if(nxt.days){const mo=Math.floor((j.days||0)/30);it.push([(j.days||0)>=nxt.days,nxt.days>=365?'В сервисе от года':nxt.days>=180?'В сервисе от полугода':`В сервисе от ${nxt.days} дней`,mo?`сейчас ${mo} ${plural(mo,['месяц','месяца','месяцев'])}`:'вы с нами меньше месяца']);}
   h+=`<div class="st-card"><div class="st-ct"><h3>${rkBadge(nxt.code,22)}&nbsp;Чтобы получить «${RK_ACC[nxt.code]}»</h3></div>
   ${it.map(([ok,t,s])=>`<div class="rk-req"><span class="ic ${ok?'ok':'no'}">${ok?RK_OK:RK_NO}</span><div class="t"><b>${t}</b><span>${s}</span></div></div>`).join('')}</div>`;
  }
- // как получить
+ // приглашения — догружаются отдельно
+ if(F.invites!==false)h+='<div id="rkinv"></div>';
+ // как получить — цифры из настроек
+ const pk=(j.peak||[]).map(p=>`с ${p[0]} до ${p[1]}`).join(' и ');
+ const row=(t,s,v,neg)=>v?`<div class="rk-pt"><span>${t}${s?`<small>${s}</small>`:''}</span><b class="${neg?'m':'p'}">${neg?'−'+Math.abs(v):'+'+v}</b></div>`:'';
  h+=`<div class="st-card"><div class="st-ct"><h3>Как получить баллы</h3></div>
-  <div class="rk-pt"><span>Поездка завершена</span><b class="p">+5</b></div>
-  <div class="rk-pt"><span>В часы пик<small>с 7 до 10 и с 17 до 21</small></span><b class="p">+1</b></div>
-  <div class="rk-pt"><span>Пассажир поставил 5★</span><b class="p">+1</b></div>
-  <div class="rk-pt"><span>Ответили на заявку быстрее минуты</span><b class="p">+1</b></div>
-  <div class="rk-pt"><span>Привели водителя<small>когда он сделает 10 поездок</small></span><b class="p">+10</b></div>
-  <div class="rk-pt"><span>Отказ от взятого заказа<small>по договорённости с пассажиром, первый «не могу приехать» за неделю и «пассажир не вышел» — без штрафа</small></span><b class="m">−15</b></div>
-  <div class="rk-pt"><span>Подтверждённая жалоба</span><b class="m">−30</b></div>
-  <div class="rk-note">Больше 8 баллов за поездку не бывает, в день — не больше 40. С одним пассажиром засчитываем 2 поездки в день. Поездки короче 5 минут и закрытые автоматически — без баллов, поэтому нажимайте «Завершить поездку».<br><br>Месяц без поездок — ранг на паузе, пока не сделаете 5 поездок.</div>
+  ${row('Поездка завершена','',X.ride)}
+  ${pk?row('В часы пик',pk,X.peak):''}
+  ${row('Пассажир поставил 5★','',X.star)}
+  ${row(X.fastSec>=60&&X.fastSec%60===0?`Ответили на заявку быстрее ${X.fastSec===60?'минуты':X.fastSec/60+' мин'}`:`Ответили на заявку быстрее ${X.fastSec||60} сек`,'',X.fast)}
+  ${F.invites!==false?row('Друг вступил в группу',`по вашей ссылке и пробыл там ${X.invStayDays||7} ${plural(X.invStayDays||7,['день','дня','дней'])}`,X.invJoin):''}
+  ${F.invites!==false?row('Друг сделал первую поездку','с любым водителем, кроме вас',X.invRide):''}
+  ${row('Привели водителя','когда он сделает 10 поездок',X.ref)}
+  ${row('Отказ от взятого заказа','по договорённости с пассажиром, первый «не могу приехать» за неделю и «пассажир не вышел» — без штрафа',X.cancel,true)}
+  ${row('Подтверждённая жалоба','',X.complaint,true)}
+  ${F.invites!==false?row('Приглашённого забанили за спам','',X.invSpam,true):''}
+  <div class="rk-note">${[
+   X.dayCap?`За поездки — не больше ${X.dayCap} ${plural(X.dayCap,['балла','баллов','баллов'])} в день.`:'',
+   `С одним пассажиром засчитываем ${X.perPassenger||2} ${plural(X.perPassenger||2,['поездку','поездки','поездок'])} в день.`,
+   `Поездки короче ${X.minMinutes||5} минут и закрытые автоматически — без баллов, поэтому нажимайте «Завершить поездку».`,
+   F.invites!==false&&X.invMonthCap?`За друзей — не больше ${X.invMonthCap} в месяц.`:''].filter(Boolean).join(' ')}<br><br>Больше ${X.pauseDays||30} дней без поездок — ранг на паузе, пока не сделаете ${X.unpauseRides||5} ${plural(X.unpauseRides||5,['поездку','поездки','поездок'])}.</div>
  </div>`;
  // история
  const hist=j.hist||[];
  h+=`<div class="st-card"><div class="st-ct"><h3>За что начислено</h3>${hist.length?'<span>последние</span>':''}</div>
-  ${hist.length?hist.slice(0,25).map(rkHistRow).join(''):'<div class="st-empty">Пока ничего. Баллы появятся после первой поездки.</div>'}</div>`;
+  ${hist.length?hist.slice(0,25).map(x=>rkHistRow(x)).join(''):'<div class="st-empty">Пока ничего. Баллы появятся после первой поездки.</div>'}</div>`;
  // все ранги
  h+=`<div class="st-card"><div class="st-ct"><h3>Все ранги</h3><span>каждый следующий — сложнее</span></div>
-  ${R.map((x,k)=>{
-   const need=[stFmt(x.pts)+' баллов'];
-   if(x.rating)need.push('рейтинг от '+rkNum(x.rating));
-   if(x.cancel!=null)need.push('отказов меньше '+x.cancel+'%');
-   if(x.days)need.push(x.days>=365?'в сервисе от года':'в сервисе от полугода');
-   return `<div class="rk-l ${k===i?'cur':''}">${rkBadge(x.code,36,k===i&&j.paused)}<div class="t"><b>${x.name}${k===i?' <em>вы здесь</em>':''}</b><div class="need">${need.join(' · ')}</div><div class="give">${(RK_GIVE[x.code]||[]).map(g=>'<i>✓</i>'+g).join('<br>')}</div></div></div>`;
-  }).join('')}
+  ${R.map((x,k)=>`<div class="rk-l ${k===i?'cur':''}">${rkBadge(x.code,36,k===i&&j.paused)}<div class="t"><b>${x.name}${k===i?' <em>вы здесь</em>':''}</b><div class="need">${rkNeed(x,minR)}</div><div class="give">${rkGive(x.code).map(g=>'<i>✓</i>'+g).join('<br>')}</div></div></div>`).join('')}
  </div><div style="height:16px"></div>`;
  return h;
 }
-const RK_H={ride:'Поездка',ride_auto:'Поездку закрыл бот',ride_short:'Поездка короче 5 минут',ride_same:'Третья поездка с этим пассажиром за день',star:'Пассажир поставил 5★',ref:'Приглашённый водитель сделал 10 поездок',
- cancel:'Отказ от взятого заказа',cancel_wait:'Отмена по договорённости',cancel_ok:'Отмена по договорённости',cancel_free:'Не смог приехать',cancel_noshow:'Пассажир не вышел',cancel_early:'Отказ заранее',complaint:'Подтверждённая жалоба',start:'Баллы за прошлые поездки'};
-function rkHistRow(x){
+function rkNeed(x,minR){
+ const need=[stFmt(x.pts)+' баллов'];
+ if(minR&&x.rides)need.push(stFmt(x.rides)+' '+plural(x.rides,['поездка','поездки','поездок']));
+ if(x.rating)need.push('рейтинг от '+rkNum(x.rating));
+ if(x.cancel!=null)need.push('отказов меньше '+x.cancel+'%');
+ if(x.days)need.push(x.days>=365?'в сервисе от года':x.days>=180?'в сервисе от полугода':'в сервисе от '+x.days+' дней');
+ return need.join(' · ');
+}
+// приглашения: личная ссылка и счётчики
+async function rkInvLoad(tok){
+ const j=await api('/api/invite',{});
+ const box=document.getElementById('rkinv');
+ if(!box||tok!==rkTok)return;
+ if(!j||j.error||j.missing||j.off||j.notDriver){box.innerHTML='';return;}
+ if(j.noGroup){box.innerHTML=`<div class="st-card"><div class="st-ct"><h3>Пригласить друзей</h3></div><div class="st-empty">В вашем городе пока нет группы — приглашения появятся, когда она будет.</div></div>`;return;}
+ if(!j.link){box.innerHTML=`<div class="st-card"><div class="st-ct"><h3>Пригласить друзей</h3></div><div class="st-empty">Не получилось сделать ссылку. Попробуйте позже.</div></div>`;return;}
+ const s=j.stats||{};
+ box.innerHTML=`<div class="st-card rk-inv"><div class="st-ct"><h3>Пригласить друзей в группу</h3><span>${s.month||0} из ${j.cap||30} за месяц</span></div>
+  <div class="st-say">+${j.join||1} — друг вступил и пробыл в группе ${j.stay||7} ${plural(j.stay||7,['день','дня','дней'])} · <b>+${j.ride||10} — сделал первую поездку</b></div>
+  <div class="inv-link" id="invlink">${esc(j.link)}</div>
+  <div class="inv-btns"><button class="c" onclick="invCopy()">Скопировать</button><button class="o" onclick="invShare()">Отправить другу</button></div>
+  <div class="inv-st"><div><b>${s.total||0}</b><span>пришли</span></div><div><b>${s.stayed||0}</b><span>остались</span></div><div><b>${s.riding||0}</b><span>уже ездят</span></div></div>
+ </div>`;
+ window.__invLink=j.link;
+}
+function invCopy(){
+ const t=window.__invLink||'';
+ const done=()=>T('Ссылка скопирована');
+ try{navigator.clipboard.writeText(t).then(done,()=>invSelect());}catch(e){invSelect();}
+}
+function invSelect(){const el=document.getElementById('invlink');if(!el)return;const r=document.createRange();r.selectNodeContents(el);const s=getSelection();s.removeAllRanges();s.addRange(r);T('Выделили ссылку — нажмите «Копировать»');}
+function invShare(){
+ const t=window.__invLink||'';
+ const u='https://t.me/share/url?url='+encodeURIComponent(t)+'&text='+encodeURIComponent('Заходи в группу «Бомбилы» нашего города — там вызывают такси и доставку');
+ try{if(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.openTelegramLink){Telegram.WebApp.openTelegramLink(u);return;}}catch(e){}
+ window.open(u,'_blank');
+}
+const RK_H={ride:'Поездка',ride_auto:'Поездку закрыл бот',ride_short:'Поездка короче нормы',ride_same:'Лишняя поездка с тем же пассажиром за день',star:'Пассажир поставил 5★',ref:'Приглашённый водитель сделал 10 поездок',
+ cancel:'Отказ от взятого заказа',cancel_wait:'Отмена по договорённости',cancel_ok:'Отмена по договорённости',cancel_free:'Не смог приехать',cancel_noshow:'Пассажир не вышел',cancel_early:'Отказ заранее',complaint:'Подтверждённая жалоба',start:'Баллы за прошлые поездки',
+ inv_join:'Друг вступил в группу',inv_ride:'Друг сделал первую поездку',inv_spam:'Приглашённый оказался спамером',adjust:'Начислено администратором',void:'Отменено администратором',
+ rank_up:'Новое звание',rank_down:'Звание снижено',rank_pause:'Звание на паузе',rank_resume:'Звание снова действует'};
+function rkTitle(x){
  const tg=String(x.meta||'').split(',');
- let t=RK_H[x.reason]||'Баллы';
- if(x.reason==='ride'){const a=[];if(tg.includes('peak'))a.push('час пик');if(tg.includes('fast'))a.push('ответ за минуту');if(a.length)t+=' · '+a.join(' · ');}
- const why={ride_auto:'без баллов — нажимайте «Завершить»',ride_short:'без баллов',ride_same:'без баллов',cancel_wait:'ждём ответа пассажира',cancel_ok:'пассажир подтвердил — без штрафа',cancel_free:'первый раз за неделю — без штрафа',cancel_noshow:'ждали больше 10 минут — без штрафа',cancel_early:'больше чем за 2 часа — без штрафа'}[x.reason]
-  ||(x.reason==='cancel'?({denied:'пассажир не подтвердил договорённость',cant:'не смог приехать',noshow_early:'ждали меньше 10 минут',other:'другая причина'}[x.meta]||''):'')
-  ||(x.reason==='ride'&&tg.includes('cap')?'дневной предел 40':'');
+ if(x.reason==='ride'){const a=[];if(tg.includes('peak'))a.push('час пик');if(tg.includes('fast'))a.push('быстрый ответ');return 'Поездка'+(a.length?' · '+a.join(' · '):'');}
+ if(x.reason==='adjust')return (x.delta<0?'Списано':'Начислено')+' администратором';
+ if(x.reason==='void'){const o=String(x.meta||'').split('|');return 'Отменено: '+(RK_H[o[0]]||o[0]||'запись').toLowerCase()+(o[1]&&o[1]!=='0'?` (${Number(o[1])>0?'+':''}${o[1]})`:'');}
+ if(/^rank_/.test(x.reason)&&x.note)return x.note[0].toUpperCase()+x.note.slice(1);
+ return RK_H[x.reason]||'Баллы';
+}
+function rkWhy(x){
+ const tg=String(x.meta||'').split(',');
+ return ({ride_auto:'без баллов — нажимайте «Завершить»',ride_short:'без баллов',ride_same:'без баллов',cancel_wait:'ждём ответа пассажира',cancel_ok:'пассажир подтвердил — без штрафа',cancel_free:'первый раз за неделю — без штрафа',cancel_noshow:'ждали пассажира — без штрафа',cancel_early:'заранее — без штрафа'})[x.reason]
+  ||(x.reason==='cancel'?({denied:'пассажир не подтвердил договорённость',cant:'не смог приехать',noshow_early:'ждали меньше положенного',other:'другая причина',agreed:'по договорённости'})[x.meta]||'':'')
+  ||(x.reason==='ride'&&tg.includes('cap')?'дневной предел':'')
+  ||((x.reason==='inv_join'||x.reason==='inv_ride')&&x.meta==='cap'?'лимит за месяц':'')
+  ||(x.reason==='void'?'отменил '+(String(x.meta||'').split('|')[2]||'администратор'):'');
+}
+function rkHistRow(x){
  const d=new Date(x.created_at).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
- const sub=[d,why,esc(x.note||'')].filter(Boolean).join(' · ');
+ const sub=[d,rkWhy(x),/^rank_/.test(x.reason)?'':esc(x.note||'')].filter(Boolean).join(' · ');
  const v=x.delta||0;
- return `<div class="rk-h"><div class="t"><b>${t}</b><span>${sub}</span></div><span class="v ${v>0?'p':v<0?'m':''}">${v>0?'+'+v:v<0?'−'+(-v):'0'}</span></div>`;
+ return `<div class="rk-h"><div class="t"><b>${rkTitle(x)}</b><span>${sub}</span></div><span class="v ${v>0?'p':v<0?'m':''}">${/^rank_/.test(x.reason)?rkBadge(x.meta,20,x.reason==='rank_pause'):(v>0?'+'+v:v<0?'−'+(-v):'0')}</span></div>`;
 }
 
 // доска почёта — одна разметка для водителя (вкладка) и пассажира (шторка)
@@ -3276,32 +3407,35 @@ function topSheet(){
 let dcRide=null,dcWhy=null;
 const DC_OPTS=[
  ['agreed','Договорились с пассажиром','Не сошлись в цене, пассажир передумал или сам попросил отменить. Пассажиру придёт вопрос «Это так?» — подтвердит, и <em class="g">баллы не спишутся</em>.'],
- ['cant','Не могу приехать','Поломка, пробка, срочное дело. <em class="g">Один раз в неделю — без штрафа</em>, дальше <em class="r">−15</em>.'],
+ ['cant','Не могу приехать','Поломка, пробка, срочное дело. <em class="g">Один раз в неделю — без штрафа</em>, дальше <em class="r">штраф</em>.'],
  ['noshow','Пассажир не вышел, не отвечает','Ждали больше 10 минут после «Я подъехал» — <em class="g">баллы не спишутся</em>.'],
- ['other','Другое','<em class="r">−15 баллов</em>']
+ ['other','Другое','<em class="r">Штраф баллами</em>']
 ];
 function dCancel(rid){
  const r=rid?((typeof dPlanned!=='undefined'?dPlanned:[]).find(x=>x.id===rid)||null):dActive;
  if(!r||!r.id){if(!rid)dGo('inbox');return;}
  dcRide=r;dcWhy=null;dcSheet();
 }
-function dcEarly(r){return !!(r&&r.scheduled_at&&new Date(r.scheduled_at)-Date.now()>2*3600e3);}
+function dcEarly(r){const hrs=(rkCfg().lim&&rkCfg().lim.earlyHours!=null)?rkCfg().lim.earlyHours:2;return !!(r&&r.scheduled_at&&hrs>0&&new Date(r.scheduled_at)-Date.now()>hrs*3600e3);}
 function dcSheet(){
  const r=dcRide;if(!r)return;
  const old=document.getElementById('sh');if(old)old.remove();
  const early=dcEarly(r);
+ const L=rkCfg().lim||{},pen=rkCfg().pts&&rkCfg().pts.cancel!=null?Math.abs(rkCfg().pts.cancel):15,wait=L.noshowMin||10,free=L.freeCant==null?1:L.freeCant;
  const arr=r.arrived_at?new Date(r.arrived_at).getTime():null;
- const waitLeft=arr?Math.ceil((arr+10*60000-Date.now())/60000):null;
- const opts=early?'':DC_OPTS.map(([k,t,s])=>{
-  let dis=false,sub=s;
-  if(k==='noshow'&&!arr){dis=true;sub='Сначала нажмите «Я подъехал» и подождите 10 минут.';}
-  else if(k==='noshow'&&waitLeft>0){dis=true;sub=`Можно будет выбрать через ${waitLeft} мин — ждём пассажира 10 минут после «Я подъехал».`;}
-  return `<div class="opt2 ${dcWhy===k?'on':''} ${dis?'dis':''}"${dis?'':` onclick="dcWhy='${k}';dcSheet()"`}><span class="rd"></span><div><b>${t}</b><span>${sub}</span></div></div>`;
+ const waitLeft=arr?Math.ceil((arr+wait*60000-Date.now())/60000):null;
+ const sub={agreed:DC_OPTS[0][2],cant:free?`Поломка, пробка, срочное дело. <em class="g">${free===1?'Один раз':free+' раза'} в неделю — без штрафа</em>, дальше <em class="r">−${pen}</em>.`:`Поломка, пробка, срочное дело. <em class="r">−${pen} баллов</em>`,
+  noshow:`Ждали больше ${wait} минут после «Я подъехал» — <em class="g">баллы не спишутся</em>.`,other:`<em class="r">−${pen} баллов</em>`};
+ const opts=early?'':DC_OPTS.map(([k,t])=>{
+  let dis=false,s=sub[k];
+  if(k==='noshow'&&!arr){dis=true;s=`Сначала нажмите «Я подъехал» и подождите ${wait} минут.`;}
+  else if(k==='noshow'&&waitLeft>0){dis=true;s=`Можно будет выбрать через ${waitLeft} мин — ждём пассажира ${wait} минут после «Я подъехал».`;}
+  return `<div class="opt2 ${dcWhy===k?'on':''} ${dis?'dis':''}"${dis?'':` onclick="dcWhy='${k}';dcSheet()"`}><span class="rd"></span><div><b>${t}</b><span>${s}</span></div></div>`;
  }).join('');
  const ready=early||dcWhy;
  const m=document.createElement('div');m.className='mask';m.id='sh';
  m.innerHTML=`<div class="sheet" style="max-height:90vh;overflow-y:auto"><h3>Отменить заказ?</h3>
- <div class="s">${early?'До заказа больше 2 часов — пассажир успеет найти другого водителя. <b style="color:var(--g)">Баллы не спишутся.</b>':'Выберите причину — от неё зависит, спишутся ли баллы. Заявка вернётся в общий список.'}</div>
+ <div class="s">${early?`До заказа больше ${L.earlyHours||2} ${plural(L.earlyHours||2,['часа','часов','часов'])} — пассажир успеет найти другого водителя. <b style="color:var(--g)">Баллы не спишутся.</b>`:'Выберите причину — от неё зависит, спишутся ли баллы. Заявка вернётся в общий список.'}</div>
  ${opts}
  <div class="sa"><button class="c" onclick="closeSh()">Не отменять</button><button class="o" style="background:var(--red);color:#fff;${ready?'':'opacity:.45'}" onclick="dCancelYes()">Отменить заказ</button></div></div>`;
  document.getElementById('device').appendChild(m);
@@ -3322,6 +3456,197 @@ async function dCancelYes(){
  if(dActive&&dActive.id===r.id)dActive=null;
  if(typeof dPlanned!=='undefined')dPlanned=dPlanned.filter(x=>x.id!==r.id);
  dcRide=null;closeSh();T(msg);dGo('inbox');
+}
+
+/* ===== панель владельца: «Ещё → Ранги и баллы» ===== */
+let pjTab='log',pjPer='week',pjGrp='all',pjQ='',pjOff=0,pjRows=[],pjNames={},pjSum=null,pjMore=false,pjTok=0,pjDrv=null,pjDrvCity='all',pjCfg=null,pjDef=null;
+const PJ_GRP=[['all','Все'],['ride','Поездки'],['cancel','Отмены'],['inv','Друзья'],['pen','Штрафы'],['adm','Вручную'],['rank','Звания']];
+const PJ_PER=[['today','Сегодня'],['week','Неделя'],['month','Месяц'],['all','Всё']];
+function pjSince(){const n=new Date();if(pjPer==='today'){n.setHours(0,0,0,0);return n.toISOString();}if(pjPer==='week')return new Date(Date.now()-7*864e5).toISOString();if(pjPer==='month')return new Date(Date.now()-30*864e5).toISOString();return null;}
+function finRanks(c){
+ const tabs=[['log','Журнал'],['drv','Водители'],['inv','Друзья'],['cfg','Правила']];
+ c.innerHTML=`<div class="st-per">${tabs.map(([k,l])=>`<div class="${pjTab===k?'on':''}" onclick="pjTab='${k}';finRanks(document.getElementById('fincont'))">${l}</div>`).join('')}</div><div id="pjbox"><div class="st-load">Загрузка…</div></div>`;
+ const b=document.getElementById('pjbox');
+ if(pjTab==='log'){pjOff=0;pjRows=[];return pjLog(b);}
+ if(pjTab==='drv')return pjDrivers(b);
+ if(pjTab==='inv')return pjInv(b);
+ if(pjTab==='cfg')return pjRules(b);
+}
+async function pjLog(b,append){
+ const tok=++pjTok;
+ if(!append){
+  b.innerHTML=`<div class="st-cities">${PJ_PER.map(([k,l])=>`<div class="${pjPer===k?'on':''}" onclick="pjPer='${k}';pjLog(document.getElementById('pjbox'))">${l}</div>`).join('')}</div>
+  <div class="st-cities">${PJ_GRP.map(([k,l])=>`<div class="${pjGrp===k?'on':''}" onclick="pjGrp='${k}';pjLog(document.getElementById('pjbox'))">${l}</div>`).join('')}</div>
+  <div class="pj-search"><input id="pjq" placeholder="Поиск по имени водителя" value="${esc(pjQ)}" onkeydown="if(event.key==='Enter'){pjQ=this.value;pjLog(document.getElementById('pjbox'))}"><button onclick="pjQ=document.getElementById('pjq').value;pjLog(document.getElementById('pjbox'))">Найти</button></div>
+  <div id="pjsum"></div><div class="st-card pj-list" id="pjlist"><div class="st-load">Загрузка…</div></div><div id="pjmore"></div>`;
+  pjOff=0;pjRows=[];pjNames={};
+ }
+ const r=await api('/api/admin',{action:'points-list',since:pjSince(),group:pjGrp==='all'?null:pjGrp,q:pjQ||null,offset:pjOff});
+ if(tok!==pjTok)return;
+ const list=document.getElementById('pjlist');if(!list)return;
+ if(!r||r.error){list.innerHTML='<div class="st-empty">Не удалось загрузить</div>';return;}
+ if(r.missing){list.innerHTML='<div class="st-empty">Ранги ещё не включены: выполните миграцию в Supabase.</div>';return;}
+ pjRows=pjRows.concat(r.rows||[]);Object.assign(pjNames,r.names||{});pjMore=!!r.more;
+ if(r.sum&&!append){pjSum=r.sum;document.getElementById('pjsum').innerHTML=`<div class="pj-sum"><div><b class="p">+${stFmt(r.sum.plus)}</b><span>начислено</span></div><div><b class="m">−${stFmt(Math.abs(r.sum.minus))}</b><span>списано</span></div><div><b>${stFmt(r.sum.n)}</b><span>${plural(r.sum.n,['запись','записи','записей'])}</span></div></div>`;}
+ list.innerHTML=pjRows.length?pjRows.map(pjRow).join(''):'<div class="st-empty">Записей нет — попробуйте другой период или фильтр.</div>';
+ document.getElementById('pjmore').innerHTML=pjMore?`<button class="pj-more" onclick="pjOff+=60;pjLog(document.getElementById('pjbox'),true)">Показать ещё</button>`:'';
+}
+function pjRow(x){
+ const n=pjNames[x.driver_id]||{};
+ const d=new Date(x.created_at).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+ const why=rkWhy(x);
+ const sub=[/^rank_/.test(x.reason)?'':esc(x.note||''),why].filter(Boolean).join(' · ');
+ const v=x.delta||0;
+ return `<div class="pj-row" onclick="pjOpen(${x.id})">${rkBadge(n.rank,24,n.paused)}<div class="t"><b>${esc(n.name)||'Водитель'} <span class="idtag">#${esc(n.tag||'')}</span></b><span class="w">${rkTitle(x)}</span>${sub?`<span>${sub}</span>`:''}<span class="d">${d}</span></div><span class="v ${v>0?'p':v<0?'m':''}">${/^rank_/.test(x.reason)?'':v>0?'+'+v:v<0?'−'+(-v):'0'}</span></div>`;
+}
+function pjOpen(id){
+ const x=pjRows.find(r=>r.id===id);if(!x)return;
+ const n=pjNames[x.driver_id]||{},peer=x.peer_id&&pjNames[x.peer_id],by=(x.created_by&&pjNames[x.created_by])||(x.reason==='adjust'&&x.meta?{name:x.meta}:null);
+ const canVoid=x.reason!=='void'&&!/^rank_/.test(x.reason);
+ closeSh();
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet"><h3>${rkTitle(x)}</h3><div class="s">${new Date(x.created_at).toLocaleString('ru',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})}</div>
+ <div class="pj-kv"><span>Водитель</span><b>${esc(n.name)||'—'} <span class="idtag">#${esc(n.tag||'')}</span></b></div>
+ <div class="pj-kv"><span>Баллы</span><b class="${x.delta>0?'p':x.delta<0?'m':''}">${x.delta>0?'+':''}${x.delta}</b></div>
+ ${x.note?`<div class="pj-kv"><span>${x.reason==='adjust'?'Причина':'Подробно'}</span><b>${esc(x.note)}</b></div>`:''}
+ ${rkWhy(x)?`<div class="pj-kv"><span>Пометка</span><b>${rkWhy(x)}</b></div>`:''}
+ ${peer?`<div class="pj-kv"><span>Пассажир</span><b>${esc(peer.name)}</b></div>`:''}
+ ${by?`<div class="pj-kv"><span>Кто записал</span><b>${esc(by.name)}</b></div>`:''}
+ <div class="sa" style="flex-wrap:wrap"><button class="c" onclick="closeSh()">Закрыть</button><button class="c" onclick="closeSh();drvPtsSheet('${x.driver_id}')">Все баллы водителя</button>
+ ${canVoid?`<button class="o" style="background:var(--red);color:#fff" onclick="pjVoid(${x.id})">Отменить запись</button>`:''}</div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function pjVoid(id,fromDrv){
+ if(!confirm('Отменить эту запись? Баллы пересчитаются, водителю ничего не придёт.'))return;
+ const r=await api('/api/admin',{action:'points-void',id});
+ if(!r||r.error)return T(r&&r.error==='is_event'?'События званий не отменяются':'Не получилось отменить');
+ T('Запись отменена');closeSh();
+ if(fromDrv)return drvPtsSheet(fromDrv);
+ const b=document.getElementById('pjbox');if(b&&pjTab==='log')pjLog(b);
+}
+async function pjDrivers(b){
+ b.innerHTML='<div class="st-load">Загрузка…</div>';
+ const r=await api('/api/admin',{action:'points-drivers',city:pjDrvCity});
+ if(!r||r.error){b.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
+ if(r.missing){b.innerHTML='<div class="empty"><b>Ранги ещё не включены</b>Выполните миграцию в Supabase.</div>';return;}
+ const rows=r.rows||[];
+ const cnt={};rows.forEach(x=>{const k=x.paused?'pause':(x.rank||'none');cnt[k]=(cnt[k]||0)+1;});
+ b.innerHTML=`<div class="st-cities">${[['all','Все города']].concat(CITIES.map(c=>[c,c])).map(([k,l])=>`<div class="${pjDrvCity===k?'on':''}" onclick="pjDrvCity='${esc(k)}';pjDrivers(document.getElementById('pjbox'))">${esc(l)}</div>`).join('')}</div>
+ <div class="pj-ranks">${RK.map(([k,l])=>`<div>${rkBadge(k,22)}<i><b>${cnt[k]||0}</b><span>${l}</span></i></div>`).join('')}<div>${rkBadge(null,22)}<i><b>${cnt.none||0}</b><span>без ранга</span></i></div></div>
+ ${cnt.pause?`<div class="st-cmpnote">ещё ${cnt.pause} на паузе — больше месяца без поездок</div>`:''}
+ <div class="pj-search"><input id="pjdq" placeholder="Найти водителя" oninput="pjDrvFilter(this.value)"></div>
+ <div class="st-card pj-list" id="pjdl">${rows.length?rows.map(x=>`<div class="pj-row" data-n="${esc(String(x.name||'').toLowerCase())} ${esc(x.tag)}" onclick="drvPtsSheet('${x.id}')">${rkBadge(x.rank,26,x.paused)}<div class="t"><b>${esc(x.name)||'Водитель'} <span class="idtag">#${esc(x.tag)}</span></b><span>${x.rank?RK_NAME[x.rank]+(x.paused?' · пауза':''):'без ранга'} · ${esc(x.city)||'—'}${x.banned?' · забанен':''}</span></div><div class="v2"><b>${stFmt(x.total)}</b><small>${x.month?(x.month>0?'+':'−')+stFmt(Math.abs(x.month))+' за месяц':'за месяц 0'}</small></div></div>`).join(''):'<div class="st-empty">Проверенных водителей нет</div>'}</div>
+ <button class="pj-more" onclick="pjRecalc()">Пересчитать всех сейчас</button>`;
+}
+function pjDrvFilter(q){q=String(q||'').toLowerCase().trim();document.querySelectorAll('#pjdl .pj-row').forEach(el=>{el.style.display=!q||el.dataset.n.includes(q)?'':'none';});}
+async function pjRecalc(){
+ const r=await api('/api/admin',{action:'ranks-recalc'});
+ T(r&&r.ok?'Пересчитываю — через минуту обновите':'Не получилось');
+}
+// все баллы одного водителя + начислить/списать вручную
+async function drvPtsSheet(id){
+ closeSh();
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML='<div class="sheet" style="max-height:90vh;overflow-y:auto"><div class="st-load">Загрузка…</div></div>';
+ m.addEventListener('click',e=>{if(e.target===m)closeSh();});
+ document.getElementById('device').appendChild(m);
+ const r=await api('/api/admin',{action:'points-driver',driver_id:id});
+ const sh=m.querySelector('.sheet');if(!document.body.contains(m))return;
+ if(!r||r.error||r.missing){sh.innerHTML=`<h3>Баллы</h3><div class="s">${r&&r.missing?'Ранги ещё не включены: выполните миграцию.':'Не удалось загрузить.'}</div><div class="sa"><button class="c" onclick="closeSh()">Закрыть</button></div>`;return;}
+ pjDrv=r;
+ const u=r.user,I=r.info||{},inv=r.inv||{};
+ const allC=(I.done90||0)+(I.canc90||0);
+ sh.innerHTML=`<div class="pjd-top">${rkBadge(I.rank,46,I.paused)}<div><h3>${esc(u.name)} <span class="idtag">#${esc(u.tag)}</span></h3><div class="s" style="margin:0">${I.rank?RK_NAME[I.rank]+(I.paused?' · на паузе':''):'пока без ранга'} · ${esc(u.city)||'—'}</div></div></div>
+ <div class="pj-sum"><div><b>${stFmt(I.total||0)}</b><span>баллов всего</span></div><div><b class="${r.month<0?'m':'p'}">${r.month>0?'+':r.month<0?'−':''}${stFmt(Math.abs(r.month||0))}</b><span>за месяц</span></div><div><b>${stFmt(I.rides||0)}</b><span>поездок засчитано</span></div></div>
+ <div class="uinfo" style="margin-top:10px">
+  <div>Рейтинг: <b>${rkNum(Number(I.rating||5).toFixed(1))}</b> · отказов за 3 месяца: <b>${rkNum(I.cancelPct||0)}%</b>${allC?` (${I.pen90||0} из ${allC})`:''}</div>
+  <div>В сервисе: <b>${I.days||0} ${plural(I.days||0,['день','дня','дней'])}</b></div>
+  <div>Привёл в группу: <b>${inv.total||0}</b> · остались: <b>${inv.stayed||0}</b> · ездят: <b>${inv.riding||0}</b></div>
+ </div>
+ <div class="sec" style="padding-left:0">Начислить или списать</div>
+ <div class="pj-adj"><div class="pj-sign"><div class="${'on'}" id="pjsp" onclick="pjSign(1)">+ Начислить</div><div id="pjsm" onclick="pjSign(-1)">− Списать</div></div>
+  <input id="pjamt" inputmode="numeric" placeholder="Сколько баллов" maxlength="6">
+  <input id="pjnote" placeholder="Причина — её увидит водитель" maxlength="140">
+  <label class="pj-chk"><input type="checkbox" id="pjntf" checked> Сообщить водителю в бота</label>
+  <button class="o pj-save" onclick="pjAdjust('${u.id}')">Записать</button></div>
+ <div class="sec" style="padding-left:0">История баллов</div>
+ <div class="pj-list">${(r.hist||[]).length?(r.hist||[]).map(x=>{const v=x.delta||0;const by=(x.created_by&&r.names[x.created_by])||(x.reason==='adjust'?x.meta:null);const canV=x.reason!=='void'&&!/^rank_/.test(x.reason);
+  return `<div class="rk-h"><div class="t"><b>${rkTitle(x)}</b><span>${[new Date(x.created_at).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}),rkWhy(x),/^rank_/.test(x.reason)?'':esc(x.note||''),by?'записал '+esc(by):''].filter(Boolean).join(' · ')}</span></div><span class="v ${v>0?'p':v<0?'m':''}">${/^rank_/.test(x.reason)?rkBadge(x.meta,20,x.reason==='rank_pause'):(v>0?'+'+v:v<0?'−'+(-v):'0')}</span>${canV?`<button class="pj-x" title="Отменить" onclick="pjVoid(${x.id},'${u.id}')">✕</button>`:''}</div>`;}).join(''):'<div class="st-empty">Записей пока нет</div>'}</div>
+ <div class="sa"><button class="c" onclick="closeSh()">Закрыть</button></div>`;
+ window.__pjSign=1;
+}
+function pjSign(s){window.__pjSign=s;const p=document.getElementById('pjsp'),mm=document.getElementById('pjsm');if(p)p.className=s>0?'on':'';if(mm)mm.className=s<0?'on m':'';}
+async function pjAdjust(id){
+ const a=parseInt(String(document.getElementById('pjamt').value).replace(/\D/g,''),10);
+ const note=String(document.getElementById('pjnote').value||'').trim();
+ if(!a)return T('Укажите, сколько баллов');
+ if(!note)return T('Напишите причину');
+ const delta=(window.__pjSign||1)*a;
+ const r=await api('/api/admin',{action:'points-adjust',driver_id:id,delta,note,notify:document.getElementById('pjntf').checked});
+ if(!r||r.error)return T('Не получилось записать');
+ T(delta>0?`Начислено ${a}`:`Списано ${a}`);
+ drvPtsSheet(id);
+}
+async function pjInv(b){
+ b.innerHTML='<div class="st-load">Загрузка…</div>';
+ const r=await api('/api/admin',{action:'inv-list'});
+ if(!r||r.error){b.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
+ if(r.missing){b.innerHTML='<div class="empty"><b>Ранги ещё не включены</b>Выполните миграцию в Supabase.</div>';return;}
+ const rows=r.rows||[];
+ const ST={wait:['ждём неделю','var(--am)'],ok:['остался','var(--g)'],nocap:['не прошёл проверку','var(--dim)'],left:['вышел','var(--dim)'],spam:['спамер','var(--red)'],old:['уже был в Бомбилах','var(--dim)'],burst:['заморожен: много за час','var(--red)']};
+ const c=k=>rows.filter(x=>x.status===k).length;
+ b.innerHTML=`<div class="pj-sum"><div><b>${rows.filter(x=>x.status!=='old').length}</b><span>новых пришло</span></div><div><b class="p">${c('ok')}</b><span>остались</span></div><div><b>${rows.filter(x=>x.ride_pts).length}</b><span>уже ездят</span></div></div>
+ ${c('burst')||c('spam')?`<div class="st-cmpnote" style="color:var(--red)">Заморожено: ${c('burst')} · спамеров: ${c('spam')} — баллы за них не начислены</div>`:''}
+ <div class="st-card pj-list">${rows.length?rows.map(x=>`<div class="pj-row"><div class="t"><b>${esc(x.name)||'Без имени'}</b><span>пригласил ${esc(r.names[x.inviter_id]||'водитель')} · ${x.how==='added'?'добавил вручную':'по ссылке'} · ${esc(x.city||'')}</span><span class="d">${new Date(x.joined_at).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span></div><div class="v2"><b style="color:${(ST[x.status]||['',''])[1]};font-size:12px;font-family:Golos Text,sans-serif">${(ST[x.status]||[x.status])[0]}</b>${x.ride_pts?'<small style="color:var(--g)">поехал ✓</small>':''}</div></div>`).join(''):'<div class="st-empty">Пока никто не пришёл по приглашениям.</div>'}</div>`;
+}
+// правила: все цифры, звания и переключатели
+const RK_PTS_LBL=[['ride','Поездка завершена'],['peak','Добавка в час пик'],['star','Пассажир поставил 5★'],['fast','Быстрый ответ на заявку'],['ref','Привёл водителя (10 поездок)'],['invJoin','Друг вступил в группу и остался'],['invRide','Друг сделал первую поездку']];
+const RK_PEN_LBL=[['cancel','Отказ от взятого заказа'],['complaint','Подтверждённая жалоба'],['invSpam','Приглашённого забанили за спам']];
+const RK_LIM_LBL=[['dayCap','Баллов за поездки в день, не больше','0 — без предела'],['perPassenger','Поездок с одним пассажиром в день'],['minMinutes','Поездка короче, мин — без баллов'],['fastSec','«Быстрый ответ» — быстрее, сек'],['freeCant','«Не могу приехать» без штрафа, раз в неделю'],['noshowMin','Ждать пассажира после «Я подъехал», мин'],['earlyHours','Отказ от заказа на время без штрафа, если до него больше, ч','0 — правило выключено'],['pauseDays','Пауза звания после, дней без поездок'],['unpauseRides','Поездок, чтобы снять паузу'],['invMonthCap','За друзей в месяц, не больше'],['invStayDays','Друг должен пробыть в группе, дней'],['invBurst','Вступлений за час по одной ссылке до заморозки']];
+const RK_FEAT_LBL=[['invites','Баллы за друзей в группе','у каждого водителя своя ссылка'],['minRides','Минимум поездок для званий','без настоящих поездок звание не дадут'],['offerBadge','Звание на предложении цены','пассажир видит его, когда выбирает водителя'],['topList','Золото и выше — выше в списке','в «Свободных водителях» у пассажира']];
+async function pjRules(b,useDef){
+ if(!pjCfg||!useDef){
+  b.innerHTML='<div class="st-load">Загрузка…</div>';
+  const r=await api('/api/admin',{action:'rank-cfg-get'});
+  if(!r||r.error){b.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
+  pjCfg=r.cfg;pjDef=r.def;
+ }
+ const C=useDef?pjDef:pjCfg,D=pjDef;
+ const inp=(id,v,hint,dec)=>`<input class="pj-num" id="${id}" value="${v==null?'':v}" inputmode="${dec?'decimal':'numeric'}" placeholder="${hint||''}">`;
+ const fr=(lbl,id,v,dv,note,dec,neg)=>`<div class="pj-f"><div class="l">${lbl}${note?`<small>${note}</small>`:''}<small>по умолчанию ${dv==null?'нет':(neg?'−'+Math.abs(dv):rkNum(dv))}</small></div>${neg?'<span class="pj-neg">−</span>':''}${inp(id,v==null?'':(neg?Math.abs(v):v),'',dec)}</div>`;
+ b.innerHTML=`<div class="note" style="margin:0 18px 12px;text-align:left">Меняйте что угодно — после сохранения все водители пересчитаются по новым правилам, а изменение запишется в «Журнал действий».</div>
+ <div class="st-card"><div class="st-ct"><h3>Что включено</h3></div>
+  ${RK_FEAT_LBL.map(([k,l,s])=>`<div class="pj-tg"><div><b>${l}</b><span>${s}</span></div><div class="tg ${C.feat[k]?'on':''}" id="rf_${k}" onclick="this.classList.toggle('on')"><b></b></div></div>`).join('')}</div>
+ <div class="st-card"><div class="st-ct"><h3>За что баллы</h3></div>${RK_PTS_LBL.map(([k,l])=>fr(l,'rp_'+k,C.pts[k],D.pts[k])).join('')}</div>
+ <div class="st-card"><div class="st-ct"><h3>Штрафы</h3></div>${RK_PEN_LBL.map(([k,l])=>fr(l,'rp_'+k,C.pts[k],D.pts[k],'',false,true)).join('')}</div>
+ <div class="st-card"><div class="st-ct"><h3>Часы пик</h3><span>по Москве</span></div>
+  ${[0,1,2].map(i=>{const p=C.peak[i]||['',''];return `<div class="pj-f"><div class="l">Промежуток ${i+1}${i===2?'<small>можно оставить пустым</small>':''}</div><span class="pj-neg">с</span>${inp('rk_pa'+i,p[0])}<span class="pj-neg">до</span>${inp('rk_pb'+i,p[1])}</div>`;}).join('')}</div>
+ <div class="st-card"><div class="st-ct"><h3>Ограничения</h3></div>${RK_LIM_LBL.map(([k,l,n])=>fr(l,'rl_'+k,C.lim[k],D.lim[k],n)).join('')}</div>
+ ${RK.map(([code,name])=>{const r=C.ranks[code],d=D.ranks[code];return `<div class="st-card"><div class="st-ct"><h3>${rkBadge(code,22)}&nbsp;${name}</h3></div>
+  ${fr('Баллов нужно','rr_'+code+'_pts',r.pts,d.pts)}
+  ${fr('Поездок нужно','rr_'+code+'_rides',r.rides,d.rides,'если включён минимум поездок')}
+  ${fr('Рейтинг от','rr_'+code+'_rating',r.rating,d.rating,'пусто — без условия',true)}
+  ${fr('Отказов меньше, %','rr_'+code+'_cancel',r.cancel,d.cancel,'за 3 месяца · пусто — без условия')}
+  ${fr('Стаж в сервисе, дней','rr_'+code+'_days',r.days,d.days,'пусто — без условия')}</div>`;}).join('')}
+ <div class="pj-actions"><button class="c" onclick="pjRules(document.getElementById('pjbox'),true)">Вернуть по умолчанию</button><button class="o" onclick="pjSaveRules()">Сохранить</button></div>
+ <div id="pjdiff"></div><div style="height:20px"></div>`;
+ if(useDef)T('Значения по умолчанию подставлены — нажмите «Сохранить»');
+}
+async function pjSaveRules(){
+ const v=id=>{const e=document.getElementById(id);if(!e)return null;const s=String(e.value).trim().replace(',','.');return s===''?null:Number(s);};
+ const cfg={pts:{},lim:{},peak:[],ranks:{},feat:{}};
+ RK_PTS_LBL.forEach(([k])=>{cfg.pts[k]=v('rp_'+k);});
+ RK_PEN_LBL.forEach(([k])=>{const n=v('rp_'+k);cfg.pts[k]=n==null?null:-Math.abs(n);});
+ RK_LIM_LBL.forEach(([k])=>{cfg.lim[k]=v('rl_'+k);});
+ [0,1,2].forEach(i=>{const a=v('rk_pa'+i),b=v('rk_pb'+i);if(a!=null&&b!=null)cfg.peak.push([a,b]);});
+ RK.forEach(([code])=>{cfg.ranks[code]={};['pts','rides','rating','cancel','days'].forEach(k=>{cfg.ranks[code][k]=v('rr_'+code+'_'+k);});});
+ RK_FEAT_LBL.forEach(([k])=>{const e=document.getElementById('rf_'+k);cfg.feat[k]=!!(e&&e.classList.contains('on'));});
+ const r=await api('/api/admin',{action:'rank-cfg-set',cfg});
+ if(!r||r.error)return T(r&&r.error==='no_column'?'Сначала выполните миграцию db-28 в Supabase':'Не получилось сохранить');
+ pjCfg=r.cfg;if(typeof SETTINGS!=='undefined'&&SETTINGS)SETTINGS.rank_cfg=r.cfg;
+ if(r.same)return T('Ничего не изменилось');
+ T('Сохранено — пересчитываю водителей');
+ pjRules(document.getElementById('pjbox'),false).then(()=>{const d=document.getElementById('pjdiff');if(d)d.innerHTML=`<div class="note" style="margin:0 18px;text-align:left"><b>Изменено:</b> ${esc(r.diff)}</div>`;});
 }
 
 /* ================= ВОДИТЕЛЬ ================= */
@@ -4076,11 +4401,12 @@ const TAB_PERM={over:null,ppl:'users',stat:'stats'};
 // «Ещё»: разделы бывших «Финансов» по смыслу; у каждого — своё право
 const MORE_GROUPS=[
  ['Города и группы',[['city','Города и группы Telegram','ссылки, закреп, заказы в чате, карточки водителей','cities']]],
+ ['Водители',[['ranks','Ранги и баллы','журнал баллов, начисления вручную, правила','ranks']]],
  ['Продвижение',[['mail','Рассылка в бота','написать всем или части людей','broadcast'],['src','Метки и QR-коды','откуда приходят люди и кто из них заказывает','refs'],['promo','Промокоды','бесплатные дни и скидки','promos'],['ref','Рефералка','бонус за приглашённого водителя','refs'],['back','Возврат водителей','кто перестал платить и давно не заходил','broadcast']]],
  ['Деньги',[['sub','Подписка и тарифы','платно или бесплатно, когда снимать с линии','settings'],['bal','Баланс водителей','начислить или списать вручную','balance']]],
  ['Система',[['rep','Сводки в Telegram','утренняя сводка вам и итоги недели водителям','settings'],['log','Журнал действий','что делали администраторы','audit']]]
 ];
-const MORE_ICO={city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
+const MORE_ICO={ranks:'<path d="M8.5 2h3l1.6 6M15.5 2h-3"/><circle cx="12" cy="14.5" r="6.5"/><path d="m12 11.2 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"/>',city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
  promo:'<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',ref:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',back:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
  sub:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',bal:'<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',rep:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',log:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>'};
 function moreAllowed(id){
@@ -5311,7 +5637,8 @@ const ACT_RU={
  'winback-set':'обработал возврат','complaint-resolve':'закрыл жалобу','car-approve':'одобрил транспорт',
  'car-remove':'удалил транспорт','car-add-admin':'добавил транспорт','car-edit':'изменил транспорт',
  'broadcast-send':'отправил рассылку','city-save':'изменил город','city-delete':'удалил город',
- 'pin-now':'обновил закреп вручную','audit-clear':'очистил журнал','set-role':'изменил права доступа'
+ 'pin-now':'обновил закреп вручную','audit-clear':'очистил журнал','set-role':'изменил права доступа',
+ 'rank-cfg':'изменил правила рангов','points-adjust':'начислил или списал баллы','points-void':'отменил запись баллов','ranks-recalc':'пересчитал ранги'
 };
 const FIELD_RU={name:'имя',full_name:'ФИО',admin_note:'пометка',phone:'телефон',age:'возраст',
  spot:'место стоянки',rating:'рейтинг',role:'роль',driver_status:'статус водителя',balance:'баланс',
@@ -5408,6 +5735,7 @@ async function aFin(m){
  if(finTab==='city')return finCities(c);
  if(finTab==='log')return finLog(c);
  if(finTab==='rep')return finReports(c);
+ if(finTab==='ranks')return finRanks(c);
  if(finTab==='sub')finSub(c);
  else if(finTab==='promo')finPromo(c);
  else if(finTab==='ref')finRef(c);
@@ -6247,7 +6575,9 @@ async function userCard(id){
   <div class="drvst">
    <b>${u.driver_status==='approved'?'Водитель · одобрен':u.driver_status==='pending'?'Заявка на рассмотрении':'Не водитель'}</b>
    <span>${u.driver_status==='approved'?(esc(u.car)||'машина не указана')+(u.plate?' · '+esc(u.plate):''):'может ездить только как пассажир'}</span>
+   ${u.driver_status==='approved'&&(u.rank_code||u.points_total)?`<span style="margin-top:4px">${u.rank_code?rkPill(u.rank_code,u.rank_paused)+' · ':''}${stFmt(u.points_total||0)} ${plural(u.points_total||0,['балл','балла','баллов'])}</span>`:''}
   </div>
+  ${u.driver_status==='approved'&&canSee('ranks')?`<button class="drvbtn" style="background:var(--surf);color:var(--ink);border:1px solid var(--line2)" onclick="closeSh();drvPtsSheet('${u.id}')">Баллы</button>`:''}
   ${u.driver_status==='approved'
     ? `<button class="drvbtn off" onclick="revokeDriver('${u.id}','${esc(u.name)}')">Снять права</button>`
     : `<button class="drvbtn on" onclick="grantDriver('${u.id}','${esc(u.name)}','${esc(u.car)}','${esc(u.plate)}')">Сделать водителем</button>`}
