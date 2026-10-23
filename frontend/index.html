@@ -1199,6 +1199,93 @@ nav{padding-top:7px;}
 .st-ev .t>span{display:block;font-size:12px;color:var(--dim2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .st-ev .tm{font-size:11px;color:var(--dim2);flex-shrink:0;}
 
+
+/* ===== v162: ранги и баллы ===== */
+.rk-c-none{--mt:var(--dim2);}
+.rk-c-bronze{--mt:#cd8a4f;}.rk-c-silver{--mt:#c3cbd6;}.rk-c-gold{--mt:#e8b84b;}.rk-c-platinum{--mt:#7fd6d0;}.rk-c-diamond{--mt:#9db8ff;}
+body[data-t="light"] .rk-c-bronze{--mt:#b46d2e;}body[data-t="light"] .rk-c-silver{--mt:#7f8a99;}body[data-t="light"] .rk-c-gold{--mt:#c48b12;}
+body[data-t="light"] .rk-c-platinum{--mt:#1d9a90;}body[data-t="light"] .rk-c-diamond{--mt:#4d72df;}
+.rk-gray{--mt:var(--dim2)!important;}
+.rkg{color:var(--mt);flex-shrink:0;display:block;}
+.rkp{position:relative;display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;line-height:1.2;padding:2px 7px 2px 4px;border-radius:99px;margin-left:6px;vertical-align:2px;color:var(--mt);white-space:nowrap;}
+.rkp::before{content:'';position:absolute;inset:0;border-radius:inherit;background:currentColor;opacity:.14;}
+.rkp .rkg{display:inline-block;position:relative;}
+.rk-hero{background:var(--surf);border-radius:20px;margin:0 18px 12px;padding:18px 16px 16px;}
+.rk-top{display:flex;align-items:center;gap:14px;}
+.rk-top b{display:block;font-size:24px;font-weight:700;letter-spacing:-.02em;}
+.rk-top span{display:block;font-size:13px;color:var(--dim);margin-top:2px;}
+.rk-pts{display:flex;align-items:baseline;gap:8px;margin-top:16px;}
+.rk-pts b{font-size:32px;font-weight:700;letter-spacing:-.02em;}
+.rk-pts span{font-size:13px;color:var(--dim);}
+.rk-bar{height:10px;border-radius:99px;background:var(--line);margin-top:10px;overflow:hidden;}
+.rk-bar i{display:block;height:100%;border-radius:99px;background:var(--mt);}
+.rk-next{font-size:12.5px;color:var(--dim);margin-top:8px;line-height:1.45;}
+.rk-next b{color:var(--ink);font-weight:600;}
+.rk-pause{margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--card2);font-size:12.5px;line-height:1.5;color:var(--dim);}
+.rk-pause b{color:var(--ink);}
+.rk-mini{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px;}
+.rk-mini div{background:var(--card2);border-radius:12px;padding:9px 10px;min-width:0;}
+.rk-mini b{display:block;font-size:17px;font-weight:700;white-space:nowrap;}
+.rk-mini b small{font-size:12px;color:var(--dim);font-weight:500;}
+.rk-mini span{display:block;font-size:11.5px;color:var(--dim2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rk-req{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);}
+.st-ct+.rk-req{border-top:none;}
+.rk-req .ic{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.rk-req .ic.ok{background:var(--gs);}.rk-req .ic.no{background:rgba(226,88,90,.13);}
+.rk-req .ic svg{width:15px;height:15px;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;}
+.rk-req .ic.ok svg{stroke:var(--g);}.rk-req .ic.no svg{stroke:var(--red);}
+.rk-req .t{flex:1;min-width:0;}.rk-req .t b{display:block;font-size:14px;font-weight:600;}.rk-req .t span{display:block;font-size:12px;color:var(--dim2);margin-top:2px;line-height:1.4;}
+.rk-pt{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:14px;}
+.st-ct+.rk-pt{border-top:none;}
+.rk-pt span{flex:1;min-width:0;}.rk-pt span small{display:block;font-size:11.5px;color:var(--dim2);margin-top:2px;line-height:1.4;}
+.rk-pt b{font-family:'Roboto Mono',monospace;font-weight:700;font-size:15px;}
+.rk-pt b.p,.rk-h .v.p{color:var(--g);}.rk-pt b.m,.rk-h .v.m{color:var(--red);}
+.rk-note{font-size:12px;color:var(--dim);line-height:1.5;background:var(--card2);border-radius:12px;padding:10px 12px;margin-top:10px;}
+.rk-h{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);}
+.st-ct+.rk-h{border-top:none;}
+.rk-h .t{flex:1;min-width:0;}.rk-h .t b{display:block;font-size:13.5px;font-weight:600;}.rk-h .t span{display:block;font-size:12px;color:var(--dim2);margin-top:2px;line-height:1.4;}
+.rk-h .v{font-family:'Roboto Mono',monospace;font-weight:700;font-size:14px;color:var(--dim2);}
+.rk-l{display:flex;gap:13px;padding:14px 0;border-top:1px solid var(--line);}
+.st-ct+.rk-l{border-top:none;}
+.rk-l .t{flex:1;min-width:0;}
+.rk-l .t b{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:700;}
+.rk-l .t b em{font-style:normal;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--gs);color:var(--g);}
+.rk-l .t .need{font-size:12.5px;color:var(--dim);margin-top:4px;line-height:1.45;}
+.rk-l .t .give{font-size:12.5px;color:var(--ink);margin-top:6px;line-height:1.55;}
+.rk-l .t .give i{font-style:normal;color:var(--g);margin-right:6px;}
+.rk-l.cur{background:var(--card2);margin:0 -16px;padding:14px 16px;border-top:none;border-radius:14px;}
+.rk-l.cur+.rk-l{border-top:none;}
+/* доска почёта */
+.lb-top{display:flex;gap:8px;align-items:flex-end;margin:10px 0 2px;}
+.lb-top div{flex:1;min-width:0;background:var(--card2);border-radius:14px;padding:12px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;}
+.lb-top div.first{padding-top:16px;background:rgba(232,184,75,.1);border:1px solid rgba(232,184,75,.4);}
+.lb-top div b{display:block;font-size:14px;font-weight:700;margin-top:6px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lb-top div span{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;}
+.lb-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);}
+.st-card.lb .lb-row:first-child{border-top:none;}
+.lb-row .n{width:22px;text-align:center;font-family:'Roboto Mono',monospace;font-weight:700;color:var(--dim2);flex-shrink:0;}
+.lb-row .t{flex:1;min-width:0;}.lb-row .t b{display:block;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lb-row .t span{display:block;font-size:12px;color:var(--dim2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lb-row .v{font-family:'Roboto Mono',monospace;font-weight:700;font-size:14px;text-align:right;flex-shrink:0;}
+.lb-row .v small{display:block;font-family:Golos Text,sans-serif;font-weight:500;font-size:11px;color:var(--dim2);}
+.lb-row.me{background:var(--gs);margin:0 -16px;padding:11px 16px;border-radius:12px;border-top:none;}
+.lb-row.me+.lb-row{border-top:none;}
+.lb-gap{text-align:center;color:var(--dim2);letter-spacing:2px;padding:2px 0 6px;}
+.lbsheet .st-card{margin:0 0 12px;background:var(--surf);}
+.lbsheet .st-per{margin:0 0 10px;}
+.lbsheet .empty{padding:24px 0;}
+.lb-link{display:flex;align-items:center;gap:12px;width:calc(100% - 36px);margin:4px 18px 16px;padding:12px 14px;border-radius:16px;background:var(--surf);border:1px solid var(--line);color:var(--ink);font-family:Golos Text,sans-serif;text-align:left;cursor:pointer;}
+.lb-link .t{flex:1;min-width:0;}.lb-link .t b{display:block;font-size:14.5px;font-weight:600;}.lb-link .t span{display:block;font-size:12px;color:var(--dim);margin-top:2px;}
+.lb-link .chev{width:18px;height:18px;stroke:var(--dim2);fill:none;stroke-width:2;flex-shrink:0;}
+/* отмена водителем: причины */
+.opt2{display:flex;gap:12px;padding:12px;border:1px solid var(--line2);border-radius:14px;margin-bottom:8px;cursor:pointer;}
+.opt2.on{border-color:var(--g);background:var(--gs);}
+.opt2.dis{opacity:.45;cursor:default;}
+.opt2 .rd{width:18px;height:18px;border-radius:50%;border:2px solid var(--line2);flex-shrink:0;margin-top:2px;box-sizing:border-box;}
+.opt2.on .rd{border-color:var(--g);box-shadow:inset 0 0 0 3px var(--card2);background:var(--g);}
+.opt2 b{display:block;font-size:14px;font-weight:600;}
+.opt2 span{display:block;font-size:12px;color:var(--dim);margin-top:3px;line-height:1.45;}
+.opt2 em{font-style:normal;font-weight:700;}.opt2 em.g{color:var(--g);}.opt2 em.r{color:var(--red);}
 </style>
 </head>
 <body>
@@ -1624,6 +1711,8 @@ async function boot(){
   if(pendingShift){const ps=pendingShift;pendingShift=null;setTimeout(()=>{if(ps.sid)try{localStorage.setItem('bmb_shift_seen',ps.sid);}catch(e){}shiftDone(ps.mins,ps.from,ps.to);},500);}
   if(START==='order'){targetDrv=null;pTab=active?'ride':'order';drawP();}
   if(START==='profile'){pTab='profile';drawP();}
+  if(START==='rank'&&isDrv()){setRole('driver');rkSeg='me';dTab='rank';drawD();}
+  if(START==='top'){setTimeout(topSheet,300);}
   if(START==='stat'&&isStaff()){setRole('admin');aTab=canSee('stats')?'stat':'over';statView='total';drawA();}
   if(START==='driver'){ if(isDrv()){setRole('driver');focusReq(qs.get('ride'));} else {pTab='profile';drawP();setTimeout(()=>{if(!isDrv()&&me.driver_status!=='pending')applyDrv();},300);} }
   window.__booted=true;
@@ -1945,7 +2034,8 @@ async function home(m){
    <button class="qt" onclick="targetDrv=null;orderKind='ride';interCity=false;schedOn=true;pTab='order';drawP()"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><b>На время</b><span>заранее</span></button>
   </div>
  </div>
- ${homeCard()}${plannedBlock()}<div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>`;
+ ${homeCard()}${plannedBlock()}<div class="head"><h2>Свободные водители</h2><span class="m">нажмите, чтобы позвать</span></div><div class="list" id="dl"><div class="empty">Загрузка…</div></div>
+ <button class="lb-link" onclick="topSheet()">${rkBadge('gold',24)}<div class="t"><b>Доска почёта</b><span>лучшие водители месяца</span></div><svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>`;
  const{data:ds,error:dsE}=await Q(db.from('users').select('*').eq('status','online').eq('city',me.city).in('role',['driver','both']),'Не удалось загрузить водителей');
  const{count:rc}=await db.from('rides').select('*',{count:'exact',head:true}).eq('status','created').eq('city',me.city);
  db.from('users').select('*',{count:'exact',head:true}).eq('status','online').eq('city',me.city).eq('delivery',true).then(({count:dc})=>{
@@ -1963,7 +2053,7 @@ async function home(m){
  const bw=document.getElementById('c2w');if(bw)bw.textContent=plural(rc||0,['открытая заявка','открытых заявки','открытых заявок']);
   const l=document.getElementById('dl');if(!l)return;
  if(!ds||!ds.length){l.innerHTML='<div class="empty"><b>В городе '+esc(me.city)+' сейчас никого нет</b>Как только водитель выйдет на линию — он появится здесь. Если тестируете сами: у водителя должен быть выбран тот же город и включён тумблер «на линии».</div>';return;}
- l.innerHTML=ds.map(d=>drvCard(d)).join('');
+ l.innerHTML=ds.slice().sort((a,b)=>rkWeight(b)-rkWeight(a)).map(d=>drvCard(d)).join('');
 }
 // ===== палитра приложения =====
 const THEMES=[
@@ -2035,7 +2125,7 @@ function drvCard(d){
  return `<div class="dcard">
   <div class="ava" onclick="pickDriver('${d.id}')">${d.avatar?`<img src="${esc(d.avatar)}" alt="">`:(esc(d.name)[0]||'?')}${d.status==='online'?'<span class="onx"></span>':''}</div>
   <div class="info" onclick="pickDriver('${d.id}')">
-   <div class="nmx">${esc(d.name)||'Без имени'}</div>
+   <div class="nmx">${esc(d.name)||'Без имени'}${rkPill(d.rank_code,d.rank_paused)}</div>
    <div class="row"><span class="emj">${d.vehicle_type==='moto'?ICO.moto:ICO.car}</span><span class="car">${carTxt}</span>${d.city&&d.city!==me.city?`<span class="plate" style="border:1px solid var(--am);color:var(--am)">${esc(d.city)}</span>`:''}</div>
    ${spot?`<div class="row"><span class="emj">${ICO.pin}</span>стоит: <em>${spot}</em></div>`:''}
    ${d.vehicle_type==='moto'
@@ -2684,12 +2774,7 @@ async function setRemind(v){
  T(v>=60?('Напомним за '+(v/60)+' ч'):('Напомним за '+v+' мин'));
  const sh=document.getElementById('sh');if(sh)sh.remove();
 }
-async function dropPlanned(id){
- if(!confirm('Отказаться от заказа? Пассажир останется без машины и будет искать другого водителя.'))return;
- await api('/api/action',{action:'ride-drop-driver',ride_id:id});
- dPlanned=dPlanned.filter(x=>x.id!==id);
- closeSh();T('Вы отказались от заказа');drawD();drawDPlanned();
-}
+function dropPlanned(id){dCancel(id);}
 async function planSheet(id){
  const r=planned.find(x=>x.id===id);
  if(!r)return T('Заказ не найден');
@@ -3025,21 +3110,236 @@ function closeChat(){
  if(chatBack==='driver'){dGo('ride');}else{openRide();}
 }
 
+
+/* ===== v162: ранги и баллы водителей ===== */
+const RK=[['bronze','Бронза'],['silver','Серебро'],['gold','Золото'],['platinum','Платина'],['diamond','Алмаз']];
+const RK_NAME=Object.fromEntries(RK);
+const RK_GEN={bronze:'Бронзы',silver:'Серебра',gold:'Золота',platinum:'Платины',diamond:'Алмаза'},RK_ACC={bronze:'Бронзу',silver:'Серебро',gold:'Золото',platinum:'Платину',diamond:'Алмаз'};
+const RK_I=Object.fromEntries(RK.map((r,i)=>[r[0],i]));
+const RK_MON=['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+// что даёт каждый ранг — только то, что уже работает
+const RK_GIVE={bronze:['Значок на вашей карточке у пассажиров','Метка «Бомбила Бронза» в группе города'],silver:['Метка «Бомбила Серебро»'],gold:['Выше в списке «Свободные водители»','Метка «Бомбила Золото»'],platinum:['Ещё выше в списке','Метка «Бомбила Платина»'],diamond:['В самом верху списка','Метка «Бомбила Алмаз»']};
+const RK_OK='<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',RK_NO='<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+const rkNum=n=>String(n).replace('.',',');
+// значок ранга: медаль, у Алмаза — камень; серый — на паузе
+function rkBadge(code,size,gray){
+ size=size||40;
+ const c=gray?'rk-gray':'rk-c-'+(RK_NAME[code]?code:'none'),w=size,h=Math.round(size*1.1);
+ if(code==='diamond')return `<svg class="rkg ${c}" width="${w}" height="${h}" viewBox="0 0 40 44"><path d="M10 8h20l7 9-17 22L3 17z" fill="currentColor" fill-opacity=".2" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M3 17h34M14 8l-3 9 9 22 9-22-3-9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+ if(!RK_NAME[code])return `<svg class="rkg ${c}" width="${w}" height="${h}" viewBox="0 0 40 44"><path d="M13 2h6l3 11h-6zM27 2h-6l-3 11h6z" fill="currentColor" fill-opacity=".35"/><circle cx="20" cy="27" r="13" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/></svg>`;
+ return `<svg class="rkg ${c}" width="${w}" height="${h}" viewBox="0 0 40 44"><path d="M13 2h6l3 11h-6zM27 2h-6l-3 11h6z" fill="currentColor" fill-opacity=".55"/><circle cx="20" cy="27" r="13" fill="currentColor" fill-opacity=".18" stroke="currentColor" stroke-width="2"/><circle cx="20" cy="27" r="9" fill="none" stroke="currentColor" stroke-width="1.2" stroke-opacity=".7"/><path d="M20 19.5l1.9 3.9 4.3.6-3.1 3 .7 4.3-3.8-2-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="currentColor"/></svg>`;
+}
+// маленький значок рядом с именем водителя
+function rkPill(code,paused){
+ if(!RK_NAME[code])return '';
+ return `<span class="rkp ${paused?'rk-gray':'rk-c-'+code}">${rkBadge(code,12,paused)}${RK_NAME[code]}</span>`;
+}
+// вес для списка «Свободные водители»: Золото и выше — наверх
+const rkWeight=d=>d&&d.rank_code&&!d.rank_paused&&RK_I[d.rank_code]>=2?RK_I[d.rank_code]:0;
+
+let rkSeg='me',rkTok=0,lbPer='month';
+function rkGo(s){rkSeg=s;rankView(document.getElementById('main'));}
+async function rankView(m){
+ const tok=++rkTok;
+ const sub={me:'баллы копятся за всё время работы',top:'водители '+(me.city||'города')+' · доску видят все',rev:'оценки и отзывы пассажиров'}[rkSeg]||'';
+ m.innerHTML=`<div class="head st-h"><div><h2>Ранг</h2><div class="st-sub">${esc(sub)}</div></div></div>
+ <div class="st-per">${[['me','Мой ранг'],['top','Доска почёта'],['rev','Отзывы']].map(([k,l])=>`<div class="${rkSeg===k?'on':''}" onclick="rkGo('${k}')">${l}</div>`).join('')}</div>
+ <div id="rkbox"><div class="st-load">Загрузка…</div></div>`;
+ const box=document.getElementById('rkbox');
+ if(rkSeg==='rev'){myRev(box);return;}
+ if(rkSeg==='top'){
+  const j=await api('/api/leaderboard',{period:lbPer,city:me.city});
+  if(tok!==rkTok||role!=='driver'||dTab!=='rank')return;
+  box.innerHTML=lbHTML(j,'drv');return;
+ }
+ const j=await api('/api/rank',{});
+ if(tok!==rkTok||role!=='driver'||dTab!=='rank')return;
+ box.innerHTML=rkMeHTML(j);
+}
+function rkMeHTML(j){
+ if(!j||j.error)return '<div class="empty"><b>Не удалось загрузить</b>Проверьте интернет и откройте ещё раз.</div>';
+ if(j.missing)return '<div class="empty"><b>Ранги скоро заработают</b>Загляните чуть позже.</div>';
+ if(j.notDriver)return '<div class="empty"><b>Ранги — для водителей</b>Появятся после проверки документов.</div>';
+ const R=j.ranks||[],PTx=j.pt||{};
+ const i=RK_I[j.rank]!=null?RK_I[j.rank]:-1;
+ const cur=i>=0?R[i]:null,nxt=R[i+1]||null,total=j.total||0;
+ const from=cur?cur.pts:0;
+ const pct=nxt?Math.max(2,Math.min(100,Math.round((total-from)/Math.max(1,nxt.pts-from)*100))):100;
+ const mon=RK_MON[new Date().getMonth()];
+ const sg=n=>(n>0?'+':n<0?'−':'')+stFmt(Math.abs(n||0));
+ const left=Math.max(0,(PTx.unpauseRides||5)-(j.sincePause||0));
+ // главное
+ let h=`<div class="rk-hero">
+  <div class="rk-top">${rkBadge(j.rank,56,j.paused)}<div><b>${cur?cur.name:'Пока без ранга'}</b><span>${cur?(i+1)+'-й ранг из 5':'первый ранг — Бронза'}${j.paused?' · на паузе':''}</span></div></div>
+  <div class="rk-pts"><b>${stFmt(total)}</b><span>${plural(total,['балл','балла','баллов'])} всего</span></div>
+  ${nxt?`<div class="rk-bar"><i class="rk-c-${nxt.code}" style="width:${pct}%"></i></div>
+  <div class="rk-next">${total<nxt.pts?`до «${RK_GEN[nxt.code]}» — <b>${stFmt(nxt.pts-total)} ${plural(nxt.pts-total,['балл','балла','баллов'])}</b>`:`баллов на «${RK_ACC[nxt.code]}» хватает — <b>остальные условия ниже</b>`}</div>`
+  :'<div class="rk-next"><b>Это высший ранг.</b> Дальше — только держать уровень.</div>'}
+  ${j.paused?`<div class="rk-pause">Больше месяца не было поездок, поэтому значок серый и метка в группе обычная. Сделайте ещё <b>${left} ${plural(left,['поездку','поездки','поездок'])}</b> — всё вернётся.</div>`:''}
+  <div class="rk-mini"><div><b>${sg(j.month)}</b><span>за ${mon}</span></div><div><b>${j.today||0}<small> из ${PTx.dayCap||40}</small></b><span>сегодня</span></div><div><b>${j.place?j.place+'<small> из '+(j.of||j.place)+'</small>':'—'}</b><span>место</span></div></div>
+ </div>`;
+ // условия следующего ранга
+ if(nxt){
+  const it=[[total>=nxt.pts,`${stFmt(nxt.pts)} баллов`,`сейчас ${stFmt(total)}`]];
+  if(nxt.rating)it.push([(j.rating||5)>=nxt.rating,`Рейтинг от ${rkNum(nxt.rating)}`,`сейчас ${rkNum(Number(j.rating||5).toFixed(1))}`]);
+  if(nxt.cancel!=null){const all=(j.done90||0)+(j.canc90||0);it.push([(j.cancelPct||0)<nxt.cancel,`Отказов меньше ${nxt.cancel}%`,all?`сейчас ${rkNum(j.cancelPct||0)}% — ${j.pen90||0} из ${all} ${plural(all,['заказа','заказов','заказов'])} за 3 месяца`:'за 3 месяца отказов не было']);}
+  if(nxt.days){const mo=Math.floor((j.days||0)/30);it.push([(j.days||0)>=nxt.days,nxt.days>=365?'В сервисе от года':'В сервисе от полугода',mo?`сейчас ${mo} ${plural(mo,['месяц','месяца','месяцев'])}`:'вы с нами меньше месяца']);}
+  h+=`<div class="st-card"><div class="st-ct"><h3>${rkBadge(nxt.code,22)}&nbsp;Чтобы получить «${RK_ACC[nxt.code]}»</h3></div>
+  ${it.map(([ok,t,s])=>`<div class="rk-req"><span class="ic ${ok?'ok':'no'}">${ok?RK_OK:RK_NO}</span><div class="t"><b>${t}</b><span>${s}</span></div></div>`).join('')}</div>`;
+ }
+ // как получить
+ h+=`<div class="st-card"><div class="st-ct"><h3>Как получить баллы</h3></div>
+  <div class="rk-pt"><span>Поездка завершена</span><b class="p">+5</b></div>
+  <div class="rk-pt"><span>В часы пик<small>с 7 до 10 и с 17 до 21</small></span><b class="p">+1</b></div>
+  <div class="rk-pt"><span>Пассажир поставил 5★</span><b class="p">+1</b></div>
+  <div class="rk-pt"><span>Ответили на заявку быстрее минуты</span><b class="p">+1</b></div>
+  <div class="rk-pt"><span>Привели водителя<small>когда он сделает 10 поездок</small></span><b class="p">+10</b></div>
+  <div class="rk-pt"><span>Отказ от взятого заказа<small>по договорённости с пассажиром, первый «не могу приехать» за неделю и «пассажир не вышел» — без штрафа</small></span><b class="m">−15</b></div>
+  <div class="rk-pt"><span>Подтверждённая жалоба</span><b class="m">−30</b></div>
+  <div class="rk-note">Больше 8 баллов за поездку не бывает, в день — не больше 40. С одним пассажиром засчитываем 2 поездки в день. Поездки короче 5 минут и закрытые автоматически — без баллов, поэтому нажимайте «Завершить поездку».<br><br>Месяц без поездок — ранг на паузе, пока не сделаете 5 поездок.</div>
+ </div>`;
+ // история
+ const hist=j.hist||[];
+ h+=`<div class="st-card"><div class="st-ct"><h3>За что начислено</h3>${hist.length?'<span>последние</span>':''}</div>
+  ${hist.length?hist.slice(0,25).map(rkHistRow).join(''):'<div class="st-empty">Пока ничего. Баллы появятся после первой поездки.</div>'}</div>`;
+ // все ранги
+ h+=`<div class="st-card"><div class="st-ct"><h3>Все ранги</h3><span>каждый следующий — сложнее</span></div>
+  ${R.map((x,k)=>{
+   const need=[stFmt(x.pts)+' баллов'];
+   if(x.rating)need.push('рейтинг от '+rkNum(x.rating));
+   if(x.cancel!=null)need.push('отказов меньше '+x.cancel+'%');
+   if(x.days)need.push(x.days>=365?'в сервисе от года':'в сервисе от полугода');
+   return `<div class="rk-l ${k===i?'cur':''}">${rkBadge(x.code,36,k===i&&j.paused)}<div class="t"><b>${x.name}${k===i?' <em>вы здесь</em>':''}</b><div class="need">${need.join(' · ')}</div><div class="give">${(RK_GIVE[x.code]||[]).map(g=>'<i>✓</i>'+g).join('<br>')}</div></div></div>`;
+  }).join('')}
+ </div><div style="height:16px"></div>`;
+ return h;
+}
+const RK_H={ride:'Поездка',ride_auto:'Поездку закрыл бот',ride_short:'Поездка короче 5 минут',ride_same:'Третья поездка с этим пассажиром за день',star:'Пассажир поставил 5★',ref:'Приглашённый водитель сделал 10 поездок',
+ cancel:'Отказ от взятого заказа',cancel_wait:'Отмена по договорённости',cancel_ok:'Отмена по договорённости',cancel_free:'Не смог приехать',cancel_noshow:'Пассажир не вышел',cancel_early:'Отказ заранее',complaint:'Подтверждённая жалоба',start:'Баллы за прошлые поездки'};
+function rkHistRow(x){
+ const tg=String(x.meta||'').split(',');
+ let t=RK_H[x.reason]||'Баллы';
+ if(x.reason==='ride'){const a=[];if(tg.includes('peak'))a.push('час пик');if(tg.includes('fast'))a.push('ответ за минуту');if(a.length)t+=' · '+a.join(' · ');}
+ const why={ride_auto:'без баллов — нажимайте «Завершить»',ride_short:'без баллов',ride_same:'без баллов',cancel_wait:'ждём ответа пассажира',cancel_ok:'пассажир подтвердил — без штрафа',cancel_free:'первый раз за неделю — без штрафа',cancel_noshow:'ждали больше 10 минут — без штрафа',cancel_early:'больше чем за 2 часа — без штрафа'}[x.reason]
+  ||(x.reason==='cancel'?({denied:'пассажир не подтвердил договорённость',cant:'не смог приехать',noshow_early:'ждали меньше 10 минут',other:'другая причина'}[x.meta]||''):'')
+  ||(x.reason==='ride'&&tg.includes('cap')?'дневной предел 40':'');
+ const d=new Date(x.created_at).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+ const sub=[d,why,esc(x.note||'')].filter(Boolean).join(' · ');
+ const v=x.delta||0;
+ return `<div class="rk-h"><div class="t"><b>${t}</b><span>${sub}</span></div><span class="v ${v>0?'p':v<0?'m':''}">${v>0?'+'+v:v<0?'−'+(-v):'0'}</span></div>`;
+}
+
+// доска почёта — одна разметка для водителя (вкладка) и пассажира (шторка)
+function lbHTML(j,mode){
+ if(!j||j.error)return '<div class="empty"><b>Не удалось загрузить</b>Проверьте интернет и откройте ещё раз.</div>';
+ if(j.missing)return '<div class="empty"><b>Доска почёта скоро появится</b>Загляните чуть позже.</div>';
+ const mon=RK_MON[new Date().getMonth()];
+ const per=`<div class="st-per lbper">${[['month',mon[0].toUpperCase()+mon.slice(1)],['all','За всё время']].map(([k,l])=>`<div class="${lbPer===k?'on':''}" onclick="lbSet('${k}','${mode}')">${l}</div>`).join('')}</div>`;
+ const rows=j.rows||[];
+ if(!rows.length)return per+`<div class="empty"><b>Пока пусто</b>${lbPer==='month'?'В этом месяце баллов ещё ни у кого нет.':'Баллов пока ни у кого нет.'}</div>`;
+ const unit=lbPer==='month'?'за '+mon:'всего';
+ const pod=lbPer==='month'?lbPodium(rows.slice(0,3)):'';
+ const mineOut=j.mine&&!rows.some(x=>String(x.id)===String(j.me));
+ return per+pod+`<div class="st-card lb">${rows.map(x=>lbRow(x,j.me,unit,rows)).join('')}${mineOut?'<div class="lb-gap">···</div>'+lbRow(j.mine,j.me,unit,null):''}</div><div style="height:12px"></div>`;
+}
+function lbPodium(t){
+ const one=x=>`<div class="${x.place===1?'first':''}">${rkBadge(x.rank,x.place===1?40:32,x.paused)}<b>${esc(x.name)||'Водитель'}</b><span>${stFmt(x.pts)} ${plural(x.pts,['балл','балла','баллов'])}</span></div>`;
+ const order=t.length===3?[t[1],t[0],t[2]]:t.length===2?[t[1],t[0]]:t;
+ return `<div class="st-card"><div class="st-ct"><h3>Бомбила месяца</h3></div><div class="lb-top">${order.map(one).join('')}</div></div>`;
+}
+function lbRow(x,meId,unit,rows){
+ const mine=String(x.id)===String(meId);
+ const bits=[x.rank?RK_NAME[x.rank]+(x.paused?' (пауза)':''):'',esc(x.car)||(x.moto?'мотоцикл':''),'★ '+rkNum(Number(x.rating||5).toFixed(1))].filter(Boolean);
+ let gap='';
+ if(mine&&rows&&x.place>1){const up=rows[x.place-2];if(up){const g=up.pts-x.pts+1;gap=`до ${x.place-1}-го места ${g} ${plural(g,['балл','балла','баллов'])}`;}}
+ return `<div class="lb-row ${mine?'me':''}"><span class="n">${x.place||'—'}</span>${rkBadge(x.rank,26,x.paused)}<div class="t"><b>${mine?'Вы — ':''}${esc(x.name)||'Водитель'}</b><span>${gap||bits.join(' · ')}</span></div><div class="v">${stFmt(x.pts)}<small>${unit}</small></div></div>`;
+}
+async function lbSet(p,mode){
+ lbPer=p;
+ if(mode!=='sheet')return rankView(document.getElementById('main'));
+ const b=document.getElementById('lbs');if(!b)return;
+ b.innerHTML='<div class="st-load">Загрузка…</div>';
+ const j=await api('/api/leaderboard',{period:lbPer,city:me.city});
+ const b2=document.getElementById('lbs');if(b2)b2.innerHTML=lbHTML(j,'sheet');
+}
+// пассажиру — с главной
+function topSheet(){
+ closeSh();
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet lbsheet" style="max-height:88vh;overflow-y:auto"><h3>Доска почёта</h3><div class="s">лучшие водители — ${esc(me.city)||'город'}</div><div id="lbs"><div class="st-load">Загрузка…</div></div><div class="sa"><button class="c" onclick="closeSh()">Закрыть</button></div></div>`;
+ m.addEventListener('click',e=>{if(e.target===m)closeSh();});
+ document.getElementById('device').appendChild(m);
+ lbSet(lbPer,'sheet');
+}
+
+// отмена водителем: причина решает, спишутся ли баллы
+let dcRide=null,dcWhy=null;
+const DC_OPTS=[
+ ['agreed','Договорились с пассажиром','Не сошлись в цене, пассажир передумал или сам попросил отменить. Пассажиру придёт вопрос «Это так?» — подтвердит, и <em class="g">баллы не спишутся</em>.'],
+ ['cant','Не могу приехать','Поломка, пробка, срочное дело. <em class="g">Один раз в неделю — без штрафа</em>, дальше <em class="r">−15</em>.'],
+ ['noshow','Пассажир не вышел, не отвечает','Ждали больше 10 минут после «Я подъехал» — <em class="g">баллы не спишутся</em>.'],
+ ['other','Другое','<em class="r">−15 баллов</em>']
+];
+function dCancel(rid){
+ const r=rid?((typeof dPlanned!=='undefined'?dPlanned:[]).find(x=>x.id===rid)||null):dActive;
+ if(!r||!r.id){if(!rid)dGo('inbox');return;}
+ dcRide=r;dcWhy=null;dcSheet();
+}
+function dcEarly(r){return !!(r&&r.scheduled_at&&new Date(r.scheduled_at)-Date.now()>2*3600e3);}
+function dcSheet(){
+ const r=dcRide;if(!r)return;
+ const old=document.getElementById('sh');if(old)old.remove();
+ const early=dcEarly(r);
+ const arr=r.arrived_at?new Date(r.arrived_at).getTime():null;
+ const waitLeft=arr?Math.ceil((arr+10*60000-Date.now())/60000):null;
+ const opts=early?'':DC_OPTS.map(([k,t,s])=>{
+  let dis=false,sub=s;
+  if(k==='noshow'&&!arr){dis=true;sub='Сначала нажмите «Я подъехал» и подождите 10 минут.';}
+  else if(k==='noshow'&&waitLeft>0){dis=true;sub=`Можно будет выбрать через ${waitLeft} мин — ждём пассажира 10 минут после «Я подъехал».`;}
+  return `<div class="opt2 ${dcWhy===k?'on':''} ${dis?'dis':''}"${dis?'':` onclick="dcWhy='${k}';dcSheet()"`}><span class="rd"></span><div><b>${t}</b><span>${sub}</span></div></div>`;
+ }).join('');
+ const ready=early||dcWhy;
+ const m=document.createElement('div');m.className='mask';m.id='sh';
+ m.innerHTML=`<div class="sheet" style="max-height:90vh;overflow-y:auto"><h3>Отменить заказ?</h3>
+ <div class="s">${early?'До заказа больше 2 часов — пассажир успеет найти другого водителя. <b style="color:var(--g)">Баллы не спишутся.</b>':'Выберите причину — от неё зависит, спишутся ли баллы. Заявка вернётся в общий список.'}</div>
+ ${opts}
+ <div class="sa"><button class="c" onclick="closeSh()">Не отменять</button><button class="o" style="background:var(--red);color:#fff;${ready?'':'opacity:.45'}" onclick="dCancelYes()">Отменить заказ</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function dCancelYes(){
+ const r=dcRide;if(!r){closeSh();return;}
+ const early=dcEarly(r);
+ if(!early&&!dcWhy)return T('Выберите причину отмены');
+ const j=await api('/api/action',{action:'ride-cancel-driver',ride_id:r.id,reason:early?'other':dcWhy});
+ if(j.error&&!['not_yours','no_ride'].includes(j.error))return T('Не получилось — проверьте интернет и попробуйте ещё раз');
+ if(!j.error){await api('/api/me/update',{cancel_as_driver:true});me.cancel_as_driver=(me.cancel_as_driver||0)+1;}
+ const p=j.pts;
+ const msg=j.error?'Заказ уже снят с вас'
+  :!p?'Вы отказались от заказа'
+  :p.kind==='wait'?'Отменено. Пассажир подтвердит — баллы не спишутся'
+  :p.kind==='penalty'&&p.delta<0?`Отменено. Списано ${-p.delta} баллов`
+  :p.kind==='penalty'?'Вы отказались от заказа':'Отменено без штрафа';
+ if(dActive&&dActive.id===r.id)dActive=null;
+ if(typeof dPlanned!=='undefined')dPlanned=dPlanned.filter(x=>x.id!==r.id);
+ dcRide=null;closeSh();T(msg);dGo('inbox');
+}
+
 /* ================= ВОДИТЕЛЬ ================= */
 function drawD(){
+ if(dTab==='rev'){dTab='rank';rkSeg='rev';}
  document.getElementById('abar').innerHTML='';
  document.getElementById('nav').innerHTML=`
  ${dActive?`<button class="nb ${dTab==='ride'?'active':''}" onclick="dGo('ride')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>Заказ</button>`:''}
  <button class="nb ${dTab==='inbox'?'active':''}" onclick="dGo('inbox')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5h13L22 12v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6z"/></svg>Заявки</button>
  <button class="nb ${dTab==='earn'?'active':''}" onclick="dGo('earn')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Доход</button>
- <button class="nb ${dTab==='rev'?'active':''}" onclick="dGo('rev')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 9 22 9 17 14 19 21 12 17 5 21 7 14 2 9 9 9"/></svg>Отзывы</button>
+ <button class="nb ${dTab==='rank'?'active':''}" onclick="dGo('rank')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 20 5v7c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V5z"/><path d="m8 11 4 3 4-3"/></svg>Ранг</button>
  <button class="nb ${dTab==='profile'?'active':''}" onclick="dGo('profile')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Профиль</button>`;
  const m=document.getElementById('main');
  if(dTab==='ride')dRide(m);
  if(dTab==='chat')openChat(dActive?.id,'driver');
  if(dTab==='inbox')inbox(m);
  if(dTab==='earn')earn(m);
- if(dTab==='rev')myRev(m);
+ if(dTab==='rank')rankView(m);
  if(dTab==='profile')m.innerHTML=dProfHTML();
  drawBar();
 }
@@ -3052,6 +3352,7 @@ async function inbox(m){
   const{data:sh}=await db.from('shifts').select('*').eq('driver_id',me.id).is('ended_at',null).order('started_at',{ascending:false}).limit(1);
   if(sh&&sh.length)curShift=sh[0];
   else{const _rs2=await api('/api/action',{action:'shift-open'});if(_rs2.shift)curShift=_rs2.shift;}
+  if(role!=='driver'||dTab!=='inbox')return;
  }
  m.innerHTML=`<div class="obar ${on?'':'off'}"><div><div class="l">${on?'Вы на линии':'Вы оффлайн'}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${on?'получаете заявки':'заявки не приходят'}</div></div><div class="tg ${on?'on':''}" onclick="tglOn()"><b></b></div></div>
  ${on&&curShift?`<div class="shift"><div class="t"><b>Смена идёт</b><span>с ${new Date(curShift.started_at).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}${curShift.planned_end?' · до '+new Date(curShift.planned_end).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}):''}</span>${curShift.planned_end?`<span id="sleft" style="color:var(--am)"></span>`:''}</div><div class="clk" id="sclk">0:00</div></div>${curShift.planned_end?'<div style="padding:0 18px 12px"><button class="btn ghost extbtn" onclick="extendShift()">Продлить смену</button></div>':''}`:''}
@@ -3472,22 +3773,10 @@ async function dRide(m){
  loadRideContact(r.id,'пассажиру');
  if(!unreadPoll)watchUnread(r.id);
 }
-async function dArrived(){if(!dActive||!dActive.id){dGo('inbox');return;}await api('/api/action',{action:'ride-arrived',ride_id:dActive.id});dActive.arrived=true;T('Пассажиру ушло уведомление');dGo('ride');}
+async function dArrived(){if(!dActive||!dActive.id){dGo('inbox');return;}await api('/api/action',{action:'ride-arrived',ride_id:dActive.id});dActive.arrived=true;if(!dActive.arrived_at)dActive.arrived_at=new Date().toISOString();T('Пассажиру ушло уведомление');dGo('ride');}
 async function dDone(){
  const r=dActive;if(!r||!r.id){dGo('inbox');return;}dActive=null;await api('/api/action',{action:'ride-complete',ride_id:r.id});T('Поездка завершена');if(document.getElementById('sh'))return;
  rateSheet(r.id,r.passenger_id,r.passenger_name||'Пассажир','passenger',"dGo('inbox')");
-}
-function dCancel(){
- const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>Отказаться от заказа?</h3><div class="s">Заявка вернётся в общий список — её сможет взять другой водитель. Частые отказы портят рейтинг.</div><div class="sa"><button class="c" onclick="closeSh()">Не отказываться</button><button class="o" style="background:var(--red);color:#fff" onclick="dCancelYes()">Отказаться</button></div></div>`;
- document.getElementById('device').appendChild(m);
-}
-async function dCancelYes(){
- await api('/api/action',{action:'ride-cancel-driver',ride_id:dActive.id});
-
- await api('/api/me/update',{cancel_as_driver:true});me.cancel_as_driver=(me.cancel_as_driver||0)+1;
-
- dActive=null;closeSh();T('Вы отказались от заказа');dGo('inbox');
 }
 async function myRev(m){
  m.innerHTML='<div class="head"><h2>Мои отзывы</h2></div><div class="empty">Загрузка…</div>';

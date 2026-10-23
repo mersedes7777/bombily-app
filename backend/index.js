@@ -390,6 +390,12 @@ async function onUpdate(u) {
       return;
     }
 
+    // пассажир подтверждает отмену водителя «по договорённости»
+    if (cq.data && (cq.data.startsWith('ccy:') || cq.data.startsWith('ccn:'))) {
+      await cancelConfirm(cq);
+      return;
+    }
+
     // «Завершить поездку» прямо из бота
     if (cq.data && cq.data.startsWith('done:')) {
       await rideDone(chat, cq.data.slice(5));
@@ -504,11 +510,11 @@ async function onUpdate(u) {
       const right = r.can_manage_tags === true ? '✅ есть'
                   : r.can_manage_tags === false ? '❌ выключено'
                   : '❔ Telegram не сообщил';
-      const { data: drv } = await db.from('users').select('telegram_id,name')
+      const { data: drv } = await db.from('users').select('*')
         .eq('city', c.name).eq('driver_status', 'approved').eq('is_banned', false).not('telegram_id', 'is', null).limit(300);
       let ok = 0, notIn = 0, lastErr = '';
       for (const d of drv || []) {
-        const t = await tg('setChatMemberTag', { chat_id: c.group_id, user_id: d.telegram_id, tag: DRIVER_TAG });
+        const t = await tg('setChatMemberTag', { chat_id: c.group_id, user_id: d.telegram_id, tag: rankTag(d) });
         if (t && t.ok) ok++;
         else if (t && /not found|PARTICIPANT|USER_NOT|not a member/i.test(t.description || '')) notIn++;
         else lastErr = (t && t.description) || 'нет ответа';
@@ -1153,6 +1159,7 @@ async function rideDone(chat, rideId) {
   await db.from('rides').update({
     status: 'completed', auto_closed: false, completed_at: new Date().toISOString()
   }).eq('id', ride.id);
+  awardRide(ride.id).catch(() => {});
 
   const sum = ride.price ? ` Сумма: ${ride.price} ₽.` : '';
   await send(chat, `✅ <b>Поездка завершена.</b>${sum}`);
@@ -1184,6 +1191,7 @@ async function autoCloseLoop() {
       await db.from('rides').update({
         status: 'completed', auto_closed: true, completed_at: new Date().toISOString()
       }).eq('id', r.id);
+      awardRide(r.id).catch(() => {});
 
       const sum = r.price ? ` Сумма: ${r.price} ₽.` : '';
       for (const uid of [r.driver_id, r.passenger_id]) {
@@ -3722,10 +3730,21 @@ async function cityGroupsOf(cityName) {
 
 async function setDriverTag(user, on) {
   if (!user || !user.telegram_id) return;
+  // метка зависит от ранга: «Бомбила Золото», а без ранга — «Водитель Бомбил»
+  let tag = '';
+  if (on) {
+    let full = user;
+    if (!('rank_code' in user) || !('city' in user)) {
+      const { data } = await db.from('users').select('*').eq('telegram_id', user.telegram_id).maybeSingle();
+      if (data) full = { ...data, ...user };
+    }
+    user = full;
+    tag = rankTag(full);
+  }
   // меняется город у водителя редко, а снимать метку надо везде — берём все группы
   const groups = await cityGroupsOf(on ? user.city : null);
   for (const gid of groups) {
-    const r = await tg('setChatMemberTag', { chat_id: gid, user_id: user.telegram_id, tag: on ? DRIVER_TAG : '' }).catch(() => null);
+    const r = await tg('setChatMemberTag', { chat_id: gid, user_id: user.telegram_id, tag }).catch(() => null);
     if (r && !r.ok && r.description && !/not found|PARTICIPANT|USER_NOT/i.test(r.description)) {
       glog(`метка ${safeName(user.name)}: ${r.description}`);
     }
@@ -3744,9 +3763,9 @@ async function tagCheck(m, chatId, member) {
   if (tagMemo.size > 5000) tagMemo.clear();
 
   const { data: u, error } = await db.from('users')
-    .select('driver_status,is_banned').eq('telegram_id', uid).maybeSingle();
+    .select('*').eq('telegram_id', uid).maybeSingle();
   if (error) { tagMemo.delete(k); return; }   // база не ответила — не трогаем метку
-  const want = u && u.driver_status === 'approved' && !u.is_banned ? DRIVER_TAG : '';
+  const want = u && u.driver_status === 'approved' && !u.is_banned ? rankTag(u) : '';
   const have = String(member.tag || m.sender_tag || '');
   if (have === want) return;
   // чужие метки, поставленные админами вручную, не трогаем — только «водительские»
@@ -4458,7 +4477,7 @@ const BACKUP_TABLES = [
   'users', 'contacts', 'rides', 'offers', 'reviews', 'messages', 'shifts',
   'cars', 'complaints', 'payments', 'promos', 'sources', 'settings',
   'cities', 'broadcasts', 'audit_log', 'support_msgs', 'admin_msgs',
-  'group_pins', 'winback_queue', 'reports', 'pending_refs', 'pending_src', 'tg_events'
+  'group_pins', 'winback_queue', 'reports', 'pending_refs', 'pending_src', 'tg_events', 'points'
 ];
 
 async function makeBackup() {
@@ -4702,6 +4721,350 @@ async function reportTick() {
 }
 setInterval(reportTick, 5 * 60000);
 setTimeout(reportTick, 90 * 1000);
+
+/* ---------- ранги и баллы водителей (v164) ----------
+   Баллы копятся за всё время в закрытой таблице points: каждая строка — за что и сколько.
+   Ранги: Бронза → Серебро → Золото → Платина → Алмаз. С «Золота» нужны ещё рейтинг,
+   мало отказов (за последние 3 месяца) и стаж. Месяц без поездок — ранг на паузе,
+   пока водитель не сделает 5 поездок. Пока миграция db-27 не выполнена — всё молчит. */
+const RANKS = [
+  { code: 'bronze',   name: 'Бронза',  pts: 50 },
+  { code: 'silver',   name: 'Серебро', pts: 250 },
+  { code: 'gold',     name: 'Золото',  pts: 1000, rating: 4.7, cancel: 10 },
+  { code: 'platinum', name: 'Платина', pts: 3000, rating: 4.8, cancel: 5, days: 180 },
+  { code: 'diamond',  name: 'Алмаз',   pts: 8000, rating: 4.9, cancel: 3, days: 365 }
+];
+const RANK_IDX = Object.fromEntries(RANKS.map((r, i) => [r.code, i]));
+const RANK_GEN = { bronze: 'Бронзы', silver: 'Серебра', gold: 'Золота', platinum: 'Платины', diamond: 'Алмаза' };
+const RANK_TAG = { bronze: 'Бомбила Бронза', silver: 'Бомбила Серебро', gold: 'Бомбила Золото', platinum: 'Бомбила Платина', diamond: 'Бомбила Алмаз' };
+const PT = { ride: 5, peak: 1, star: 1, fast: 1, ref: 10, cancel: -15, complaint: -30,
+  dayCap: 40, perPassenger: 2, minMinutes: 5, pauseDays: 30, unpauseRides: 5, earlyHours: 2, noshowMin: 10 };
+let ranksReady = false;      // таблица points есть — миграция db-27 выполнена
+
+// метка в группе города: по рангу, а без ранга или на паузе — обычная
+const rankTag = u => (u && u.rank_code && !u.rank_paused && RANK_TAG[u.rank_code]) || DRIVER_TAG;
+const ptPeak = d => { const h = new Date(d).getHours(); return (h >= 7 && h < 10) || (h >= 17 && h < 21); };   // часы по Москве
+const ptRoute = r => r ? `${String(r.from_address || '').slice(0, 50)} → ${String(r.to_address || '').slice(0, 50)}` : '';
+const ptDay0 = () => { const x = new Date(); x.setHours(0, 0, 0, 0); return x.toISOString(); };
+const ptWeek0 = () => { const x = new Date(); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString(); };
+const ptMonth0 = () => { const x = new Date(); x.setHours(0, 0, 0, 0); x.setDate(1); return x.toISOString(); };
+
+// записать баллы; уникальный ключ не даёт начислить дважды за одно и то же
+async function ptAdd(driverId, delta, reason, note, uniq, extra = {}) {
+  if (!ranksReady || !driverId) return false;
+  try {
+    const row = { driver_id: String(driverId), delta: Math.round(delta), reason,
+      note: note ? String(note).slice(0, 140) : null, uniq_key: uniq || null, ...extra };
+    const { data, error } = await db.from('points').insert(row).select('id').maybeSingle();
+    if (error) { if (!/duplicate|unique/i.test(error.message)) console.error('points', error.message); return false; }
+    return data ? data.id : true;
+  } catch (e) { console.error('points', e.message); return false; }
+}
+// все строки по запросу — постранично: база отдаёт не больше 1000 за раз
+async function ptAll(build, maxPages = 50) {
+  const out = [];
+  for (let i = 0; i < maxPages; i++) {
+    const { data, error } = await build().range(i * 1000, i * 1000 + 999);
+    if (error) throw new Error(error.message);
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+// сколько баллов за поездки водитель уже получил сегодня (для дневного предела)
+async function ptToday(driverId) {
+  const { data } = await db.from('points').select('delta').eq('driver_id', String(driverId))
+    .in('reason', ['ride', 'star']).gte('created_at', ptDay0()).limit(1000);
+  return (data || []).reduce((a, x) => a + (x.delta || 0), 0);
+}
+
+// поездка завершена — начисляем баллы водителю
+async function awardRide(rideId) {
+  if (!ranksReady || !rideId) return;
+  try {
+    const { data: r } = await db.from('rides').select('*').eq('id', rideId).maybeSingle();
+    if (!r || r.status !== 'completed' || !r.driver_id) return;
+    const uniq = 'ride:' + r.id;
+    const base = { ride_id: String(r.id), peer_id: r.passenger_id ? String(r.passenger_id) : null };
+    const route = ptRoute(r);
+    if (r.auto_closed) { await ptAdd(r.driver_id, 0, 'ride_auto', route, uniq, base); return; }
+    const t0 = new Date(r.confirmed_at || r.created_at).getTime();
+    const t1 = r.completed_at ? new Date(r.completed_at).getTime() : Date.now();
+    if (t1 - t0 < PT.minMinutes * 60000) { await ptAdd(r.driver_id, 0, 'ride_short', route, uniq, base); return; }
+    if (r.passenger_id) {
+      const { count: same } = await db.from('points').select('*', { count: 'exact', head: true })
+        .eq('driver_id', String(r.driver_id)).eq('peer_id', String(r.passenger_id)).eq('reason', 'ride').gte('created_at', ptDay0());
+      if ((same || 0) >= PT.perPassenger) { await ptAdd(r.driver_id, 0, 'ride_same', route, uniq, base); return; }
+    }
+    let pts = PT.ride; const tags = [];
+    if (ptPeak(r.scheduled_at || r.confirmed_at || r.created_at)) { pts += PT.peak; tags.push('peak'); }
+    try {
+      const { data: of } = await db.from('offers').select('created_at').eq('ride_id', r.id).eq('driver_id', r.driver_id)
+        .order('created_at', { ascending: true }).limit(1);
+      if (of && of[0] && of[0].created_at && new Date(of[0].created_at) - new Date(r.created_at) < 60000) { pts += PT.fast; tags.push('fast'); }
+    } catch (e) {}
+    const give = Math.max(0, Math.min(pts, PT.dayCap - await ptToday(r.driver_id)));
+    if (give < pts) tags.push('cap');
+    const ok = await ptAdd(r.driver_id, give, 'ride', route, uniq, { ...base, meta: tags.join(',') || null });
+    if (!ok) return;                                   // за эту поездку уже начисляли
+    await refBonusCheck(r.driver_id);
+    await rankRecalc(r.driver_id);
+  } catch (e) { console.error('awardRide', e.message); }
+}
+// пассажир поставил 5★ — +1, если за саму поездку баллы были
+async function awardStar(rideId, driverId) {
+  if (!ranksReady) return;
+  try {
+    const find = async () => (await db.from('points').select('delta').eq('driver_id', String(driverId)).eq('uniq_key', 'ride:' + rideId).limit(1)).data;
+    let rr = await find();
+    if (!rr || !rr[0]) { await awardRide(rideId); rr = await find(); }   // отзыв пришёл раньше, чем баллы за поездку
+    if (!rr || !rr[0] || rr[0].delta <= 0) return rankRecalc(driverId);
+    if (PT.dayCap - await ptToday(driverId) <= 0) return rankRecalc(driverId);
+    const { data: r } = await db.from('rides').select('id,from_address,to_address,passenger_id').eq('id', rideId).maybeSingle();
+    await ptAdd(driverId, PT.star, 'star', ptRoute(r), 'star:' + rideId, { ride_id: String(rideId), peer_id: r && r.passenger_id ? String(r.passenger_id) : null });
+    await rankRecalc(driverId);
+  } catch (e) { console.error('awardStar', e.message); }
+}
+// приглашённый водитель сделал 10 поездок — +10 тому, кто его привёл
+async function refBonusCheck(driverId) {
+  try {
+    const { data: u } = await db.from('users').select('id,name,ref_by').eq('id', driverId).maybeSingle();
+    if (!u || !u.ref_by) return;
+    const { data: inv } = await db.from('users').select('id,driver_status').eq('id', u.ref_by).maybeSingle();
+    if (!inv || inv.driver_status !== 'approved') return;
+    const { count } = await db.from('rides').select('*', { count: 'exact', head: true }).eq('driver_id', driverId).eq('status', 'completed');
+    if ((count || 0) < 10) return;
+    if (await ptAdd(inv.id, PT.ref, 'ref', u.name, 'ref:' + driverId)) await rankRecalc(inv.id);
+  } catch (e) {}
+}
+
+// водитель отменил взятый заказ: от причины зависит, будет ли штраф
+async function driverCancelPoints(drv, ride, reason) {
+  if (!ranksReady) return null;
+  try {
+    const uniq = 'cancel:' + ride.id + ':' + drv.id;
+    const base = { ride_id: String(ride.id), peer_id: ride.passenger_id ? String(ride.passenger_id) : null, meta: reason };
+    const route = ptRoute(ride);
+    // заказ на время, до которого больше 2 часов, — пассажир успеет найти другого
+    if (ride.scheduled_at && new Date(ride.scheduled_at) - Date.now() > PT.earlyHours * 3600e3) {
+      await ptAdd(drv.id, 0, 'cancel_early', route, uniq, base); return { delta: 0, kind: 'early' };
+    }
+    if (reason === 'agreed') {
+      const pid = await ptAdd(drv.id, 0, 'cancel_wait', route, uniq, base);
+      const ptg = ride.passenger_id ? await tgIdOf(ride.passenger_id) : null;
+      if (pid && pid !== true && ptg) {
+        await send(ptg, `Водитель ${safeName(drv.name)} отменил заказ\n${safeName(route)}\n\nПричина: <b>договорились с пассажиром</b>. Это так?`, {
+          reply_markup: { inline_keyboard: [[{ text: '✅ Да, так', callback_data: `ccy:${pid}` }, { text: '❌ Нет, отказался сам', callback_data: `ccn:${pid}` }]] }
+        }).catch(() => {});
+      }
+      return { delta: 0, kind: 'wait' };
+    }
+    if (reason === 'noshow') {
+      if (ride.arrived_at && Date.now() - new Date(ride.arrived_at).getTime() >= (PT.noshowMin - 1) * 60000) {
+        await ptAdd(drv.id, 0, 'cancel_noshow', route, uniq, base); return { delta: 0, kind: 'noshow' };
+      }
+      reason = 'other'; base.meta = 'noshow_early';
+    }
+    if (reason === 'cant') {
+      const { count } = await db.from('points').select('*', { count: 'exact', head: true })
+        .eq('driver_id', String(drv.id)).eq('reason', 'cancel_free').gte('created_at', ptWeek0());
+      if (!count) { await ptAdd(drv.id, 0, 'cancel_free', route, uniq, base); return { delta: 0, kind: 'free' }; }
+    }
+    const ok = await ptAdd(drv.id, PT.cancel, 'cancel', route, uniq, base);
+    if (ok) await rankRecalc(drv.id);
+    return { delta: ok ? PT.cancel : 0, kind: 'penalty' };
+  } catch (e) { console.error('cancelPoints', e.message); return null; }
+}
+// пассажир ответил на «Это так?»
+async function cancelConfirm(cq) {
+  const yes = cq.data.startsWith('ccy:');
+  const pid = cq.data.slice(4);
+  const answer = (text, alert) => tg('answerCallbackQuery', { callback_query_id: cq.id, text, show_alert: !!alert });
+  if (!ranksReady) return answer('Попробуйте чуть позже');
+  const { data: row } = await db.from('points').select('*').eq('id', pid).maybeSingle();
+  if (!row) return answer('Заказ не найден');
+  const { data: ride } = await db.from('rides').select('id,passenger_id').eq('id', row.ride_id).maybeSingle();
+  const ptg = ride && ride.passenger_id ? await tgIdOf(ride.passenger_id) : null;
+  if (!ptg || String(ptg) !== String(cq.from.id)) return answer('Это не ваш заказ.', true);
+  let changed = false;
+  if (row.reason === 'cancel_wait') {
+    const { data: upd } = await db.from('points').update(yes ? { reason: 'cancel_ok' } : { reason: 'cancel', delta: PT.cancel, meta: 'denied' })
+      .eq('id', row.id).eq('reason', 'cancel_wait').select('id');
+    changed = !!(upd && upd.length);
+  }
+  await answer(changed ? 'Спасибо, учли' : 'Ответ уже учтён');
+  if (cq.message) {
+    const orig = String(cq.message.text || '').split('\n\nПричина')[0];
+    tg('editMessageText', { chat_id: cq.message.chat.id, message_id: cq.message.message_id,
+      text: orig + '\n\n' + (yes ? '✅ Вы подтвердили: договорились.' : '❌ Вы ответили: водитель отказался сам.') }).catch(() => {});
+  }
+  if (!changed) return;
+  const dtg = await tgIdOf(row.driver_id);
+  if (dtg) send(dtg, yes ? '✅ Пассажир подтвердил отмену по договорённости — баллы не списаны.'
+    : `❌ Пассажир не подтвердил отмену по договорённости — списано ${-PT.cancel} баллов.`).catch(() => {});
+  if (!yes) await rankRecalc(row.driver_id);
+}
+// подтверждённая жалоба на водителя (админ вынес предупреждение или бан)
+async function complaintPoints(targetId, complaintId) {
+  if (!ranksReady || !targetId || !complaintId) return;
+  try {
+    const { data: c } = await db.from('complaints').select('*').eq('id', complaintId).maybeSingle();
+    if (!c || c.kind === 'review' || String(c.target_id) !== String(targetId)) return;
+    const { data: u } = await db.from('users').select('id,driver_status').eq('id', targetId).maybeSingle();
+    if (!u || u.driver_status !== 'approved') return;
+    if (await ptAdd(targetId, PT.complaint, 'complaint', String(c.reason || '').slice(0, 100), 'complaint:' + complaintId)) await rankRecalc(targetId);
+  } catch (e) {}
+}
+
+// пересчитать сумму, ранг и паузу; при смене — метка в группе и сообщение водителю
+async function rankRecalc(driverId, opts = {}) {
+  if (!ranksReady || !driverId) return null;
+  try {
+    const { data: u } = await db.from('users').select('*').eq('id', driverId).maybeSingle();
+    if (!u) return null;
+    const rows = await ptAll(() => db.from('points').select('delta,reason,created_at').eq('driver_id', String(driverId)).order('id'));
+    const total = rows.reduce((a, x) => a + (x.delta || 0), 0);
+    const since90 = Date.now() - 90 * 864e5;
+    let done90 = 0, canc90 = 0, pen90 = 0;
+    for (const x of rows) {
+      if (new Date(x.created_at).getTime() < since90) continue;
+      const r = String(x.reason);
+      if (r.startsWith('ride')) done90++;
+      else if (r.startsWith('cancel')) { canc90++; if (r === 'cancel') pen90++; }
+    }
+    const cancelPct = done90 + canc90 ? pen90 / (done90 + canc90) * 100 : 0;
+    const days = u.created_at ? (Date.now() - new Date(u.created_at).getTime()) / 864e5 : 0;
+    const rating = Number(u.rating) || 5;
+    let rank = null;
+    for (const R of RANKS) {        // каждый следующий ранг строже предыдущего во всём
+      if (total < R.pts || (R.rating && rating < R.rating) || (R.cancel != null && cancelPct >= R.cancel) || (R.days && days < R.days)) break;
+      rank = R.code;
+    }
+    // месяц без поездок — пауза, пока не сделает 5 поездок
+    const { data: last } = await db.from('rides').select('created_at').eq('driver_id', driverId).eq('status', 'completed')
+      .order('created_at', { ascending: false }).limit(1);
+    const lastAt = last && last[0] ? new Date(last[0].created_at).getTime() : 0;
+    let pausedAt = u.rank_paused_at ? new Date(u.rank_paused_at).getTime() : null;
+    if (!pausedAt && rank && lastAt && Date.now() - lastAt > PT.pauseDays * 864e5) pausedAt = Date.now();
+    let sincePause = 0;
+    if (pausedAt) {
+      const { count } = await db.from('rides').select('*', { count: 'exact', head: true }).eq('driver_id', driverId)
+        .eq('status', 'completed').gt('created_at', new Date(pausedAt).toISOString());
+      sincePause = count || 0;
+      if (sincePause >= PT.unpauseRides) pausedAt = null;
+    }
+    const paused = !!(pausedAt && rank);
+    const prevIdx = u.rank_code && u.rank_code in RANK_IDX ? RANK_IDX[u.rank_code] : -1;
+    const newIdx = rank ? RANK_IDX[rank] : -1;
+    const changed = prevIdx !== newIdx || !!u.rank_paused !== paused;
+    if (changed || Number(u.points_total || 0) !== total || !!u.rank_paused_at !== paused) {
+      await db.from('users').update({ points_total: total, rank_code: rank, rank_paused: paused,
+        rank_paused_at: paused ? new Date(pausedAt).toISOString() : null }).eq('id', driverId);
+    }
+    if (changed && u.driver_status === 'approved' && !u.is_banned) {
+      setDriverTag({ ...u, rank_code: rank, rank_paused: paused }, true).catch(() => {});
+      if (!opts.silent && u.telegram_id) {
+        const R = rank ? RANKS[newIdx] : null, P = prevIdx >= 0 ? RANKS[prevIdx] : null;
+        const n = total.toLocaleString('ru');
+        let msg = '';
+        if (paused && !u.rank_paused) msg = `⏸ <b>Ранг «${R.name}» на паузе</b>\n\nБольше месяца не было поездок. Сделайте ${PT.unpauseRides} поездок — значок и метка вернутся.`;
+        else if (newIdx > prevIdx && !paused) msg = `🏅 <b>Новый ранг — ${R.name}!</b>\n\nУ вас ${n} ${plural(total, ['балл', 'балла', 'баллов'])}. Значок уже на вашей карточке у пассажиров, метка «${RANK_TAG[rank]}» — в группе города.`;
+        else if (!paused && u.rank_paused && newIdx >= prevIdx) msg = `▶️ <b>Ранг «${R.name}» снова действует</b>\n\nСпасибо, что вернулись на линию!`;
+        else if (newIdx < prevIdx && P) {
+          const why = [];
+          if (total < P.pts) why.push(`баллов ${n} из ${P.pts.toLocaleString('ru')}`);
+          if (P.rating && rating < P.rating) why.push(`рейтинг ${rating.toFixed(1).replace('.', ',')} — нужно от ${String(P.rating).replace('.', ',')}`);
+          if (P.cancel != null && cancelPct >= P.cancel) why.push(`отказов ${Math.round(cancelPct)}% за 3 месяца — нужно меньше ${P.cancel}%`);
+          msg = `📉 <b>Ранг сейчас — ${R ? R.name : 'без ранга'}</b>\n\nДля «${RANK_GEN[P.code]}» не хватает: ${why.join('; ') || 'условий'}. Ранг вернётся сам, как только всё выполните.`;
+        }
+        if (msg) send(u.telegram_id, msg, { reply_markup: { inline_keyboard: [[wa('🏅 Мой ранг', 'rank', { id: u.telegram_id })]] } }).catch(() => {});
+      }
+    }
+    return { total, rank, paused, sincePause, cancelPct: Math.round(cancelPct * 10) / 10, done90, canc90, pen90, days: Math.floor(days), rating };
+  } catch (e) { console.error('rankRecalc', e.message); return null; }
+}
+
+// баллы за поездки до запуска рангов — по 5 за поездку и по тем же правилам:
+// не больше 2 поездок с одним пассажиром в день, не больше 8 поездок в день,
+// без коротких и закрытых ботом. Начисляется один раз.
+async function ptBackfill(driverId) {
+  const rides = await ptAll(() => db.from('rides').select('id,passenger_id,created_at,confirmed_at,completed_at,auto_closed')
+    .eq('driver_id', driverId).eq('status', 'completed').order('created_at').order('id'), 20);
+  const seen = new Set((await ptAll(() => db.from('points').select('ride_id').eq('driver_id', String(driverId))
+    .not('ride_id', 'is', null).order('id'), 20)).map(x => String(x.ride_id)));
+  const perDay = {}, perPass = {};
+  let n = 0;
+  for (const r of rides) {
+    if (seen.has(String(r.id)) || r.auto_closed) continue;
+    if (r.confirmed_at && r.completed_at && new Date(r.completed_at) - new Date(r.confirmed_at) < PT.minMinutes * 60000) continue;
+    const day = rpYmd(new Date(r.created_at)), pk = day + ':' + (r.passenger_id || '-');
+    if ((perPass[pk] || 0) >= PT.perPassenger || (perDay[day] || 0) >= Math.floor(PT.dayCap / PT.ride)) continue;
+    perPass[pk] = (perPass[pk] || 0) + 1; perDay[day] = (perDay[day] || 0) + 1; n++;
+  }
+  await ptAdd(driverId, n * PT.ride, 'start', `за ${n} ${plural(n, ['поездку', 'поездки', 'поездок'])} до запуска рангов`, 'start');
+}
+// раз в 6 часов: новые водители, пауза за месяц без поездок, рейтинг
+async function ranksStart() {
+  try {
+    const { error } = await db.from('points').select('id').limit(1);
+    if (error) { ranksReady = false; return false; }
+    ranksReady = true;
+    const drv = await ptAll(() => db.from('users').select('id').eq('driver_status', 'approved').order('id'), 10);
+    for (const d of drv) {
+      const { count: has } = await db.from('points').select('*', { count: 'exact', head: true })
+        .eq('driver_id', String(d.id)).eq('uniq_key', 'start');
+      let silent = false;
+      if (!has) { await ptBackfill(d.id); silent = true; }   // первый раз — молча, без сообщений водителю
+      await rankRecalc(d.id, { silent });
+    }
+    lbCache.clear();
+    return true;
+  } catch (e) { console.error('ranksStart', e.message); return ranksReady; }
+}
+async function ranksLoop() {
+  const ok = await ranksStart();
+  setTimeout(ranksLoop, ok ? 6 * 3600e3 : 5 * 60e3);     // пока миграции нет — проверяем каждые 5 минут
+}
+setTimeout(ranksLoop, 40 * 1000);
+
+// доска почёта: водители города по баллам — за этот месяц или за всё время
+const lbCache = new Map();
+async function leaderboard(period, city) {
+  const key = period + '|' + (city || '');
+  const c = lbCache.get(key);
+  if (c && Date.now() - c.t < 60000) return c.rows;
+  const us = await ptAll(() => {
+    let q = db.from('users').select('*')
+      .eq('driver_status', 'approved').eq('is_banned', false);
+    if (city) q = q.eq('city', city);
+    return q.order('id');
+  }, 5);
+  const pts = {};
+  if (period === 'month') {
+    const rows = await ptAll(() => db.from('points').select('driver_id,delta').neq('reason', 'start').gte('created_at', ptMonth0()).order('id'), 100);
+    rows.forEach(x => { pts[x.driver_id] = (pts[x.driver_id] || 0) + (x.delta || 0); });
+  }
+  const list = us.map(u => ({ id: u.id, name: u.name, avatar: u.avatar || null, car: u.car || null,
+    rating: u.rating, moto: u.vehicle_type === 'moto', rank: u.rank_code || null, paused: !!u.rank_paused,
+    pts: period === 'month' ? (pts[String(u.id)] || 0) : (u.points_total || 0) }))
+    .filter(x => x.pts > 0)
+    .sort((a, b) => b.pts - a.pts || String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
+  list.forEach((x, i) => { x.place = i + 1; });
+  lbCache.set(key, { t: Date.now(), rows: list });
+  return list;
+}
+// экран «Мой ранг»
+async function rankInfo(me) {
+  const st = await rankRecalc(me.id) || {};
+  const mrows = await ptAll(() => db.from('points').select('delta').eq('driver_id', String(me.id)).neq('reason', 'start')
+    .gte('created_at', ptMonth0()).order('id'), 10);
+  const { data: hist } = await db.from('points').select('delta,reason,note,meta,created_at')
+    .eq('driver_id', String(me.id)).order('id', { ascending: false }).limit(40);
+  const board = await leaderboard('month', me.city);
+  const pl = board.find(x => String(x.id) === String(me.id));
+  return { ...st, month: mrows.reduce((a, x) => a + (x.delta || 0), 0), today: await ptToday(me.id),
+    place: pl ? pl.place : null, of: board.length, hist: hist || [], ranks: RANKS, pt: PT };
+}
 
 setInterval(() => { const t = Date.now(); for (const [k, v] of rateMap) if (t - v.t > 300000) rateMap.delete(k); }, 300000);
 
@@ -5195,6 +5558,12 @@ http.createServer(async (req, res) => {
         const avg = (all.reduce((s, r) => s + r.rating, 0) / all.length).toFixed(1);
         await db.from('users').update({ rating: avg }).eq('id', target);
       }
+      if (ranksReady && body.kind !== 'passenger') {
+        const { data: rr } = await db.from('rides').select('passenger_id,driver_id').eq('id', body.ride_id).maybeSingle();
+        const fair = rr && String(rr.passenger_id) === String(me.id) && String(rr.driver_id) === String(target);
+        if (fair && rating === 5) awardStar(body.ride_id, target).catch(() => {});
+        else if (fair) rankRecalc(target).catch(() => {});
+      }
       return json(res, 200, { ok: true });
     }
 
@@ -5215,6 +5584,21 @@ http.createServer(async (req, res) => {
           { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
       } catch (e) { console.error('notifyStaff complaint', e.message); }
       return json(res, 200, { ok: true });
+    }
+
+    // --- ранги: «Мой ранг» и «Доска почёта» ---
+    if (req.url === '/api/rank') {
+      if (!ranksReady) return json(res, 200, { ok: true, missing: true });
+      if (me.driver_status !== 'approved') return json(res, 200, { ok: true, notDriver: true });
+      return json(res, 200, { ok: true, ...(await rankInfo(me)) });
+    }
+    if (req.url === '/api/leaderboard') {
+      if (!ranksReady) return json(res, 200, { ok: true, missing: true });
+      const period = body.period === 'all' ? 'all' : 'month';
+      const city = String(body.city || me.city || '').slice(0, 40) || null;
+      const all = await leaderboard(period, city);
+      const mine = all.find(x => String(x.id) === String(me.id)) || null;
+      return json(res, 200, { ok: true, period, city, rows: all.slice(0, 50), mine, me: me.id, total: all.length });
     }
 
     // --- обновление собственных данных (вместо прямой записи с фронтенда) ---
@@ -5396,7 +5780,11 @@ http.createServer(async (req, res) => {
       // ---------- общее ----------
       if (act === 'ride-complete') {
         if (!iAmPassenger && !iAmDriver) return json(res, 403, { error: 'not_yours' });
-        await db.from('rides').update({ status: 'completed' }).eq('id', ride.id);
+        const was = ride.status;
+        const upd = { status: 'completed' };
+        if (was !== 'completed') { upd.completed_at = nowIso; upd.auto_closed = false; }
+        await db.from('rides').update(upd).eq('id', ride.id);
+        if (was !== 'completed' && ride.driver_id) awardRide(ride.id).catch(() => {});
         return json(res, 200, { ok: true });
       }
 
@@ -5427,18 +5815,23 @@ http.createServer(async (req, res) => {
       if (act === 'ride-arrived') {
         if (!iAmDriver) return json(res, 403, { error: 'not_yours' });
         await db.from('rides').update({ arrived: true }).eq('id', ride.id);
+        if (!ride.arrived_at) await db.from('rides').update({ arrived_at: nowIso }).eq('id', ride.id).then(() => {}, () => {});
         return json(res, 200, { ok: true });
       }
 
       if (act === 'ride-cancel-driver') {
         if (!iAmDriver) return json(res, 403, { error: 'not_yours' });
+        const why = ['agreed', 'cant', 'noshow', 'other'].includes(body.reason) ? body.reason : 'other';
         await db.from('rides').update({
           status: 'created', driver_id: null,
           cancelled_by: 'driver', cancel_notified: false
         }).eq('id', ride.id);
         await db.from('offers').update({ status: 'declined' })
           .eq('ride_id', ride.id).eq('driver_id', me.id);
-        return json(res, 200, { ok: true });
+        // причина — для статистики; «на месте» сбрасываем: следующий водитель ещё не приехал
+        db.from('rides').update({ cancel_reason: why, arrived: false, arrived_at: null }).eq('id', ride.id).then(() => {}, () => {});
+        const pts = await driverCancelPoints(me, ride, why);
+        return json(res, 200, { ok: true, pts });
       }
 
       // ---------- смены ----------
@@ -5693,6 +6086,7 @@ http.createServer(async (req, res) => {
           const wtid = await tgIdOf(tid);
           if (wtid) await send(wtid, `⚠️ <b>Предупреждение от модерации</b>\n${String(body.text || 'На вас поступила жалоба. Пожалуйста, соблюдайте правила сервиса.').slice(0, 500)}`);
         }
+        if ((body.ban || body.warn) && tid) await complaintPoints(tid, cid);
         await db.from('complaints').update({ status: 'done' }).eq('id', cid);
         return json(res, 200, { ok: true });
       }
