@@ -241,6 +241,12 @@ async function onUpdate(u) {
     }
 
     // «Взять заказ» под карточкой в общей группе — отвечаем сами, окошком
+    if (cq.data === 'call:off' || cq.data === 'call:on') {
+      try { await callToggle(cq, cq.data === 'call:on'); }
+      catch (e) { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Не получилось, попробуйте ещё раз.' }).catch(() => {}); }
+      return;
+    }
+
     if (cq.data && cq.data.startsWith('gtake:')) {
       try { await groupTake(cq, cq.data.slice(6)); }
       catch (e) { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Не получилось, попробуйте ещё раз.', show_alert: true }); }
@@ -2795,11 +2801,22 @@ async function notifyLoop() {
 async function expireLoop() {
   try {
     const cut = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const { data: old } = await db.from('rides').select('*').eq('status', 'created').lt('created_at', cut);
+    // заказ на время сюда не попадает: он ждёт своего времени (ниже)
+    const { data: old } = await db.from('rides').select('*').eq('status', 'created').is('scheduled_at', null).lt('created_at', cut);
     for (const r of old || []) {
       await db.from('rides').update({ status: 'expired' }).eq('id', r.id);
       const tid = await tgIdOf(r.passenger_id);
       if (tid) await send(tid, `⌛️ <b>Заявка устарела</b>\n${r.from_address} → ${r.to_address}\nНикто не откликнулся за 10 минут. Если поездка ещё нужна — создайте новую.`,
+        { reply_markup: { inline_keyboard: [[wa('Создать новую', 'order')]] } });
+    }
+    // заказ на время: прошло 15 минут после назначенного времени, а водителя так и нет
+    const cutS = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: oldS } = await db.from('rides').select('*').eq('status', 'created').not('scheduled_at', 'is', null).lt('scheduled_at', cutS);
+    for (const r of oldS || []) {
+      await db.from('rides').update({ status: 'expired' }).eq('id', r.id);
+      const tid = await tgIdOf(r.passenger_id);
+      const at = new Date(r.scheduled_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      if (tid) await send(tid, `⌛️ <b>Заказ на ${at} так никто и не взял</b>\n${safeName(r.from_address)} → ${safeName(r.to_address)}\nЕсли поездка ещё нужна — создайте новую.`,
         { reply_markup: { inline_keyboard: [[wa('Создать новую', 'order')]] } });
     }
   } catch (e) { console.error('expire', e.message); }
@@ -3721,6 +3738,281 @@ async function driverPostsLoop() {
 }
 setTimeout(driverPostsLoop, 45 * 1000);
 
+/* ---------- зов на линию (v168) ----------
+   Заявка ждёт водителя дольше N минут, а свободных водителей в городе не хватает —
+   бот пишет водителям, которые сейчас не на линии, но недавно заходили. Без адресов и цен.
+   Когда заявки разобрали (или они закрылись) — то же сообщение меняется само.
+   Вышел по зову и довёз — +баллы (если включено). Ночью — только тем, кто сам включил.
+   Настройки — settings.call_cfg (панель «Ещё → Зов на линию»), журнал — call_log и call_sent.
+   Пока миграции db-29 нет — всё молчит. */
+const CALL_DEF = { on: true, waitMin: 4, cooldownMin: 120, perWave: 15, gapMin: 15, activeDays: 14, nightFrom: 23, nightTo: 7, bonus: 2 };
+const CALL_LIM = { waitMin: [1, 9], cooldownMin: [30, 1440], perWave: [1, 50], gapMin: [5, 180], activeDays: [1, 60], nightFrom: [0, 23], nightTo: [0, 23], bonus: [0, 20] };
+let CCFG = { ...CALL_DEF };
+let callReady = false;
+
+function callCfgClean(c) {
+  const src = c && typeof c === 'object' ? c : {};
+  const out = { on: src.on === undefined ? CALL_DEF.on : !!src.on };
+  for (const k of Object.keys(CALL_LIM)) {
+    const [lo, hi] = CALL_LIM[k];
+    const v = src[k] === null || src[k] === '' ? NaN : Number(src[k]);
+    out[k] = Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : CALL_DEF[k];
+  }
+  return out;
+}
+async function callCfgLoad() {
+  try {
+    const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    CCFG = callCfgClean(data && data.call_cfg);
+  } catch (e) {}
+  return CCFG;
+}
+// таблицы из миграции db-29 на месте?
+async function callCheck() {
+  try { const { error } = await db.from('call_log').select('id').limit(1); callReady = !error; }
+  catch (e) { callReady = false; }
+  return callReady;
+}
+function callNight(cfg = CCFG) {
+  const h = localHour();
+  if (cfg.nightFrom === cfg.nightTo) return false;
+  return cfg.nightFrom > cfg.nightTo ? (h >= cfg.nightFrom || h < cfg.nightTo) : (h >= cfg.nightFrom && h < cfg.nightTo);
+}
+// подходит ли водитель под заявку — как в списке заявок у водителя
+function callFits(d, r) {
+  if (d.vehicle_type === 'moto') return r.kind === 'delivery';
+  if (r.kind === 'delivery' && !d.delivery) return false;
+  if (r.to_city && !d.intercity) return false;
+  return true;
+}
+function callKinds(rides) {
+  let ride = 0, del = 0, ic = 0;
+  for (const r of rides) { if (r.kind === 'delivery') del++; else if (r.to_city) ic++; else ride++; }
+  return [ride ? `🚕 ${ride}` : '', del ? `📦 ${del}` : '', ic ? `🛣 ${ic}` : ''].filter(Boolean).join(' · ');
+}
+function callText(city, rides, free) {
+  return `🔥 <b>${safeName(city)}: ждут водителя</b>\n\n` +
+    `Заявок без водителя: <b>${rides.length}</b> (${callKinds(rides)})` +
+    (free ? '' : '\nСвободных водителей на линии нет.') +
+    `\n\nВыйдете на линию — заявки придут сразу.`;
+}
+const CALL_OFF_KB = { inline_keyboard: [[{ text: '🔕 Не звать меня', callback_data: 'call:off' }]] };
+
+// раз в минуту: закрыть отработавшие волны, позвать водителей, где ждут
+let callBusy = false;
+async function callLoop() {
+  if (callBusy) return;
+  callBusy = true;
+  try {
+    if (!callReady && !(await callCheck())) return;
+    await callCfgLoad();
+    await callClose();
+    if (CCFG.on) await callWave();
+  } catch (e) { console.error('call', e.message); }
+  finally { callBusy = false; }
+}
+
+async function callWave() {
+  const now = Date.now();
+  // ждут дольше N минут; через 10 минут заявка сама закрывается — такие уже не трогаем
+  const { data: rides } = await db.from('rides').select('id,city,kind,to_city,created_at,target_driver_id')
+    .eq('status', 'created').is('driver_id', null).is('scheduled_at', null)
+    .lt('created_at', new Date(now - CCFG.waitMin * 60e3).toISOString())
+    .gt('created_at', new Date(now - 10 * 60e3).toISOString());
+  const byCity = {};
+  for (const r of rides || []) {
+    if (r.target_driver_id || !r.city) continue;          // заявку для конкретного водителя видит только он
+    (byCity[r.city] = byCity[r.city] || []).push(r);
+  }
+  const cities = Object.keys(byCity);
+  const out = [];
+  if (!cities.length) return out;
+  const night = callNight();
+  let paid = false;
+  try { const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle(); paid = !!(st && st.paid_mode); } catch (e) {}
+
+  for (const city of cities) {
+    const waiting = byCity[city];
+    // один город — не чаще раза в gapMin минут
+    const { data: last } = await db.from('call_log').select('created_at').eq('city', city).order('created_at', { ascending: false }).limit(1);
+    if (last && last[0] && now - new Date(last[0].created_at).getTime() < CCFG.gapMin * 60e3) continue;
+
+    const { data: drv } = await db.from('users').select('*').eq('city', city)
+      .in('role', ['driver', 'both']).eq('driver_status', 'approved').limit(1000);
+    const all = (drv || []).filter(d => !d.is_banned);
+    const { data: busy } = await db.from('rides').select('driver_id').eq('city', city).in('status', ['confirmed', 'in_progress']);
+    const busySet = new Set((busy || []).map(x => String(x.driver_id)));
+    const free = all.filter(d => d.status === 'online' && !busySet.has(String(d.id)));
+    // зовём, если какую-то заявку некому взять или заявок больше, чем свободных
+    const uncovered = waiting.filter(r => !free.some(d => callFits(d, r)));
+    if (!uncovered.length && waiting.length <= free.length) continue;
+    const need = uncovered.length ? uncovered : waiting;
+
+    const cand = all.filter(d => d.status !== 'online' && d.telegram_id && d.call_on !== false
+        && (!night || d.call_night === true)
+        && d.last_active && now - new Date(d.last_active).getTime() <= CCFG.activeDays * 864e5
+        && (!d.call_at || now - new Date(d.call_at).getTime() >= CCFG.cooldownMin * 60e3)
+        && (!paid || (d.sub_until && new Date(d.sub_until).getTime() > now))
+        && need.some(r => callFits(d, r)))
+      .sort((a, b) => new Date(b.last_active) - new Date(a.last_active))
+      .slice(0, CCFG.perWave);
+    if (!cand.length) continue;
+
+    const { data: log, error } = await db.from('call_log').insert({
+      city, waiting: waiting.length, free: free.length, sent: 0, ride_ids: waiting.map(r => String(r.id)).join(',')
+    }).select('id').maybeSingle();
+    if (error || !log) continue;
+
+    const text = callText(city, waiting, free.length);
+    const rows = [];
+    for (const d of cand) {
+      const r = await send(d.telegram_id, text, { reply_markup: { inline_keyboard: [
+        [wa('🟢 Выйти на линию', 'driver', { id: d.telegram_id, first_name: d.name })],
+        [{ text: '🔕 Не звать меня', callback_data: 'call:off' }]
+      ] } }).catch(() => null);
+      if (r && r.ok && r.result) rows.push({ call_id: log.id, user_id: String(d.id), tg_id: d.telegram_id, msg_id: r.result.message_id, sent_at: new Date(now).toISOString() });
+    }
+    if (rows.length) await db.from('call_sent').insert(rows);
+    // отметку ставим всем, кого пробовали: заблокировавших бота не дёргаем каждую волну
+    await db.from('users').update({ call_at: new Date(now).toISOString() }).in('id', cand.map(d => d.id));
+    await db.from('call_log').update(rows.length ? { sent: rows.length }
+      : { sent: 0, closed_at: new Date().toISOString(), outcome: 'none' }).eq('id', log.id);
+    out.push({ city, sent: rows.length, waiting: waiting.length, free: free.length });
+  }
+  return out;
+}
+
+// заявки разобрали или они закрылись — меняем сообщения, чтобы никто не выходил зря
+async function callClose() {
+  const { data: open } = await db.from('call_log').select('*').is('closed_at', null).order('created_at').limit(20);
+  for (const w of open || []) {
+    const ids = String(w.ride_ids || '').split(',').filter(Boolean);
+    let rs = [];
+    if (ids.length) { const { data } = await db.from('rides').select('id,status,driver_id').in('id', ids); rs = data || []; }
+    const still = rs.filter(r => r.status === 'created' && !r.driver_id);
+    if (still.length && Date.now() - new Date(w.created_at).getTime() < 12 * 60e3) continue;
+    const taken = rs.some(r => r.driver_id && ['confirmed', 'in_progress', 'completed'].includes(r.status));
+    const outcome = taken ? 'taken' : still.length ? 'timeout' : 'gone';
+    await db.from('call_log').update({ closed_at: new Date().toISOString(), outcome }).eq('id', w.id);
+    const { data: msgs } = await db.from('call_sent').select('tg_id,msg_id').eq('call_id', w.id).not('msg_id', 'is', null);
+    const text = outcome === 'taken'
+      ? '✅ <b>Заявки уже разобрали</b>\nСпасибо! Позову снова, когда будут ждать водителя.'
+      : '⌛️ <b>Уже неактуально</b>\nЗаявки закрылись. Позову снова, когда будут ждать водителя.';
+    for (const m of msgs || []) {
+      await tg('editMessageText', { chat_id: m.tg_id, message_id: m.msg_id, text, parse_mode: 'HTML', reply_markup: CALL_OFF_KB }).catch(() => {});
+    }
+  }
+}
+
+// водитель вышел на линию — если его недавно звали, отмечаем
+async function callCame(userId) {
+  if (!callReady || !userId) return;
+  await db.from('call_sent').update({ online_at: new Date().toISOString() })
+    .eq('user_id', String(userId)).is('online_at', null)
+    .gte('sent_at', new Date(Date.now() - 30 * 60e3).toISOString());
+}
+
+// поездка завершена: водитель вышел по зову и взял этот заказ — отмечаем и даём баллы
+async function callTook(rideId) {
+  if (!callReady || !rideId) return;
+  try {
+    const { data: r } = await db.from('rides').select('*').eq('id', rideId).maybeSingle();
+    if (!r || r.status !== 'completed' || !r.driver_id) return;
+    const tc = new Date(r.confirmed_at || r.created_at).getTime();
+    const { data } = await db.from('call_sent').select('*').eq('user_id', String(r.driver_id)).is('ride_id', null)
+      .not('online_at', 'is', null)
+      .gte('sent_at', new Date(tc - 60 * 60e3).toISOString()).lte('sent_at', new Date(tc).toISOString())
+      .order('sent_at', { ascending: false }).limit(1);
+    const cs = data && data[0];
+    if (!cs || new Date(cs.online_at).getTime() > tc) return;
+    const { data: mark } = await db.from('call_sent').update({ ride_id: String(r.id) }).eq('id', cs.id).is('ride_id', null).select('id');
+    if (!mark || !mark.length) return;                         // эту отметку уже поставили
+    const t1 = r.completed_at ? new Date(r.completed_at).getTime() : Date.now();
+    const short = t1 - tc < ((RCFG && RCFG.lim && RCFG.lim.minMinutes) || 5) * 60000;
+    if (!CCFG.bonus || r.auto_closed || short) return;
+    const ok = await ptAdd(r.driver_id, CCFG.bonus, 'call', ptRoute(r), 'call:' + cs.id, { ride_id: String(r.id) });
+    if (ok) {
+      await db.from('call_sent').update({ bonus: true }).eq('id', cs.id);
+      await rankRecalc(r.driver_id);
+    }
+  } catch (e) { console.error('callTook', e.message); }
+}
+
+// кнопки «Не звать меня» / «Звать снова» под сообщением
+async function callToggle(cq, on) {
+  const uid = cq.from && cq.from.id;
+  const { error } = await db.from('users').update({ call_on: on }).eq('telegram_id', uid);
+  if (error) { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Не получилось, попробуйте ещё раз.' }); return; }
+  await tg('answerCallbackQuery', { callback_query_id: cq.id, text: on ? 'Хорошо, буду звать' : 'Хорошо, больше не позову' });
+  const m = cq.message;
+  if (!m || !m.message_id) return;
+  // это сообщение больше не трогаем, когда волна закроется
+  if (!on && callReady) await db.from('call_sent').update({ msg_id: null }).eq('tg_id', uid).eq('msg_id', m.message_id);
+  await tg('editMessageText', {
+    chat_id: m.chat ? m.chat.id : uid, message_id: m.message_id, parse_mode: 'HTML',
+    text: on ? '🔔 <b>Хорошо, снова буду звать</b>\nКогда заявки ждут водителя, а свободных нет — напишу.'
+             : '🔕 <b>Хорошо, больше не позову</b>\nВключить снова — кнопкой ниже или в приложении: Заявки → Настройки смены.',
+    ...(on ? {} : { reply_markup: { inline_keyboard: [[{ text: '🔔 Звать снова', callback_data: 'call:on' }]] } })
+  }).catch(() => {});
+}
+
+// строка для утренней сводки
+async function callReportLine(y0, t0) {
+  if (!callReady) return '';
+  try {
+    const { data: w } = await db.from('call_log').select('id,sent').gte('created_at', y0.toISOString()).lt('created_at', t0.toISOString());
+    const waves = (w || []).filter(x => x.sent > 0);
+    if (!waves.length) return '';
+    const { data: s } = await db.from('call_sent').select('online_at,ride_id').in('call_id', waves.map(x => x.id));
+    const came = (s || []).filter(x => x.online_at).length, took = (s || []).filter(x => x.ride_id).length;
+    return `📣 Звали на линию: ${waves.length} ${plural(waves.length, ['раз', 'раза', 'раз'])} · вышли ${came} · довезли ${took}`;
+  } catch (e) { return ''; }
+}
+
+// панель: правила и итоги
+function callCfgDiff(a, b) {
+  const L = { on: 'включено', waitMin: 'ждёт дольше, мин', cooldownMin: 'одного не чаще, мин', perWave: 'за раз', gapMin: 'город не чаще, мин',
+    activeDays: 'заходили за, дн', nightFrom: 'ночь с', nightTo: 'ночь до', bonus: 'баллы' };
+  return Object.keys(L).filter(k => a[k] !== b[k]).map(k => `${L[k]}: ${k === 'on' ? (b[k] ? 'да' : 'нет') : b[k]}`).join('; ');
+}
+async function callAdmin(me, act, body) {
+  if (act === 'call-cfg-get') {
+    await callCfgLoad();
+    if (!callReady) await callCheck();
+    return { ok: true, ready: callReady, cfg: CCFG, def: CALL_DEF, lim: CALL_LIM };
+  }
+  if (act === 'call-cfg-set') {
+    const next = callCfgClean(body.cfg);
+    const diff = callCfgDiff(CCFG, next);
+    if (!diff) return { ok: true, cfg: CCFG, same: true };
+    const { error } = await db.from('settings').update({ call_cfg: next }).eq('id', 1);
+    if (error) return { code: 500, ok: false, error: /call_cfg/.test(error.message) ? 'no_column' : 'save_failed' };
+    CCFG = next;
+    await audit(me, 'call-cfg', null, null, diff);
+    return { ok: true, cfg: CCFG, diff };
+  }
+  if (act === 'call-stats') {
+    if (!callReady && !(await callCheck())) return { ok: true, missing: true };
+    const since = new Date(Date.now() - 7 * 864e5).toISOString();
+    const { data: w } = await db.from('call_log').select('*').gte('created_at', since).order('created_at', { ascending: false }).limit(300);
+    const waves = (w || []).filter(x => x.sent > 0);
+    let s = [];
+    if (waves.length) s = await ptAll(() => db.from('call_sent').select('call_id,online_at,ride_id,bonus').in('call_id', waves.map(x => x.id)).order('id'), 5);
+    const per = {};
+    for (const x of s) { const p = per[x.call_id] = per[x.call_id] || { came: 0, took: 0 }; if (x.online_at) p.came++; if (x.ride_id) p.took++; }
+    const rows = waves.slice(0, 20).map(x => ({ at: x.created_at, city: x.city, waiting: x.waiting, free: x.free, sent: x.sent,
+      outcome: x.outcome || null, came: (per[x.id] || {}).came || 0, took: (per[x.id] || {}).took || 0 }));
+    const tot = { waves: waves.length, sent: waves.reduce((a, x) => a + (x.sent || 0), 0),
+      came: s.filter(x => x.online_at).length, took: s.filter(x => x.ride_id).length };
+    const { count: off } = await db.from('users').select('*', { count: 'exact', head: true }).eq('call_on', false).in('role', ['driver', 'both']);
+    return { ok: true, tot, rows, off: off || 0 };
+  }
+  return { code: 400, ok: false, error: 'unknown' };
+}
+setTimeout(() => { callLoop().catch(() => {}); }, 50 * 1000);
+setInterval(() => { callLoop().catch(() => {}); }, 60 * 1000);
+/* ---------- конец: зов на линию ---------- */
+
 /* ============ доступ в водительскую группу ============
    допуск сняли или человека забанили — убираем из группы.
    допуск вернули — разбаниваем и присылаем ссылку обратно. */
@@ -4266,6 +4558,7 @@ const ACT_PERM = {
   'city-list':'cities','city-save':'cities','city-delete':'cities','pin-now':'cities',
 
   'settings-update':'settings','save-settings':'settings',
+  'call-cfg-get':'settings','call-cfg-set':'settings','call-stats':'settings',
 
   'stats':'stats','days-stats':'stats','rides-stats':'stats','drivers-stats':'stats','tg-stats':'stats',
 
@@ -4676,6 +4969,8 @@ async function dailyReportText() {
       if (plus || minus || ups.length || inv) L.push(line);
     } catch (e) {}
   }
+  const callLn = await callReportLine(y0, t0);
+  if (callLn) L.push(callLn);
   const top = Object.entries(s.byDriver).sort((a, b) => b[1] - a[1])[0];
   if (top) {
     const nm = await rpNames([top[0]]);
@@ -4894,6 +5189,7 @@ const ptRides = rows => rows.reduce((a, x) => {
 
 // поездка завершена — начисляем баллы водителю
 async function awardRide(rideId) {
+  callTook(rideId).catch(() => {});                  // вышел на линию по зову и довёз — отметка и баллы
   if (!ranksReady || !rideId) return;
   try {
     const { data: r } = await db.from('rides').select('*').eq('id', rideId).maybeSingle();
@@ -5365,12 +5661,13 @@ async function rankInfo(me) {
   const pl = board.find(x => String(x.id) === String(me.id));
   return { ...st, month: mrows.reduce((a, x) => a + (x.delta || 0), 0), today: await ptToday(me.id),
     place: pl ? pl.place : null, of: board.length, hist: hist || [], ranks: ranksList(),
-    pt: { ...RCFG.pts, ...RCFG.lim }, peak: RCFG.peak, feat: RCFG.feat };
+    pt: { ...RCFG.pts, ...RCFG.lim }, peak: RCFG.peak, feat: RCFG.feat,
+    callBonus: callReady && CCFG.on ? CCFG.bonus : 0 };
 }
 
 /* ---------- панель «Ранги и баллы» (право ranks) ---------- */
 const PT_GROUPS = {
-  ride: ['ride', 'ride_auto', 'ride_short', 'ride_same', 'star', 'start'],
+  ride: ['ride', 'ride_auto', 'ride_short', 'ride_same', 'star', 'start', 'call'],
   cancel: ['cancel', 'cancel_wait', 'cancel_ok', 'cancel_free', 'cancel_noshow', 'cancel_early'],
   inv: ['inv_join', 'inv_ride', 'inv_spam', 'ref'],
   adm: ['adjust', 'void'],
@@ -6084,6 +6381,8 @@ http.createServer(async (req, res) => {
         idle_warned: v => !!v,
         delivery:    v => !!v,
         intercity:   v => !!v,
+        call_on:     v => !!v,
+        call_night:  v => !!v,
         favs:        v => Array.isArray(v) ? v.slice(0, 100).map(String) : [],
         remind_before: v => Math.max(0, Math.min(1440, parseInt(v) || 0)),
         avatar:      v => v === null ? null : String(v).slice(0, 300),
@@ -6096,9 +6395,12 @@ http.createServer(async (req, res) => {
       };
 
       const upd = {};
+      // переключатели «звать на линию» — только когда миграция db-29 уже на месте
+      if (body && ('call_on' in body || 'call_night' in body) && !callReady) await callCheck();
       Object.keys(body || {}).forEach(k => {
         if (!ALLOWED[k]) return;              // всё лишнее молча отбрасываем
         if (k === 'cancel_as_passenger' || k === 'cancel_as_driver') return;
+        if ((k === 'call_on' || k === 'call_night') && !callReady) return;   // пока нет миграции db-29
         upd[k] = ALLOWED[k](body[k]);
       });
 
@@ -6127,6 +6429,7 @@ http.createServer(async (req, res) => {
       // уходят один раз, и офлайн-водитель их не видел
       if (upd.status === 'online' && me.status !== 'online') {
         sendOpenRides(fresh).catch(() => {});
+        callCame(me.id).catch(() => {});
       }
 
       return json(res, 200, { ok: true, me: fresh });
@@ -6335,6 +6638,13 @@ http.createServer(async (req, res) => {
       }
 
       // ранги и баллы: правила, журнал баллов, ручные начисления
+      // зов на линию: правила и итоги
+      if (/^call-/.test(String(act || ''))) {
+        const r = await callAdmin(me, act, body);
+        const code = r.code || 200; delete r.code;
+        return json(res, code, r);
+      }
+
       if (/^(rank-|points-|ranks-|inv-list$)/.test(String(act || ''))) {
         const r = await rankAdmin(me, act, body);
         const code = r.code || 200; delete r.code;

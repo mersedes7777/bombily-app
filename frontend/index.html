@@ -1350,6 +1350,15 @@ body[data-t="light"] .rk-c-platinum{--mt:#1d9a90;}body[data-t="light"] .rk-c-dia
 .pj-actions .c{background:transparent;border:1px solid var(--line2);color:var(--dim);}
 .pj-actions .o{background:var(--g);color:var(--onac,#04140a);}
 
+/* ===== v165: зов на линию ===== */
+.cl-warn{margin:0 18px 12px;padding:11px 13px;border-radius:12px;background:rgba(232,184,75,.10);border:1px solid rgba(232,184,75,.3);font-size:13px;line-height:1.45;}
+.cl-list{margin-top:12px;padding-top:2px;padding-bottom:2px;}
+.cl-row{padding:11px 0;border-top:1px solid var(--line);}
+.cl-row:first-child{border-top:none;}
+.cl-row .a{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;}
+.cl-row .a span{color:var(--dim2);font-size:12px;}
+.cl-row .w{font-size:12.5px;color:var(--dim);margin-top:3px;line-height:1.4;}
+
 /* ===== v164: вкладка «Люди» и карточка человека ===== */
 .pp-c{opacity:.6;font-weight:500;}
 .pp-list{padding-top:4px;padding-bottom:4px;}
@@ -3319,6 +3328,7 @@ function rkMeHTML(j){
   ${pk?row('В часы пик',pk,X.peak):''}
   ${row('Пассажир поставил 5★','',X.star)}
   ${row(X.fastSec>=60&&X.fastSec%60===0?`Ответили на заявку быстрее ${X.fastSec===60?'минуты':X.fastSec/60+' мин'}`:`Ответили на заявку быстрее ${X.fastSec||60} сек`,'',X.fast)}
+  ${row('Вышли на линию по зову бота','и довезли заказ',j.callBonus)}
   ${F.invites!==false?row('Друг вступил в группу',`по вашей ссылке и пробыл там ${X.invStayDays||7} ${plural(X.invStayDays||7,['день','дня','дней'])}`,X.invJoin):''}
   ${F.invites!==false?row('Друг сделал первую поездку','с любым водителем, кроме вас',X.invRide):''}
   ${row('Привели водителя','когда он сделает 10 поездок',X.ref)}
@@ -3378,7 +3388,7 @@ function invShare(){
  try{if(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.openTelegramLink){Telegram.WebApp.openTelegramLink(u);return;}}catch(e){}
  window.open(u,'_blank');
 }
-const RK_H={ride:'Поездка',ride_auto:'Поездку закрыл бот',ride_short:'Поездка короче нормы',ride_same:'Лишняя поездка с тем же пассажиром за день',star:'Пассажир поставил 5★',ref:'Приглашённый водитель сделал 10 поездок',
+const RK_H={call:'Вышел на линию по зову и довёз',ride:'Поездка',ride_auto:'Поездку закрыл бот',ride_short:'Поездка короче нормы',ride_same:'Лишняя поездка с тем же пассажиром за день',star:'Пассажир поставил 5★',ref:'Приглашённый водитель сделал 10 поездок',
  cancel:'Отказ от взятого заказа',cancel_wait:'Отмена по договорённости',cancel_ok:'Отмена по договорённости',cancel_free:'Не смог приехать',cancel_noshow:'Пассажир не вышел',cancel_early:'Отказ заранее',complaint:'Подтверждённая жалоба',start:'Баллы за прошлые поездки',
  inv_join:'Друг вступил в группу',inv_ride:'Друг сделал первую поездку',inv_spam:'Приглашённый оказался спамером',adjust:'Начислено администратором',void:'Отменено администратором',
  rank_up:'Новое звание',rank_down:'Звание снижено',rank_pause:'Звание на паузе',rank_resume:'Звание снова действует'};
@@ -3743,7 +3753,8 @@ async function inbox(m){
  <div class="obar" style="margin-bottom:10px"><div style="flex:1;padding-right:10px">
    <div class="l">Показывать меня в группе</div>
    <div class="obhint">В чате города появится ваша карточка: имя, машина, рейтинг и кнопка «Вызвать». Уйдёте с линии — карточка исчезнет.</div>
-  </div><div class="tg ${me.show_in_group?'on':''}" onclick="togShowGroup()"><b></b></div></div>`:''}`;
+  </div><div class="tg ${me.show_in_group?'on':''}" onclick="togShowGroup()"><b></b></div></div>
+ ${callTogs()}`:''}`;
  drawDPlanned();
  drawMyOffs();syncOffs();
  if(shiftTick)clearInterval(shiftTick);
@@ -4405,6 +4416,77 @@ async function togIntercity(){
  if(error)return;
  me.intercity=v;T(v?'Межгород включён — увидите заказы в другие города':'Межгород выключен — только поездки по городу');drawD();
 }
+// «Зов на линию» (v165): водитель сам решает, звать ли его, и ночью ли
+function callCfgFront(){const c=(SETTINGS&&SETTINGS.call_cfg)||{};return{cool:Number(c.cooldownMin)||120,nf:Number.isFinite(Number(c.nightFrom))&&c.nightFrom!==null?Number(c.nightFrom):23,nt:Number.isFinite(Number(c.nightTo))&&c.nightTo!==null?Number(c.nightTo):7};}
+function callTogs(){
+ if(!me||!('call_on' in me))return '';             // миграции db-29 ещё нет
+ const c=callCfgFront(),on=me.call_on!==false;
+ const every=c.cool%60===0?`${c.cool/60} ${plural(c.cool/60,['час','часа','часов'])}`:`${c.cool} мин`;
+ const hh=h=>String(h).padStart(2,'0')+':00';
+ return `<div class="obar" style="margin-bottom:10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Звать, когда ждут водителя</div>
+   <div class="obhint">Если заявки висят, а свободных водителей нет, бот напишет — можно выйти на линию и взять заказ. Не чаще раза в ${every}.</div>
+  </div><div class="tg ${on?'on':''}" onclick="togCall('call_on')"><b></b></div></div>
+ ${on?`<div class="obar" style="margin-bottom:10px"><div style="flex:1;padding-right:10px">
+   <div class="l">Звать и ночью</div>
+   <div class="obhint">С ${hh(c.nf)} до ${hh(c.nt)} — только если включите.</div>
+  </div><div class="tg ${me.call_night?'on':''}" onclick="togCall('call_night')"><b></b></div></div>`:''}`;
+}
+async function togCall(k){
+ const cur=k==='call_on'?me.call_on!==false:!!me[k];
+ const v=!cur;
+ const r=await api('/api/me/update',{[k]:v});
+ if(r.error)return T('Не удалось изменить');
+ if(r.me)me=r.me; else me[k]=v;
+ if((k==='call_on'?me.call_on!==false:!!me[k])!==v)return T('Пока не получилось — попробуйте через минуту');
+ T(k==='call_on'?(v?'Буду звать, когда ждут водителя':'Больше не позову'):(v?'Ночью тоже позову':'Ночью звать не буду'));
+ drawD();
+}
+let callCfg=null;
+async function finCall(c){
+ c.innerHTML='<div class="empty">Загрузка…</div>';
+ const[g,s]=await Promise.all([api('/api/admin',{action:'call-cfg-get'}),api('/api/admin',{action:'call-stats'})]);
+ if(!g||g.error){c.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
+ callCfg={...g.cfg};
+ const C=callCfg,L=g.lim||{};
+ const fld=(k,label)=>`<div class="fr"><label>${label}</label><input id="cf_${k}" type="number" inputmode="numeric" min="${(L[k]||[])[0]??''}" max="${(L[k]||[])[1]??''}" value="${C[k]}"></div>`;
+ const t=(s&&s.tot)||{waves:0,sent:0,came:0,took:0};
+ const OUT={taken:'разобрали',gone:'закрылись',timeout:'не дождались',none:'не дошло'};
+ const when=d=>{const x=new Date(d),td=new Date();const hm=x.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'});return x.toDateString()===td.toDateString()?'сегодня '+hm:x.toLocaleDateString('ru',{day:'numeric',month:'short'})+' '+hm;};
+ c.innerHTML=`${g.ready?'':`<div class="cl-warn">Нужна миграция <b>db-29-call.sql</b> в Supabase — до неё бот никого не зовёт.</div>`}
+ <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px"><div class="l">Звать водителей на линию</div><div class="obhint">Когда заявка ждёт, а свободных водителей не хватает, бот пишет тем, кто сейчас не на линии. Без адресов и цен. Заявки разобрали — сообщение меняется само.</div></div><div class="tg ${C.on?'on':''}" onclick="togCallOn()"><b></b></div></div>
+ <div class="form">
+  ${fld('waitMin','Звать, если заявка ждёт дольше, минут')}
+  <div class="obhint" style="padding:0 0 12px">Через 10 минут заявка сама закрывается, поэтому не больше 9.</div>
+  ${fld('cooldownMin','Одного водителя — не чаще, чем раз в, минут')}
+  ${fld('perWave','За один раз — не больше, водителей')}
+  ${fld('gapMin','Один город — не чаще, чем раз в, минут')}
+  ${fld('activeDays','Кого звать: заходили в приложение за, дней')}
+  ${fld('nightFrom','Ночь начинается, час')}
+  ${fld('nightTo','Ночь заканчивается, час')}
+  <div class="obhint" style="padding:0 0 12px">Ночью бот пишет только тем, кто сам включил «Звать и ночью» в кабинете.</div>
+  ${fld('bonus','Баллы за выход по зову (0 — без баллов)')}
+  <div class="obhint" style="padding:0 0 12px">Водитель вышел на линию после сообщения и довёз заказ.</div>
+  <button class="btn" onclick="saveCall()">Сохранить</button>
+ </div>
+ ${s&&!s.missing&&!s.error?`<div class="sec">За 7 дней</div>
+ <div class="pp-stats" style="margin:4px 18px 0"><div><b>${t.waves}</b><span>${plural(t.waves,['раз звали','раза звали','раз звали'])}</span></div><div><b>${t.came}</b><span>водителей вышли</span></div><div><b>${t.took}</b><span>заказов довезли</span></div></div>
+ <div class="obhint" style="margin:8px 18px 0">Сообщений ушло: ${t.sent} · выключили зов у себя: ${s.off||0}</div>
+ ${(s.rows||[]).length?`<div class="st-card cl-list">${s.rows.map(w=>`<div class="cl-row"><div class="a"><b>${esc(w.city)}</b><span>${when(w.at)}</span></div><div class="w">ждали ${w.waiting} · написали ${w.sent} · вышли ${w.came} · довезли ${w.took}${w.outcome?' · '+(OUT[w.outcome]||w.outcome):' · ещё ждут'}</div></div>`).join('')}</div>`:'<div class="obhint" style="margin:10px 18px 0">Пока ни разу не звали.</div>'}`:''}
+ <div style="height:20px"></div>`;
+}
+function callCfgRead(){
+ const cfg={on:!!(callCfg&&callCfg.on)};
+ ['waitMin','cooldownMin','perWave','gapMin','activeDays','nightFrom','nightTo','bonus'].forEach(k=>{const e=document.getElementById('cf_'+k);cfg[k]=e?Number(e.value):callCfg[k];});
+ return cfg;
+}
+async function saveCall(){
+ const r=await api('/api/admin',{action:'call-cfg-set',cfg:callCfgRead()});
+ if(r.error)return T(r.error==='no_column'?'Сначала нужна миграция db-29':'Не удалось сохранить');
+ T(r.same?'Ничего не изменилось':'Сохранено');
+ finCall(document.getElementById('fincont'));
+}
+async function togCallOn(){callCfg.on=!callCfg.on;await saveCall();}
 async function togShowGroup(){
  const v=!me.show_in_group;
  const r=await api('/api/me/update',{show_in_group:v});
@@ -4446,12 +4528,12 @@ const TAB_PERM={over:null,ppl:'users',stat:'stats'};
 // «Ещё»: разделы бывших «Финансов» по смыслу; у каждого — своё право
 const MORE_GROUPS=[
  ['Города и группы',[['city','Города и группы Telegram','ссылки, закреп, заказы в чате, карточки водителей','cities']]],
- ['Водители',[['ranks','Ранги и баллы','журнал баллов, начисления вручную, правила','ranks']]],
+ ['Водители',[['ranks','Ранги и баллы','журнал баллов, начисления вручную, правила','ranks'],['call','Зов на линию','бот зовёт водителей, когда заявки ждут','settings']]],
  ['Продвижение',[['mail','Рассылка в бота','написать всем или части людей','broadcast'],['src','Метки и QR-коды','откуда приходят люди и кто из них заказывает','refs'],['promo','Промокоды','бесплатные дни и скидки','promos'],['ref','Рефералка','бонус за приглашённого водителя','refs'],['back','Возврат водителей','кто перестал платить и давно не заходил','broadcast']]],
  ['Деньги',[['sub','Подписка и тарифы','платно или бесплатно, когда снимать с линии','settings'],['bal','Баланс водителей','начислить или списать вручную','balance']]],
  ['Система',[['rep','Сводки в Telegram','утренняя сводка вам и итоги недели водителям','settings'],['log','Журнал действий','что делали администраторы','audit']]]
 ];
-const MORE_ICO={ranks:'<path d="M8.5 2h3l1.6 6M15.5 2h-3"/><circle cx="12" cy="14.5" r="6.5"/><path d="m12 11.2 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"/>',city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
+const MORE_ICO={call:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',ranks:'<path d="M8.5 2h3l1.6 6M15.5 2h-3"/><circle cx="12" cy="14.5" r="6.5"/><path d="m12 11.2 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"/>',city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
  promo:'<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',ref:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',back:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
  sub:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',bal:'<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',rep:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',log:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>'};
 function moreAllowed(id){
@@ -5683,7 +5765,7 @@ const ACT_RU={
  'car-remove':'удалил транспорт','car-add-admin':'добавил транспорт','car-edit':'изменил транспорт',
  'broadcast-send':'отправил рассылку','city-save':'изменил город','city-delete':'удалил город',
  'pin-now':'обновил закреп вручную','audit-clear':'очистил журнал','set-role':'изменил права доступа',
- 'rank-cfg':'изменил правила рангов','points-adjust':'начислил или списал баллы','points-void':'отменил запись баллов','ranks-recalc':'пересчитал ранги'
+ 'rank-cfg':'изменил правила рангов','points-adjust':'начислил или списал баллы','points-void':'отменил запись баллов','ranks-recalc':'пересчитал ранги','call-cfg':'изменил правила зова на линию'
 };
 const FIELD_RU={name:'имя',full_name:'ФИО',admin_note:'пометка',phone:'телефон',age:'возраст',
  spot:'место стоянки',rating:'рейтинг',role:'роль',driver_status:'статус водителя',balance:'баланс',
@@ -5781,6 +5863,7 @@ async function aFin(m){
  if(finTab==='log')return finLog(c);
  if(finTab==='rep')return finReports(c);
  if(finTab==='ranks')return finRanks(c);
+ if(finTab==='call')return finCall(c);
  if(finTab==='sub')finSub(c);
  else if(finTab==='promo')finPromo(c);
  else if(finTab==='ref')finRef(c);
