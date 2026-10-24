@@ -1349,6 +1349,51 @@ body[data-t="light"] .rk-c-platinum{--mt:#1d9a90;}body[data-t="light"] .rk-c-dia
 .pj-actions button{flex:1;border-radius:14px;padding:14px;font-family:Golos Text,sans-serif;font-weight:700;font-size:14px;cursor:pointer;border:none;}
 .pj-actions .c{background:transparent;border:1px solid var(--line2);color:var(--dim);}
 .pj-actions .o{background:var(--g);color:var(--onac,#04140a);}
+
+/* ===== v164: вкладка «Люди» и карточка человека ===== */
+.pp-c{opacity:.6;font-weight:500;}
+.pp-list{padding-top:4px;padding-bottom:4px;}
+.pp-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line);cursor:pointer;}
+.pp-list .pp-row:first-child{border-top:none;}
+.pp-row .ava{width:44px;height:44px;border-radius:14px;font-size:16px;flex-shrink:0;align-self:flex-start;margin-top:2px;}
+.pp-row .chev,.pp-link .chev,.pp-tog .chev{width:18px;height:18px;stroke:var(--dim2);fill:none;stroke-width:2;flex-shrink:0;}
+.pp-t{flex:1;min-width:0;}
+.pp-n{display:flex;align-items:center;gap:6px;min-width:0;}
+.pp-n b{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.pp-n .idtag{flex-shrink:0;}
+.pp-me{font-size:11px;font-weight:600;color:var(--g);flex-shrink:0;}
+.pp-pills{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:5px;}
+.pp-pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--card2);color:var(--dim);}
+.pp-pill.g{background:var(--gs);color:var(--g);}
+.pp-pill.am{background:rgba(232,184,75,.14);color:var(--am);}
+.pp-pill.red{background:rgba(226,88,90,.14);color:var(--red);}
+.rkp.pp-rk{margin-left:0;vertical-align:0;}
+.pp-on{font-size:11px;font-weight:600;color:var(--g);display:inline-flex;align-items:center;gap:4px;}
+.pp-on::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--g);}
+.pp-w{font-size:13px;color:var(--ink);margin-top:5px;line-height:1.35;}
+.pp-dim{color:var(--dim);}
+.pp-s{font-size:11.5px;color:var(--dim2);margin-top:4px;line-height:1.35;}
+.pp-card h3{margin:0;font-size:19px;}
+.pp-head{display:flex;gap:14px;align-items:flex-start;}
+.ucava.pp-ava{width:64px;height:64px;border-radius:20px;font-size:26px;margin:0;flex-shrink:0;}
+.pp-ht{flex:1;min-width:0;}
+.pp-acts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px;}
+.pp-acts .ucbtn{flex:1 1 auto;margin:0;}
+.pp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px;margin:10px 0 4px;}
+.pp-stats div{background:var(--surf);border-radius:13px;padding:10px 10px 9px;min-width:0;}
+.pp-stats b{display:block;font-size:19px;font-weight:700;}
+.pp-stats span{display:block;font-size:11.5px;color:var(--dim2);margin-top:2px;line-height:1.3;}
+.pp-sec{font-size:13px;font-weight:700;color:var(--ink);margin:16px 0 8px;display:flex;align-items:baseline;gap:8px;}
+.pp-sec small{font-size:11.5px;font-weight:500;color:var(--dim2);}
+.pp-sub{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:600;color:var(--dim);margin:10px 0 6px;}
+.pp-in{width:100%;background:var(--surf);border:1px solid var(--line2);border-radius:12px;padding:11px 12px;color:var(--ink);font-family:Golos Text,sans-serif;font-size:14px;}
+.pp-link{display:flex;align-items:center;justify-content:space-between;width:100%;background:var(--surf);border:1px solid var(--line2);border-radius:12px;padding:12px 14px;color:var(--ink);font-family:Golos Text,sans-serif;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:6px;}
+.pp-tog{display:flex;align-items:center;justify-content:space-between;padding:13px 0 11px;border-top:1px solid var(--line);margin-top:10px;font-size:13.5px;font-weight:700;cursor:pointer;}
+.pp-tog .chev{transition:transform .2s;}
+.pp-tog.open .chev{transform:rotate(90deg);}
+.pp-fold{display:none;}
+.pp-fold.open{display:block;}
+.pp-sel{width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:10px;color:var(--ink);font-family:Golos Text,sans-serif;font-size:14px;}
 </style>
 </head>
 <body>
@@ -6444,69 +6489,100 @@ async function loadAppPhones(ids){
   if(fi&&!fi.value)fi.value=nm;
  });
 }
-async function aPpl(m){
- // список грузим раз в минуту, поиск фильтрует на месте — иначе ответы обгоняют друг друга
- if(!PPL_CACHE||Date.now()-PPL_AT>60000){
-  const{data:us}=await db.from('users').select('*').order('created_at',{ascending:false}).limit(2000);
-  PPL_CACHE=us||[];PPL_AT=Date.now();
+// «Люди» (v164): заголовок со сводкой, поиск, одна строка фильтров, понятные строки
+let pplShown=150;
+const pplIsDrv=u=>['driver','both'].includes(u.role);
+const pplIsStaff=u=>u.staff_role&&u.staff_role!=='none';
+const PPL_F=[
+ ['all','Все',u=>true],
+ ['driver','Водители',u=>pplIsDrv(u)],
+ ['online','На линии',u=>pplIsDrv(u)&&u.status==='online'],
+ ['pending','Ждут проверки',u=>u.driver_status==='pending'],
+ ['pass','Пассажиры',u=>!pplIsDrv(u)],
+ ['new','Новые за неделю',u=>u.created_at&&Date.now()-new Date(u.created_at).getTime()<7*864e5],
+ ['ordered','Заказывали',u=>ACT[u.id]&&ACT[u.id].made>0],
+ ['repeat','Заказывали повторно',u=>ACT[u.id]&&ACT[u.id].made>1],
+ ['never','Не заказывали',u=>!ACT[u.id]||!ACT[u.id].made],
+ ['staff','Персонал',u=>pplIsStaff(u)],
+ ['banned','Бан',u=>!!u.is_banned]
+];
+// все люди — постранично: база отдаёт не больше 1000 за раз
+async function pplLoadAll(){
+ const seen=new Map();
+ for(let i=0;i<30;i++){
+  const{data,error}=await db.from('users').select('*').order('created_at',{ascending:false}).range(i*1000,i*1000+999);
+  if(error)break;
+  let fresh=0;(data||[]).forEach(u=>{if(!seen.has(u.id)){seen.set(u.id,u);fresh++;}});
+  if(!data||data.length<1000||!fresh)break;
  }
+ return [...seen.values()];
+}
+const pplDate=d=>{if(!d)return '';const x=new Date(d);return x.toLocaleDateString('ru',x.getFullYear()===new Date().getFullYear()?{day:'numeric',month:'short'}:{day:'numeric',month:'short',year:'numeric'}).replace(' г.','');};
+function pplAgo(d){
+ if(!d)return '';
+ const days=Math.floor((Date.now()-new Date(d).getTime())/864e5);
+ return days<=0?'сегодня':days===1?'вчера':days<7?days+' '+plural(days,['день','дня','дней'])+' назад':pplDate(d);
+}
+// чем занят человек — одной строкой
+function pplWhat(u){
+ const a=ACT[u.id]||{};
+ if(pplIsDrv(u)){
+  const bits=[esc(u.car)||'машина не указана'];
+  if(a.drives)bits.push('возил '+a.drives+' '+plural(a.drives,['раз','раза','раз']));
+  return bits.join(' · ');
+ }
+ if(!a.made)return '<span class="pp-dim">ещё не заказывал</span>';
+ return `${a.made} ${plural(a.made,['заказ','заказа','заказов'])}${a.done?', доехал '+a.done:''}${a.last?' · последний '+pplAgo(a.last):''}`;
+}
+function pplPills(u){
+ const p=[];
+ if(u.is_banned)p.push('<span class="pp-pill red">бан</span>');
+ if(pplIsStaff(u))p.push(`<span class="pp-pill am">${u.staff_role==='owner'?'владелец':u.staff_role==='admin'?'админ':'модератор'}</span>`);
+ if(pplIsDrv(u))p.push('<span class="pp-pill g">водитель</span>');
+ else if(u.driver_status==='pending')p.push('<span class="pp-pill am">ждёт проверки</span>');
+ if(pplIsDrv(u)&&u.rank_code&&typeof rkPill==='function')p.push(rkPill(u.rank_code,u.rank_paused).replace('class="rkp','class="rkp pp-rk'));
+ if(pplIsDrv(u)&&u.status==='online')p.push('<span class="pp-on">на линии</span>');
+ return p.join('');
+}
+async function aPpl(m){
+ if(!PPL_CACHE||Date.now()-PPL_AT>60000){PPL_CACHE=await pplLoadAll();PPL_AT=Date.now();}
  const all=PPL_CACHE;
- const isStaffR=u=>u.staff_role&&u.staff_role!=='none';
-
- // приводим к общему виду: регистр, ё, лишние и неразрывные пробелы
- const nrm=s=>String(s==null?'':s).toLowerCase().replace(/ё/g,'е')
-   .replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
-
+ const nrm=s=>String(s==null?'':s).toLowerCase().replace(/ё/g,'е').replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim();
  let pool=all;
  if(pplQuery){
-  const q=nrm(pplQuery);
-  const qd=pplQuery.replace(/\D/g,'');
-  pool=pool.filter(u=>nrm(u.name).includes(q)
-    ||nrm(u.full_name).includes(q)
-    ||nrm(u.admin_note).includes(q)
-    ||nrm(u.car).includes(q)
-    ||nrm(u.plate).includes(q)
-    ||(qd.length>=3&&String(u.telegram_id||'').includes(qd))
-    ||(qd.length>=3&&pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd)));
+  const q=nrm(pplQuery),qd=pplQuery.replace(/\D/g,'');
+  pool=pool.filter(u=>nrm(u.name).includes(q)||nrm(u.full_name).includes(q)||nrm(u.admin_note).includes(q)||nrm(u.car).includes(q)||nrm(u.plate).includes(q)
+   ||(qd.length>=3&&String(u.telegram_id||'').includes(qd))||(qd.length>=3&&pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd)));
  }
- if(pplAct==='ordered')pool=pool.filter(u=>ACT[u.id]&&ACT[u.id].made>0);
- if(pplAct==='never')  pool=pool.filter(u=>!ACT[u.id]||!ACT[u.id].made);
- if(pplAct==='repeat') pool=pool.filter(u=>ACT[u.id]&&ACT[u.id].made>1);
-
- // и только потом делим по ролям
- const groups={
-  admin:pool.filter(u=>['owner','admin'].includes(u.staff_role)),
-  mod:pool.filter(u=>u.staff_role==='moderator'),
-  driver:pool.filter(u=>['driver','both'].includes(u.role)&&!isStaffR(u)),
-  pass:pool.filter(u=>!['driver','both'].includes(u.role)&&!isStaffR(u))
- };
- let list;
- if(pplFilter==='admin')list=groups.admin;
- else if(pplFilter==='mod')list=groups.mod;
- else if(pplFilter==='driver')list=groups.driver;
- else if(pplFilter==='pass')list=groups.pass;
- else list=pool;
- const seg=[['all','Все',pool.length],['admin','Админы',groups.admin.length],['mod','Модеры',groups.mod.length],['driver','Водители',groups.driver.length],['pass','Пассажиры',groups.pass.length]];
- m.innerHTML=`<div class="head"><h2>Пользователи</h2><span class="m">${pplQuery?'найдено '+list.length:list.length}</span></div>
- <div class="search" style="margin:0 14px 10px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="pplq" placeholder="Поиск: имя, телефон или ID" value="${esc(pplQuery)}" oninput="pplSearch(this.value)" autocomplete="off">${pplQuery?`<span class="sclr" onclick="pplQuery='';aPpl(document.getElementById('main'))">✕</span>`:''}</div>
- <div class="minifilter">${[['','все'],['ordered','заказывали'],['never','ни разу'],['repeat','повторно']].map(f=>`<span class="${pplAct===f[0]?'on':''}" onclick="pplAct='${f[0]}';aPpl(document.getElementById('main'))">${f[1]}</span>`).join('')}</div>
- <div class="seg">${seg.map(s=>`<div class="${pplFilter===s[0]?'on':''}" onclick="pplFilter='${s[0]}';aPpl(document.getElementById('main'))">${s[1]}<span style="opacity:.55;font-weight:500"> ${s[2]}</span></div>`).join('')}</div>
- <div style="padding:6px 0 24px">${list.map(u=>{
-   const mine=u.id===me.id;
-   const bd=isStaffR(u)?`<span class="badge am">${u.staff_role==='owner'?'владелец':u.staff_role==='admin'?'админ':'модератор'}</span>`:'';
-   const bn=u.is_banned?'<span class="badge red">бан</span>':'';
-   const on=['driver','both'].includes(u.role)&&u.status==='online'?'<span class="badge" style="background:var(--gs);color:var(--g)">на линии</span>':'';
-   const reg=u.created_at?new Date(u.created_at).toLocaleDateString('ru',{day:'2-digit',month:'2-digit',year:'2-digit'}):'';
-   const tag=String(u.telegram_id||'').slice(-4);
-   const ph=pplPhones[u.id];
-   const av=pplAvatars[u.id];
-   return `<div class="ai"><div class="ava" id="av${u.id}">${av?`<img src="${av}" alt="">`:(esc(u.name)[0]||'?')}</div><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(u.name)}${mine?' (вы)':''} <span class="idtag">#${tag}</span></div><div style="font-size:11.5px;color:var(--dim)">${ph?esc(ph):(u.has_phone?'телефон загружается…':'без телефона')}${u.car?' · '+esc(u.car):''}${reg?' · с '+reg:''}</div>${u.admin_note?`<div class="unote">✎ ${esc(u.admin_note)}</div>`:''}<div class="uact">${actLine(u.id)}</div></div>${on}${bn}${bd}${u.tg_username?`<a class="tgmini" href="https://t.me/${esc(u.tg_username)}" target="_blank" onclick="event.stopPropagation()" title="Написать в Telegram">✈️</a>`:'<span class="tgmini off" title="Нет ника">✈️</span>'}<button class="rolebtn" onclick="userCard('${u.id}')">открыть</button></div>`;
- }).join('')||`<div class="empty"><b>Никого не нашли</b>По запросу «${esc(pplQuery)}» совпадений нет. Попробуйте часть имени или проверьте раскладку.</div>`}</div>`;
- // активность грузим один раз и не перерисовываем поверх поиска
+ if(!PPL_F.find(f=>f[0]===pplFilter))pplFilter='all';
+ const cnt={};PPL_F.forEach(f=>{cnt[f[0]]=pool.filter(f[2]).length;});
+ let list=pool.filter(PPL_F.find(f=>f[0]===pplFilter)[2]);
+ // водители: сначала те, кто на линии
+ if(['driver','online'].includes(pplFilter))list=list.slice().sort((a,b)=>(b.status==='online')-(a.status==='online')||(b.points_total||0)-(a.points_total||0));
+ const nDrv=all.filter(pplIsDrv).length,n24=all.filter(u=>u.created_at&&Date.now()-new Date(u.created_at).getTime()<864e5).length;
+ const shown=list.slice(0,pplShown);
+ m.innerHTML=`<div class="head st-h"><div><h2>Люди</h2><div class="st-sub">${stFmt(all.length)} ${plural(all.length,['человек','человека','человек'])} · ${nDrv} ${plural(nDrv,['водитель','водителя','водителей'])}${n24?` · +${n24} за сутки`:''}</div></div></div>
+ <div class="search" style="margin:0 18px 10px"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="pplq" placeholder="Имя, телефон, машина или ID" value="${esc(pplQuery)}" oninput="pplSearch(this.value)" autocomplete="off">${pplQuery?`<span class="sclr" onclick="pplQuery='';aPpl(document.getElementById('main'))">✕</span>`:''}</div>
+ <div class="st-cities">${PPL_F.filter(f=>f[0]==='all'||cnt[f[0]]||f[0]===pplFilter).map(f=>`<div class="${pplFilter===f[0]?'on':''}" onclick="pplFilter='${f[0]}';pplShown=150;aPpl(document.getElementById('main'))">${f[1]} <span class="pp-c">${stFmt(cnt[f[0]])}</span></div>`).join('')}</div>
+ ${pplQuery?`<div class="st-cmpnote">найдено ${list.length} ${plural(list.length,['человек','человека','человек'])}</div>`:''}
+ ${list.length?`<div class="st-card pp-list">${shown.map(u=>{
+   const tag=String(u.telegram_id||'').slice(-4),ph=pplPhones[u.id],av=pplAvatars[u.id];
+   const tail=[u.created_at?'с '+pplDate(u.created_at):'',esc(u.city)||'',ph?esc(ph):(u.has_phone?'':'без телефона')].filter(Boolean).join(' · ');
+   return `<div class="pp-row" onclick="userCard('${u.id}')"><div class="ava" id="av${u.id}">${av?`<img src="${av}" alt="">`:(esc(u.name)[0]||'?')}</div>
+    <div class="pp-t"><div class="pp-n"><b>${esc(u.name)||'Без имени'}</b>${u.id===me.id?'<span class="pp-me">вы</span>':''}${tag?`<span class="idtag">#${tag}</span>`:''}</div>
+     ${pplPills(u)?`<div class="pp-pills">${pplPills(u)}</div>`:''}
+     <div class="pp-w">${pplWhat(u)}</div>
+     ${u.admin_note?`<div class="unote">✎ ${esc(u.admin_note)}</div>`:''}
+     <div class="pp-s">${tail}</div></div>
+    <svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>`;}).join('')}</div>
+   ${list.length>shown.length?`<button class="pj-more" onclick="pplShown+=150;aPpl(document.getElementById('main'))">Показать ещё ${Math.min(150,list.length-shown.length)} из ${list.length-shown.length}</button>`:''}`
+  :`<div class="empty"><b>Никого не нашли</b>${pplQuery?`По запросу «${esc(pplQuery)}» совпадений нет. Попробуйте часть имени или последние цифры телефона.`:'В этой группе пока никого.'}</div>`}
+ <div style="height:16px"></div>`;
  if(!ACT_LOADED){ACT_LOADED=true;loadActivity().then(()=>{if(role==='admin'&&aTab==='ppl'&&!pplQuery)aPpl(document.getElementById('main'));});}
- loadPplPhones(list.map(u=>u.id).slice(0,200));
- loadAvatars(list.map(u=>u.id).slice(0,20));
+ loadPplPhones(shown.map(u=>u.id).slice(0,200));
+ loadAvatars(shown.map(u=>u.id).slice(0,20));
 }
+
 function writeUser(uid,name){
  const m=document.createElement('div');m.className='mask';m.id='sh2';
  m.innerHTML=`<div class="sheet"><h3>Написать пользователю</h3><div class="s">${esc(name)} получит сообщение в бота от имени администрации. Работает, даже если у него нет username.</div><textarea class="ta" id="amsg" placeholder="Ваше сообщение" style="min-height:100px"></textarea><div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="sendUserMsg('${uid}')">Отправить</button></div></div>`;
@@ -6519,68 +6595,74 @@ async function sendUserMsg(uid){
  if(r.error)return T('Ошибка');
  document.getElementById('sh2').remove();T('Сообщение отправлено — придёт в бота');
 }
+// карточка человека (v164): сначала кто это и что с ним, правка данных — в свёрнутом блоке
 async function userCard(id){
- const{data:u}=await db.from('users').select('*').eq('id',id).single();
- const{data:rv}=await db.from('reviews').select('*').eq('target_id',id).order('created_at',{ascending:false}).limit(20);
- const{data:rvBy}=await db.from('reviews').select('*').eq('from_id',id).order('created_at',{ascending:false}).limit(20);
- const{data:rd}=await db.from('rides').select('status').or(`passenger_id.eq.${id},driver_id.eq.${id}`);
+ const[{data:u},{data:rv},{data:rvBy},{data:rd}]=await Promise.all([
+  db.from('users').select('*').eq('id',id).single(),
+  db.from('reviews').select('*').eq('target_id',id).order('created_at',{ascending:false}).limit(20),
+  db.from('reviews').select('*').eq('from_id',id).order('created_at',{ascending:false}).limit(20),
+  db.from('rides').select('status,passenger_id,driver_id').or(`passenger_id.eq.${id},driver_id.eq.${id}`)
+ ]);
+ if(!u)return T('Не удалось открыть');
  const rides=rd||[];
- const done=rides.filter(r=>r.status==='completed').length;
+ const asP=rides.filter(r=>String(r.passenger_id)===String(id)),asD=rides.filter(r=>String(r.driver_id)===String(id));
+ const doneP=asP.filter(r=>r.status==='completed').length,doneD=asD.filter(r=>r.status==='completed').length;
  const cancelled=rides.filter(r=>String(r.status).startsWith('cancelled')||r.status==='expired').length;
- const act=u.sub_until&&new Date(u.sub_until)>new Date();
+ const isD=pplIsDrv(u),act=u.sub_until&&new Date(u.sub_until)>new Date();
  const own=me.staff_role==='owner';
  const canRole=(own&&u.staff_role!=='owner')||(me.staff_role==='admin'&&!['owner','admin'].includes(u.staff_role));
+ const rating=Number(u.rating||5);
+ const rvRow=(r,who)=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(who)[0]||'?'}</div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">${esc(who)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="delRev('${r.id}','${id}')">удалить</button></div>`;
+ const sel=(id_,val,opts)=>`<select id="${id_}" class="pp-sel">${opts.map(([v,l])=>`<option value="${v}" ${String(val||'')===v?'selected':''}>${l}</option>`).join('')}</select>`;
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet" style="max-height:90vh;overflow-y:auto">
- <div class="ucava" id="ucava">${pplAvatars[u.id]?`<img src="${pplAvatars[u.id]}" alt="">`:(esc(u.name)[0]||'?')}</div>
- <h3 style="text-align:center">${esc(u.name)} <span class="idtag">#${String(u.telegram_id||'').slice(-4)}</span></h3>
- <div id="ucwhy" style="text-align:center;font-size:10.5px;color:var(--dim);margin:-6px 0 8px"></div><div class="s"><span id="ucfio"></span>ID ${u.telegram_id} · регистрация ${new Date(u.created_at).toLocaleDateString('ru')}</div>
- <div class="ucontact">
-  <span class="ucbtn dim" id="ucphone">${u.has_phone?'телефон загружается…':'телефон не указан'}</span>
-  ${u.tg_username?`<a class="ucbtn tg" href="https://t.me/${esc(u.tg_username)}" target="_blank">✈️ Открыть в Telegram</a>`:''}
-  <button class="ucbtn wr" onclick="writeUser('${u.id}','${esc(u.name)}')">💬 Написать через бота</button>
+ m.innerHTML=`<div class="sheet pp-card" style="max-height:90vh;overflow-y:auto">
+ <div class="pp-head"><div class="ucava pp-ava" id="ucava">${pplAvatars[u.id]?`<img src="${pplAvatars[u.id]}" alt="">`:(esc(u.name)[0]||'?')}</div>
+  <div class="pp-ht"><h3>${esc(u.name)||'Без имени'}${u.telegram_id?` <span class="idtag">#${String(u.telegram_id).slice(-4)}</span>`:''}</h3>
+   <div class="pp-pills">${pplPills(u)||'<span class="pp-pill">пассажир</span>'}</div>
+   <div class="pp-s"><span id="ucfio"></span>${[esc(u.city)||'город не указан','с '+pplDate(u.created_at),'ID '+u.telegram_id].join(' · ')}</div>
+   <div id="ucwhy" class="pp-s"></div></div></div>
+ <div class="pp-acts">
+  <span class="ucbtn dim" id="ucphone">${u.has_phone?'телефон…':'нет телефона'}</span>
+  <button class="ucbtn wr" onclick="writeUser('${u.id}','${esc(u.name)}')">💬 Написать в бота</button>
+  ${u.tg_username?`<a class="ucbtn tg" href="https://t.me/${esc(u.tg_username)}" target="_blank">✈️ Telegram</a>`:''}
  </div>
- <div class="ustats">
-  <div class="ust"><b>${done}</b><span>поездок</span></div>
-  <div class="ust"><b>${cancelled}</b><span>отменено</span></div>
-  <div class="ust"><b>⭐ ${u.rating||5}</b><span>рейтинг</span></div>
-  <div class="ust"><b>${u.balance||0}₽</b><span>баланс</span></div>
+ <div class="pp-stats">
+  <div><b>${asP.length}</b><span>заказал${doneP?`, доехал ${doneP}`:''}</span></div>
+  ${isD||doneD?`<div><b>${doneD}</b><span>возил</span></div>`:''}
+  <div><b>${cancelled}</b><span>${plural(cancelled,['отмена','отмены','отмен'])}</span></div>
+  <div><b>${rkNum?rkNum(rating.toFixed(1)):rating.toFixed(1)}</b><span>рейтинг</span></div>
  </div>
- <div class="uinfo">
-  <div>Как пассажир: <b>${cancelTxt(u.cancel_as_passenger)}</b></div>
-  <div>Как водитель: <b>${refuseTxt(u.cancel_as_driver)}</b></div>
-  <div>Город: <b>${esc(u.city)||'—'}</b></div>
-  <div>Подписка: <b style="color:${act?'var(--g)':'var(--dim)'}">${act?('до '+new Date(u.sub_until).toLocaleDateString('ru')):'нет'}</b></div>
- </div>
- <div class="fr"><label>Имя в приложении</label><input id="e_name" value="${esc(u.name)}"></div>
- <div class="fr"><label>Пометка для себя · видите только вы</label><input id="e_admin_note" value="${esc(u.admin_note)}" placeholder="напр. Витя с рынка, синяя Нива"></div>
- <div class="fr"><label>ФИО по документам</label><input id="e_full_name" value="" placeholder="загружается…"></div>
- <div class="fr"><label>Телефон</label><input id="e_phone" value="" placeholder="${u.has_phone?'загружается…':'не указан'}" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
- <div class="fr"><label>Возраст</label><input id="e_age" value="${u.age||''}" inputmode="numeric"></div>
- 
- <div class="fr"><label>Где стоит</label><input id="e_spot" value="${esc(u.spot)}"></div>
- <div class="fr"><label>Рейтинг</label><input id="e_rating" value="${u.rating||5}" inputmode="decimal"></div>
- <div class="fr"><label>Баланс, ₽</label><input id="e_balance" value="${u.balance||0}" inputmode="numeric"></div>
- <div class="fr"><label>Роль в сервисе</label><input id="e_role" value="${esc(u.role)}" placeholder="passenger / driver / both"></div>
- <div class="fr"><label>Статус водителя</label><input id="e_ds" value="${esc(u.driver_status)}" placeholder="none / pending / approved"></div>
- ${(u.doc_license||u.doc_pts||u.doc_car)?`<div class="docs" id="ucdocs">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>u[d[0]]?`<div style="flex:1"><div class="docslot" data-k="${d[0]}"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">загрузка…</div></div><div class="cap">${d[1]}</div></div>`:'').join('')}</div>`:''}
- <div class="sec" style="padding-left:0">Отзывы о нём</div>
- ${(rv||[]).length?rv.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.from_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.from_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="delRev('${r.id}','${id}')">удалить</button></div>`).join(''):'<div class="sub" style="padding:4px 0 8px">отзывов нет</div>'}
- <div class="sec" style="padding-left:0">Его отзывы о других</div>
- ${(rvBy||[]).length?rvBy.map(r=>`<div class="rv" style="padding-left:0;padding-right:0"><div class="ava">${esc(r.target_name)[0]||'?'}</div><div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(r.target_name)} <span style="color:var(--am)">${'★'.repeat(r.rating)}</span> <span class="sub">(${r.kind==='passenger'?'о пассажире':'о водителе'})</span></div>${r.comment?'<div class="sub">'+esc(r.comment)+'</div>':''}</div><button class="rolebtn" onclick="delRev('${r.id}','${id}')">удалить</button></div>`).join(''):'<div class="sub" style="padding:4px 0 8px">не оставлял отзывов</div>'}
- <div class="sec" style="padding-left:0">Машины <button class="rolebtn" style="float:right" onclick="adminAddCar('${u.id}')">+ добавить</button></div>
- <div id="uccars"><div class="sub" style="padding:4px 0">загрузка…</div></div>
- <div class="sec" style="padding-left:0">Статус водителя</div>
+ <div class="pp-sec">Пометка для себя <small>видите только вы</small></div>
+ <input class="pp-in" id="e_admin_note" value="${esc(u.admin_note)}" placeholder="напр. Витя с рынка, синяя Нива">
+ <div class="pp-sec">Водитель</div>
  <div class="drvbox">
   <div class="drvst">
-   <b>${u.driver_status==='approved'?'Водитель · одобрен':u.driver_status==='pending'?'Заявка на рассмотрении':'Не водитель'}</b>
+   <b>${u.driver_status==='approved'?'Одобрен':u.driver_status==='pending'?'Заявка на проверке':u.driver_status==='rejected'?'Отклонён':'Не водитель'}</b>
    <span>${u.driver_status==='approved'?(esc(u.car)||'машина не указана')+(u.plate?' · '+esc(u.plate):''):'может ездить только как пассажир'}</span>
-   ${u.driver_status==='approved'&&(u.rank_code||u.points_total)?`<span style="margin-top:4px">${u.rank_code?rkPill(u.rank_code,u.rank_paused)+' · ':''}${stFmt(u.points_total||0)} ${plural(u.points_total||0,['балл','балла','баллов'])}</span>`:''}
+   ${isD?`<span>подписка: ${act?'до '+new Date(u.sub_until).toLocaleDateString('ru'):'нет'} · отказов: ${Number(u.cancel_as_driver)||0}</span>`:''}
+   ${isD&&(u.rank_code||u.points_total)?`<span style="margin-top:4px">${u.rank_code&&typeof rkPill==='function'?rkPill(u.rank_code,u.rank_paused)+' · ':''}${stFmt(u.points_total||0)} ${plural(u.points_total||0,['балл','балла','баллов'])}</span>`:''}
   </div>
-  ${u.driver_status==='approved'&&canSee('ranks')?`<button class="drvbtn" style="background:var(--surf);color:var(--ink);border:1px solid var(--line2)" onclick="closeSh();drvPtsSheet('${u.id}')">Баллы</button>`:''}
   ${u.driver_status==='approved'
     ? `<button class="drvbtn off" onclick="revokeDriver('${u.id}','${esc(u.name)}')">Снять права</button>`
     : `<button class="drvbtn on" onclick="grantDriver('${u.id}','${esc(u.name)}','${esc(u.car)}','${esc(u.plate)}')">Сделать водителем</button>`}
+ </div>
+ ${isD&&typeof canSee==='function'&&canSee('ranks')?`<button class="pp-link" onclick="closeSh();drvPtsSheet('${u.id}')">Звание и баллы<svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>`:''}
+ ${isD||u.driver_status==='pending'?`<div class="pp-sub">Машины <button class="rolebtn" onclick="adminAddCar('${u.id}')">+ добавить</button></div><div id="uccars"><div class="sub" style="padding:4px 0">загрузка…</div></div>`:''}
+ ${(u.doc_license||u.doc_pts||u.doc_car)?`<div class="pp-sub">Документы</div><div class="docs" id="ucdocs">${[['doc_license','права'],['doc_pts','ПТС'],['doc_car','машина']].map(d=>u[d[0]]?`<div style="flex:1"><div class="docslot" data-k="${d[0]}"><div style="height:74px;border:1px dashed var(--line2);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:10px">загрузка…</div></div><div class="cap">${d[1]}</div></div>`:'').join('')}</div>`:''}
+ <div class="pp-sec">Отзывы о нём · ${(rv||[]).length}</div>
+ ${(rv||[]).length?rv.map(r=>rvRow(r,r.from_name)).join(''):'<div class="sub" style="padding:2px 0 6px">отзывов нет</div>'}
+ ${(rvBy||[]).length?`<div class="pp-tog" onclick="this.nextElementSibling.classList.toggle('open');this.classList.toggle('open')">Его отзывы о других · ${rvBy.length}<svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div><div class="pp-fold">${rvBy.map(r=>rvRow(r,r.target_name)).join('')}</div>`:''}
+ <div class="pp-tog" onclick="this.nextElementSibling.classList.toggle('open');this.classList.toggle('open')">Изменить данные<svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>
+ <div class="pp-fold">
+  <div class="fr"><label>Имя в приложении</label><input id="e_name" value="${esc(u.name)}"></div>
+  <div class="fr"><label>ФИО по документам</label><input id="e_full_name" value="" placeholder="загружается…"></div>
+  <div class="fr"><label>Телефон</label><input id="e_phone" value="" placeholder="${u.has_phone?'загружается…':'не указан'}" inputmode="tel" maxlength="18" oninput="maskPhone(this)"></div>
+  <div class="fr"><label>Возраст</label><input id="e_age" value="${u.age||''}" inputmode="numeric"></div>
+  <div class="fr"><label>Где стоит</label><input id="e_spot" value="${esc(u.spot)}"></div>
+  <div class="fr"><label>Рейтинг</label><input id="e_rating" value="${rating.toFixed(1)}" inputmode="decimal"></div>
+  <div class="fr"><label>Баланс, ₽</label><input id="e_balance" value="${u.balance||0}" inputmode="numeric"></div>
+  <div class="fr"><label>Кто в сервисе</label>${sel('e_role',u.role||'passenger',[['passenger','Пассажир'],['driver','Водитель'],['both','Водитель и пассажир']])}</div>
+  <div class="fr"><label>Статус водителя</label>${sel('e_ds',u.driver_status||'none',[['none','Не водитель'],['pending','На проверке'],['approved','Одобрен'],['rejected','Отклонён']])}</div>
  </div>
  <div class="sa" style="flex-wrap:wrap">
   <button class="c" onclick="closeSh()">Закрыть</button>

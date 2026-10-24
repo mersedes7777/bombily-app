@@ -6600,8 +6600,10 @@ http.createServer(async (req, res) => {
       // ---- активность людей ----
       if (act === 'activity') {
         // все заявки: кто создавал, чем кончилось
-        const { data: rides } = await db.from('rides')
-          .select('passenger_id,driver_id,status,created_at').limit(20000);
+        // постранично: база отдаёт не больше 1000 строк за раз, а заявок больше
+        let rides = [];
+        try { rides = await ptAll(() => db.from('rides').select('passenger_id,driver_id,status,created_at').order('created_at'), 60); }
+        catch (e) { const { data } = await db.from('rides').select('passenger_id,driver_id,status,created_at').limit(1000); rides = data || []; }
         const byUser = {};
         const touch = id => (byUser[id] = byUser[id] || { made: 0, done: 0, last: null, drives: 0 });
         for (const r of rides || []) {
