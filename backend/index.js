@@ -680,13 +680,13 @@ async function onUpdate(u) {
     if (param.startsWith('drv_')) {
       const did = param.slice(4);
       const { data: drv } = await db.from('users')
-        .select('id,name,car,vehicle_type,spot,rating,status,city')
+        .select('*')
         .eq('id', did).eq('is_banned', false).maybeSingle();
       if (!drv) return send(chat, 'Такого водителя не нашлось. Откройте приложение и выберите из списка.');
 
       const busy = await driverStatusNow(drv);
       const car = drv.car || (drv.vehicle_type === 'moto' ? 'мотоцикл' : 'машина не указана');
-      const head = `🚗 <b>${safeName(noContacts(drv.name))}</b> · ⭐ ${Number(drv.rating || 5).toFixed(1)}\n${car}` +
+      const head = `🚗 <b>${safeName(noContacts(drv.name))}</b>${rankBit(drv)} · ⭐ ${Number(drv.rating || 5).toFixed(1)}\n${car}` +
         (drv.spot ? `\n📍 Стоит: ${safeName(noContacts(drv.spot))}` : '');
 
       if (busy === 'offline')
@@ -3605,6 +3605,13 @@ async function driverStatusNow(d) {
   return (busy && busy.length) ? 'busy' : 'free';
 }
 
+// звание в карточке водителя: «· 🥉 Бронза» (на паузе — не показываем)
+function rankBit(d) {
+  const RE = { bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '💠', diamond: '💎' };
+  if (!d || !d.rank_code || d.rank_paused || !RE[d.rank_code]) return '';
+  return ` · ${RE[d.rank_code]} ${RANK_NAMES[d.rank_code]}`;
+}
+
 function driverCardText(d, state, reviews) {
   const car = d.vehicle_type === 'moto'
     ? (d.car ? d.car + ' · мотоцикл' : 'мотоцикл')
@@ -3616,7 +3623,7 @@ function driverCardText(d, state, reviews) {
              : '⚫ Не на линии';
 
   const lines = [
-    `🚗 <b>${safeName(noContacts(d.name) || 'Водитель')}</b> · ⭐ ${rate}${cnt}`,
+    `🚗 <b>${safeName(noContacts(d.name) || 'Водитель')}</b>${rankBit(d)} · ⭐ ${rate}${cnt}`,
     car
   ];
   if (d.spot) lines.push(`📍 Стоит: ${safeName(noContacts(d.spot))}`);
@@ -3645,11 +3652,12 @@ async function dpostMinutes() {
   } catch (e) { return 30; }
 }
 
+let dpostFirst = true;   // после перезапуска один раз обновляем все карточки (новый текст)
 async function driverPostsLoop() {
   try {
     const everyMin = await dpostMinutes();
     const { data: drivers } = await db.from('users')
-      .select('id,name,car,vehicle_type,spot,rating,city,status,delivery,intercity,show_in_group')
+      .select('*')
       .eq('show_in_group', true).eq('is_banned', false);
 
     for (const d of drivers || []) {
@@ -3697,7 +3705,7 @@ async function driverPostsLoop() {
               last_post_at: new Date().toISOString(), last_status: state
             });
           }
-        } else if (post.last_status !== state) {
+        } else if (post.last_status !== state || dpostFirst) {
           // между публикациями меняем только статус
           const r = await tg('editMessageText', {
             chat_id: post.chat_id, message_id: post.message_id,
@@ -3708,6 +3716,7 @@ async function driverPostsLoop() {
       } catch (e) { glog(`карточка ${d.name}: ${e.message}`); }
     }
   } catch (e) { console.error('driverPosts', e.message); }
+  dpostFirst = false;
   setTimeout(driverPostsLoop, 60 * 1000);      // проверяем раз в минуту
 }
 setTimeout(driverPostsLoop, 45 * 1000);
@@ -5093,6 +5102,8 @@ async function rankRecalc(driverId, opts = {}) {
     }
     if (changed && u.driver_status === 'approved' && !u.is_banned) {
       setDriverTag({ ...u, rank_code: rank, rank_paused: paused }, true).catch(() => {});
+      // карточка в группе обновится в течение минуты
+      db.from('driver_posts').update({ last_status: 'rank' }).eq('driver_id', u.id).then(() => {}, () => {});
       if (!opts.silent && evOk && u.telegram_id) {
         const R = rank ? RANK_NAMES[rank] : null, Pc = prevIdx >= 0 ? RANK_CODES[prevIdx] : null;
         const n = total.toLocaleString('ru');
