@@ -1371,6 +1371,10 @@ body[data-t="light"] .rk-c-platinum{--mt:#1d9a90;}body[data-t="light"] .rk-c-dia
 .bz-pill.dim{background:var(--card2);color:var(--dim);}
 .req .bz-pill{margin:0 0 0 2px;vertical-align:middle;}
 .bz-lock{margin-top:6px;font-size:12px;color:var(--dim);line-height:1.4;}
+.bz-cashnote{margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(232,184,75,.09);border:1px solid rgba(232,184,75,.3);font-size:13px;line-height:1.45;}
+.bz-rule{display:flex;flex-wrap:wrap;gap:8px;margin:0 18px 12px;}
+.bz-rule div{padding:8px 12px;border-radius:11px;border:1px solid var(--line2);font-size:13px;font-weight:600;color:var(--dim);cursor:pointer;}
+.bz-rule div.on{background:var(--g);border-color:var(--g);color:#06120b;}
 .bz-sec{font-size:13px;font-weight:700;color:var(--ink);margin:18px 18px 8px;display:flex;align-items:baseline;gap:8px;}
 .bz-sec small{font-size:11.5px;font-weight:500;color:var(--dim2);}
 .bz-card{padding-top:2px;padding-bottom:2px;}
@@ -2400,6 +2404,21 @@ async function bNewLink(){const r=await api('/api/biz',{action:'new-invite'});if
 async function bStaffDel(uid){const r=await api('/api/biz',{action:'staff-remove',user_id:uid});if(r.error)return T('Не получилось');BIZ.staff=r.staff||(BIZ.staff||[]).filter(s=>String(s.user_id)!==String(uid));T('Сотрудник убран');bSet(document.getElementById('main'));}
 async function bLeave(){const r=await api('/api/biz',{action:'leave'});if(r.error)return T('Не получилось');await loadBiz();T('Вы вышли из точки');drawRoles();setRole('passenger');}
 
+// заказы точек — с какого звания (rank_cfg.bizMin, по умолчанию Бронза)
+const RK_ORD=['bronze','silver','gold','platinum','diamond'];
+const bizMinRank=()=>{const rc=SETTINGS&&SETTINGS.rank_cfg;return (rc&&rc.bizMin)||'bronze';};
+const bizMinTxt=()=>{const m=bizMinRank();return m==='none'?'':({bronze:'🥉 Бронзы',silver:'🥈 Серебра',gold:'🥇 Золота',platinum:'💠 Платины',diamond:'💎 Алмаза'})[m];};
+function bizCanTake(){
+ const min=bizMinRank();
+ if(min==='none'||!me||!('rank_code' in me))return true;
+ return !!me.rank_code&&!me.rank_paused&&RK_ORD.indexOf(me.rank_code)>=RK_ORD.indexOf(min);
+}
+function bizLockCard(r){
+ return `<div class="req"><span class="badge" style="background:rgba(90,169,240,.14);color:var(--blue)">доставка</span> <span class="bz-pill">🏪 ${esc(r.biz_name)} · проверенная точка</span>
+ <div class="rt" style="margin-top:8px">${esc(r.from_address)} → ${esc(r.to_address)}</div>
+ <div class="bz-cashnote">🏅 Заказы магазинов берут водители от ${bizMinTxt()}.<br>Получите звание — и такие заказы станут доступны.</div>
+ <div class="ra"><button class="skip" onclick="dGo('rank')">Как получить звание</button><button class="skip" onclick="skip('${r.id}')">Скрыть</button></div></div>`;
+}
 // водитель: доставка точки — где забрать и кому отдать
 async function loadBizContact(rid){
  const r=await api('/api/ride-contact',{ride_id:rid});
@@ -2432,7 +2451,9 @@ async function dPicked(){
 
 // панель: «Ещё → Точки»
 const bzStPill=s=>`<span class="bz-pill ${s==='active'?'':s==='pending'?'am':'dim'}">${({pending:'ждёт проверки',active:'работает',blocked:'приостановлена',rejected:'отклонена'})[s]||s}</span>`;
-async function finBiz(c){
+const bzBox=()=>document.getElementById('fincont')||document.getElementById('inboxc');
+async function finBiz(c,inb){
+ if(inb===undefined)inb=!!(c&&c.id==='inboxc');
  c.innerHTML='<div class="empty">Загрузка…</div>';
  const r=await api('/api/admin',{action:'biz-list'});
  if(r.error){c.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
@@ -2440,20 +2461,30 @@ async function finBiz(c){
  bzaItems=r.items||[];
  const F=[['all','Все'],['pending','Ждут проверки'],['active','Работают'],['blocked','Приостановлены'],['rejected','Отклонены']];
  const cnt=k=>k==='all'?bzaItems.length:bzaItems.filter(b=>b.status===k).length;
+ if(inb&&bzaF==='pending'&&!cnt('pending')){c.innerHTML=`<div class="empty"><b>Новых заявок нет</b>Все магазины и кафе — в «Ещё → Магазины и кафе».</div>`;return;}
  if(bzaF!=='all'&&!cnt(bzaF))bzaF='all';
  const list=bzaItems.filter(b=>bzaF==='all'||b.status===bzaF).sort((a,b)=>(a.status==='pending'?0:1)-(b.status==='pending'?0:1));
  const mon=bzaItems.reduce((a,b)=>a+(b.month||0),0);
- c.innerHTML=`<div class="obhint" style="margin:0 18px 10px">${bzaItems.length} ${plural(bzaItems.length,['точка','точки','точек'])} · ждут проверки: ${cnt('pending')} · ${mon} ${plural(mon,['доставка','доставки','доставок'])} за месяц</div>
- <div class="st-cities">${F.filter(f=>f[0]==='all'||cnt(f[0])).map(f=>`<div class="${bzaF===f[0]?'on':''}" onclick="bzaF='${f[0]}';finBiz(document.getElementById('fincont'))">${f[1]} <span class="pp-c">${cnt(f[0])}</span></div>`).join('')}</div>
+ let rule='';
+ if(!inb){const g=await api('/api/admin',{action:'biz-rule-get'});if(g&&!g.error&&g.bizMin){const R=[['none','Всем'],['bronze','от 🥉 Бронзы'],['silver','от 🥈 Серебра'],['gold','от 🥇 Золота']];rule=`<div class="bz-sec">Кто может брать заказы магазинов</div><div class="bz-rule">${R.map(([k,l])=>`<div class="${g.bizMin===k?'on':''}" onclick="bizRuleSet('${k}')">${l}</div>`).join('')}</div>${g.ranks?'':'<div class="obhint" style="margin:-4px 18px 10px">Звания пока выключены — брать могут все.</div>'}`;}}
+ c.innerHTML=`${rule}<div class="obhint" style="margin:0 18px 10px">${bzaItems.length} ${plural(bzaItems.length,['точка','точки','точек'])} · ждут проверки: ${cnt('pending')} · ${mon} ${plural(mon,['доставка','доставки','доставок'])} за месяц</div>
+ <div class="st-cities">${F.filter(f=>f[0]==='all'||cnt(f[0])).map(f=>`<div class="${bzaF===f[0]?'on':''}" onclick="bzaF='${f[0]}';finBiz(bzBox())">${f[1]} <span class="pp-c">${cnt(f[0])}</span></div>`).join('')}</div>
  ${list.length?`<div class="st-card bz-card">${list.map(b=>`<div class="bz-row" onclick="bizCardA('${b.id}')"><div class="a"><b>${esc(b.name)}</b>${bzStPill(b.status)}</div><div class="w">${esc(BIZ_KIND[b.kind]||'точка')} · ${esc(b.city)}, ${esc(b.address)}<br>${b.status==='pending'?`подал ${esc(b.owner_name)} #${esc(b.owner_tag)} · ${pplAgo(b.created_at)} · ${esc(bizPh(b.phone))}`:`${b.month} ${plural(b.month,['доставка','доставки','доставок'])} за месяц${b.last?' · последняя '+pplAgo(b.last):''} · ${b.staff} ${plural(b.staff,['сотрудник','сотрудника','сотрудников'])}`}</div>${b.status==='pending'?`<div class="bt" onclick="event.stopPropagation()"><button class="g" onclick="bizSetA('${b.id}','active')">Одобрить</button>${b.phone?`<a href="tel:+${esc(b.phone)}"><button>Позвонить</button></a>`:''}<button class="r" onclick="bizSetA('${b.id}','rejected')">Отклонить</button></div>`:''}</div>`).join('')}</div>`:'<div class="empty"><b>Пока нет точек</b>Магазины и кафе подают заявку в приложении: Профиль → «Для магазинов и кафе».</div>'}
  <div style="height:20px"></div>`;
+}
+async function bizRuleSet(k){
+ const r=await api('/api/admin',{action:'biz-rule-set',bizMin:k});
+ if(r.error)return T('Не получилось');
+ if(SETTINGS){SETTINGS.rank_cfg=Object.assign({},SETTINGS.rank_cfg||{},{bizMin:k});}
+ T(r.same?'Уже так':k==='none'?'Заказы магазинов — всем водителям':'Сохранено');finBiz(bzBox());
 }
 async function bizSetA(id,st){
  const r=await api('/api/admin',{action:'biz-set',id,status:st});
  if(r.error)return T('Не получилось');
+ loadAdminCounts().then(()=>{if(role==='admin'&&aTab==='inbox'){const st=document.querySelector('.st-per');if(st)aInbox(document.getElementById('main'));}}).catch(()=>{});
  T(r.same?'Уже так':st==='active'?'Точка подключена — хозяину ушло сообщение':st==='rejected'?'Заявка отклонена':'Точка приостановлена');
  if(document.getElementById('sh'))closeSh();
- finBiz(document.getElementById('fincont'));
+ finBiz(bzBox());
 }
 async function bizCardA(id){
  const r=await api('/api/admin',{action:'biz-card',id});
@@ -2489,7 +2520,7 @@ async function bizSaveA(id){
  const v=k=>{const e=document.getElementById(k);return e?e.value.trim():undefined;};
  const r=await api('/api/admin',{action:'biz-edit',id,name:v('bza_name'),address:v('bza_addr'),phone:v('bza_phone'),note:v('bza_note')});
  if(r.error)return T('Не получилось');
- T(r.same?'Ничего не изменилось':'Сохранено');closeSh();finBiz(document.getElementById('fincont'));
+ T(r.same?'Ничего не изменилось':'Сохранено');closeSh();finBiz(bzBox());
 }
 async function bizStaffDelA(id,uid){const r=await api('/api/admin',{action:'biz-staff-remove',id,user_id:uid});if(r.error)return T('Не получилось');T('Убран из точки');bizCardA(id);}
 
@@ -4484,7 +4515,7 @@ function drawReqs(){
  const keepP={};l.querySelectorAll('.rp input').forEach(e=>{if(e.value)keepP[e.id]=e.value;});
  const sb=schedBlock();
  if(!reqs.length){l.innerHTML=sb+(sb?'':'<div class="empty"><b>Пока тихо</b>Новые заявки появятся здесь сразу.</div>');for(const k in keepP){const e=document.getElementById(k);if(e){e.value=keepP[k];rpUi(e);}}return;}
- l.innerHTML=sb+reqs.map(r=>`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(90,169,240,.14);color:var(--blue)"><svg class="ii" viewBox="0 0 24 24"><path d="M3.5 8.5 12 4l8.5 4.5v7L12 20l-8.5-4.5z"/><path d="M3.5 8.5 12 13l8.5-4.5M12 13v7"/></svg>доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(237,161,58,.14);color:var(--am)"><svg class="ii" viewBox="0 0 24 24"><path d="M6 3v18M18 3v18M12 4v3M12 10.5v3M12 17v3"/></svg>в ${esc(r.to_city)}</span> `:''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}${r.biz_name?`<span class="bz-pill">🏪 ${esc(r.biz_name)} · проверенная точка</span>`:''}<div class="rt" style="margin-top:${r.target_driver_id||r.biz_name?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div>${r.biz_name?`<div class="rm">доставку оплачивает ${r.biz_payer==='client'?'получатель':'точка'}</div><div class="bz-lock">🔒 Телефон и квартира получателя откроются, когда вас выберут</div>`:`<div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>`}
+ l.innerHTML=sb+reqs.map(r=>r.biz_name&&!bizCanTake()?bizLockCard(r):`<div class="req ${r.target_driver_id?'direct':''}">${r.kind==='delivery'?'<span class="badge" style="background:rgba(90,169,240,.14);color:var(--blue)"><svg class="ii" viewBox="0 0 24 24"><path d="M3.5 8.5 12 4l8.5 4.5v7L12 20l-8.5-4.5z"/><path d="M3.5 8.5 12 13l8.5-4.5M12 13v7"/></svg>доставка</span> ':''}${r.to_city?`<span class="badge" style="background:rgba(237,161,58,.14);color:var(--am)"><svg class="ii" viewBox="0 0 24 24"><path d="M6 3v18M18 3v18M12 4v3M12 10.5v3M12 17v3"/></svg>в ${esc(r.to_city)}</span> `:''}${r.target_driver_id?'<span class="badge am">лично вам</span>':''}${r.biz_name?`<span class="bz-pill">🏪 ${esc(r.biz_name)} · проверенная точка</span>`:''}<div class="rt" style="margin-top:${r.target_driver_id||r.biz_name?'8px':'0'}">${esc(r.from_address)} → ${esc(r.to_address)}</div>${r.biz_name?`<div class="rm">доставку оплачивает ${r.biz_payer==='client'?'получатель':'точка'}</div><div class="bz-lock">🔒 Телефон и квартира получателя откроются, когда вас выберут</div>`:`<div class="rm">от ${esc(r.passenger_name)||'пассажира'}</div>`}
  ${r.comment?`<div class="rcom">💬 ${esc(r.comment)}</div>`:''}
  ${r.passenger_price?`<div class="rprice"><div class="rpt">${r.biz_name?'Точка':'Пассажир'} предлагает</div><div class="rpv">${r.passenger_price} ₽</div><button class="agree" onclick="offer('${r.id}',${r.passenger_price})">Согласен</button></div>`:''}
  <div class="rp"><input type="number" id="p${r.id}" placeholder="${r.passenger_price?'своя цена':'ваша цена'}" oninput="rpUi(this)"><span class="rpl">₽</span>${r.passenger_price?`<span class="rpq"><button type="button" onclick="qp('${r.id}',${Number(r.passenger_price)+20})">+20</button><button type="button" onclick="qp('${r.id}',${Number(r.passenger_price)+50})">+50</button></span>`:''}</div><div class="ra"><button class="acc" onclick="offer('${r.id}')">${r.passenger_price?'Предложить свою':'Отправить цену'}</button><button class="skip ask" onclick="askRide('${r.id}')"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Связаться</button><button class="skip" onclick="skip('${r.id}')">Пропустить</button></div></div>`).join('');
@@ -4939,7 +4970,7 @@ function moreAllowed(id){
  return false;
 }
 function moreItems(){const out=[];MORE_GROUPS.forEach(g=>g[1].forEach(it=>{if(canSee(it[3]))out.push(it);}));return out;}
-function inboxAllowed(){return canSee('drivers')||canSee('complaints')||canSee('support');}
+function inboxAllowed(){return canSee('drivers')||canSee('complaints')||canSee('support')||canSee('biz');}
 function tabAllowed(t){
  if(t==='over')return true;
  if(t==='inbox')return inboxAllowed();
@@ -4953,7 +4984,7 @@ function firstAllowedTab(){
 }
 function inboxCount(){
  const c=ADMC||{};
- return (canSee('drivers')?(c.apps||0):0)+(canSee('complaints')?(c.complaints||0):0)+(canSee('support')?(c.support||0):0);
+ return (canSee('drivers')?(c.apps||0):0)+(canSee('complaints')?(c.complaints||0):0)+(canSee('support')?(c.support||0):0)+(canSee('biz')?(c.shops||0):0);
 }
 function drawA(){
  document.getElementById('abar').innerHTML='';
@@ -5011,6 +5042,7 @@ async function aInbox(m){
  if(canSee('drivers'))tabs.push(['apps','Водители',c.apps||0]);
  if(canSee('complaints'))tabs.push(['cmp','Жалобы',c.complaints||0]);
  if(canSee('support'))tabs.push(['sup','Поддержка',c.support||0]);
+ if(canSee('biz'))tabs.push(['shops','Магазины',c.shops||0]);
  if(!tabs.find(t=>t[0]===inTab))inTab=tabs.length?tabs[0][0]:'apps';
  m.innerHTML=`<div class="head st-h"><div><h2>Обращения</h2><div class="st-sub">всё, где ждут вашего решения</div></div></div>
  ${tabs.length>1?`<div class="st-per">${tabs.map(t=>`<div class="${inTab===t[0]?'on':''}" onclick="inTab='${t[0]}';aInbox(document.getElementById('main'))">${t[1]}${t[2]?` <i class="st-cnt">${t[2]>99?'99+':t[2]}</i>`:''}</div>`).join('')}</div>`:''}
@@ -5019,6 +5051,7 @@ async function aInbox(m){
  if(inTab==='apps')return aApps(box);
  if(inTab==='cmp')return aCmp(box);
  if(inTab==='sup')return aSup(box);
+ if(inTab==='shops'){bzaF='pending';return finBiz(box,true);}
 }
 // «Ещё»: меню разделов по группам
 function aMore(m){
@@ -5241,7 +5274,7 @@ async function resolveCmp(id,act,target){
 let ADMC={apps:0,complaints:0,support:0};
 async function loadAdminCounts(){
  const r=await api('/api/admin',{action:'admin-counts'});
- if(r&&!r.error){ADMC={apps:r.apps||0,complaints:r.complaints||0,support:r.support||0};}
+ if(r&&!r.error){ADMC={apps:r.apps||0,complaints:r.complaints||0,support:r.support||0,shops:r.shops||0};}
 }
 let pplFilter='all';
 let pplQuery='';
@@ -6163,7 +6196,7 @@ const ACT_RU={
  'car-remove':'удалил транспорт','car-add-admin':'добавил транспорт','car-edit':'изменил транспорт',
  'broadcast-send':'отправил рассылку','city-save':'изменил город','city-delete':'удалил город',
  'pin-now':'обновил закреп вручную','audit-clear':'очистил журнал','set-role':'изменил права доступа',
- 'rank-cfg':'изменил правила рангов','points-adjust':'начислил или списал баллы','points-void':'отменил запись баллов','ranks-recalc':'пересчитал ранги','call-cfg':'изменил правила зова на линию','biz-active':'подключил точку','biz-rejected':'отклонил точку','biz-blocked':'приостановил точку','biz-edit':'изменил данные точки','biz-staff-remove':'убрал сотрудника точки'
+ 'rank-cfg':'изменил правила рангов','points-adjust':'начислил или списал баллы','points-void':'отменил запись баллов','ranks-recalc':'пересчитал ранги','call-cfg':'изменил правила зова на линию','biz-active':'подключил точку','biz-rejected':'отклонил точку','biz-blocked':'приостановил точку','biz-edit':'изменил данные точки','biz-staff-remove':'убрал сотрудника точки','biz-rule':'изменил, кто берёт заказы магазинов'
 };
 const FIELD_RU={name:'имя',full_name:'ФИО',admin_note:'пометка',phone:'телефон',age:'возраст',
  spot:'место стоянки',rating:'рейтинг',role:'роль',driver_status:'статус водителя',balance:'баланс',

@@ -1031,13 +1031,14 @@ async function takePrice(chat, wait, text) {
     return;
   }
   const { data: ride } = await db.from('rides')
-    .select('id,status,driver_id,to_address,passenger_id').eq('id', wait.ride_id).maybeSingle();
+    .select('*').eq('id', wait.ride_id).maybeSingle();
   if (!ride || ride.driver_id || !String(ride.status || '').startsWith('created')) {
     await send(chat, 'Не отправил: заказ уже взяли или отменили.'); return;
   }
   const { data: me } = await db.from('users')
-    .select('id,name,car').eq('telegram_id', chat).maybeSingle();
+    .select('*').eq('telegram_id', chat).maybeSingle();
   if (!me) { await send(chat, 'Нет доступа.'); return; }
+  if (ride.biz_id && !bizRankOk(me)) { await send(chat, `🏅 Заказы магазинов берут водители ${bizRankTxt()}.\nПолучите звание — и они станут доступны.`); return; }
 
   // телеграм пассажира — чтобы дать кнопку «написать» рядом с ценой
   const pasTg = await tgIdOf(ride.passenger_id);
@@ -1611,7 +1612,7 @@ async function sendOpenRides(user) {
     if (!['driver', 'both'].includes(user.role)) return;
 
     let q = db.from('rides')
-      .select('id,kind,city,to_city,from_address,to_address,scheduled_at,passenger_price,created_at,passenger_name')
+      .select('*')
       .eq('status', 'created').is('driver_id', null)
       .order('created_at', { ascending: false }).limit(20);
     if (user.city) q = q.eq('city', user.city);
@@ -1619,6 +1620,7 @@ async function sendOpenRides(user) {
 
     // мотоциклам — только доставка, машинам — всё кроме неё не трогаем
     const fit = (rides || []).filter(r => {
+      if (r.biz_id && !bizRankOk(user)) return false;
       if (user.vehicle_type === 'moto') return r.kind === 'delivery';
       if (r.kind === 'delivery' && !user.delivery) return false;
       if (r.to_city && !user.intercity) return false;
@@ -2373,12 +2375,13 @@ async function adHandle(m, chatId, city, text) {
    что заказы идут и их разбирают. */
 
 function groupCardText(r) {
-  const kind = r.kind === 'delivery' ? '📦 Доставка' : r.to_city ? '🛣 Межгород' : '🚕 Поездка';
+  const kind = (r.kind === 'delivery' ? '📦 Доставка' : r.to_city ? '🛣 Межгород' : '🚕 Поездка') + (r.biz_name ? ` от магазина · 🏪 ${safeName(r.biz_name)}` : '');
   const when = r.scheduled_at
     ? `\n⏰ На ${new Date(r.scheduled_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
     : '';
   const to = r.to_city ? ` → ${safeName(r.to_city)}` : '';
-  return `🔔 <b>Новая заявка</b>\n${kind} · ${safeName(r.city)}${to}${when}\n\n` +
+  const rk = r.biz_id && bizRankTxt() ? `\n🏅 Брать могут водители ${bizRankTxt()}` : '';
+  return `🔔 <b>Новая заявка</b>\n${kind} · ${safeName(r.city)}${to}${when}${rk}\n\n` +
          `Хотите взять заказ — нажмите кнопку.\n<i>Адрес увидит только проверенный водитель.</i>`;
 }
 
@@ -2426,7 +2429,7 @@ async function groupTake(cq, rideId) {
   const answer = (text, extra) => tg('answerCallbackQuery', { callback_query_id: cq.id, text, show_alert: true, ...(extra || {}) });
 
   const { data: ride, error: e1 } = await db.from('rides')
-    .select('id,status,driver_id,kind,city,to_city,from_address,to_address,passenger_price,scheduled_at,comment')
+    .select('*')
     .eq('id', rideId).maybeSingle();
   if (e1) return answer('Сервис временно недоступен, попробуйте через минуту.');
   if (!ride || ride.driver_id || !String(ride.status || '').startsWith('created')) {
@@ -2434,7 +2437,7 @@ async function groupTake(cq, rideId) {
   }
 
   const { data: u } = await db.from('users')
-    .select('id,role,driver_status,is_banned').eq('telegram_id', uid).maybeSingle();
+    .select('*').eq('telegram_id', uid).maybeSingle();
   if (u && u.is_banned) return answer('Нет доступа.');
 
   // не водитель — ведём на верификацию: кнопка сразу открывает бота
@@ -2445,6 +2448,7 @@ async function groupTake(cq, rideId) {
     return tg('answerCallbackQuery', { callback_query_id: cq.id, url: `https://t.me/${BOT_USERNAME}?start=verify` });
   }
 
+  if (ride.biz_id && !bizRankOk(u)) return answer(`Заказы магазинов берут водители ${bizRankTxt()}. Получите звание — и они станут доступны.`);
   // проверенный водитель — адрес и действия в личку
   const kind = ride.kind === 'delivery' ? '📦 Доставка' : ride.to_city ? `🛣 Межгород в ${safeName(ride.to_city)}` : '🚕 Поездка';
   const when = ride.scheduled_at
@@ -2491,7 +2495,7 @@ async function notifyLoop() {
       // новая заявка -> водителям
       const { data: rides } = await db.from('rides').select('*').eq('status', 'created').eq('notified', false);
       for (const r of rides || []) {
-        let q = db.from('users').select('id,telegram_id').eq('status', 'online').in('role', ['driver', 'both']);
+        let q = db.from('users').select('id,telegram_id,rank_code,rank_paused').eq('status', 'online').in('role', ['driver', 'both']);
         if (r.kind === 'delivery') q = q.or('delivery.eq.true,vehicle_type.eq.moto'); // мотокурьеры получают доставку всегда
         else q = q.or('vehicle_type.is.null,vehicle_type.eq.car');  // мотоциклы возят только доставку
         if (r.to_city) q = q.eq('intercity', true);
@@ -2512,6 +2516,7 @@ async function notifyLoop() {
         const notifRows = [];
         for (const d of drv || []) {
           if (!d.telegram_id) continue;
+          if (r.biz_id && !r.target_driver_id && !bizRankOk(d)) continue;      // заказы точек — со звания
           const ok = await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
             { reply_markup: { inline_keyboard: [[
               { text: 'Открыть заявку', web_app: { url: appUrl('driver', null, { ride: r.id }) } }
@@ -3798,6 +3803,7 @@ function callNight(cfg = CCFG) {
 }
 // подходит ли водитель под заявку — как в списке заявок у водителя
 function callFits(d, r) {
+  if (r.biz_id && typeof bizRankOk === 'function' && !bizRankOk(d)) return false;
   if (d.vehicle_type === 'moto') return r.kind === 'delivery';
   if (r.kind === 'delivery' && !d.delivery) return false;
   if (r.to_city && !d.intercity) return false;
@@ -3833,7 +3839,7 @@ async function callLoop() {
 async function callWave() {
   const now = Date.now();
   // ждут дольше N минут; через 10 минут заявка сама закрывается — такие уже не трогаем
-  const { data: rides } = await db.from('rides').select('id,city,kind,to_city,created_at,target_driver_id')
+  const { data: rides } = await db.from('rides').select('*')
     .eq('status', 'created').is('driver_id', null).is('scheduled_at', null)
     .lt('created_at', new Date(now - CCFG.waitMin * 60e3).toISOString())
     .gt('created_at', new Date(now - 10 * 60e3).toISOString());
@@ -4397,6 +4403,18 @@ async function bizAdmin(me, act, body) {
     await audit(me, 'biz-edit', null, b.name, Object.keys(upd).map(k => `${L[k]}: ${k === 'kind' ? BIZ_KINDS[upd[k]] : upd[k] || '—'}`).join('; '));
     return { ok: true };
   }
+  if (act === 'biz-rule-get') return { ok: true, bizMin: RCFG.bizMin, ranks: ranksReady };
+  if (act === 'biz-rule-set') {
+    const v = body.bizMin === 'none' || RANK_CODES.includes(body.bizMin) ? body.bizMin : null;
+    if (!v) return { code: 400, error: 'bad_rank' };
+    if (v === RCFG.bizMin) return { ok: true, same: true };
+    const next = rankCfgClean({ ...RCFG, bizMin: v });
+    const { error } = await db.from('settings').update({ rank_cfg: next }).eq('id', 1);
+    if (error) return { code: 500, error: 'save_failed' };
+    const was = RCFG.bizMin; RCFG = next;
+    await audit(me, 'biz-rule', null, null, `заказы точек: ${was === 'none' ? 'всем' : 'от ' + RANK_GEN[was]} → ${v === 'none' ? 'всем' : 'от ' + RANK_GEN[v]}`);
+    return { ok: true, bizMin: v };
+  }
   if (act === 'biz-staff-remove') {
     const { data: b } = await db.from('businesses').select('name').eq('id', body.id).maybeSingle();
     await db.from('biz_staff').delete().eq('biz_id', body.id).eq('user_id', String(body.user_id)).neq('role', 'owner');
@@ -4558,7 +4576,8 @@ function feedText(r, state) {
   const route = r.from_address
     ? `\n📍 ${safeName(r.from_address)}\n🏁 ${safeName(r.to_address || (r.to_city ? 'в ' + r.to_city : '—'))}`
     : '';
-  return `<b>${kind}</b> · ${safeName(r.city)}${when}${route}\n\nОткройте приложение, чтобы взять.`;
+  const rk = r.biz_id && bizRankTxt() ? `\n🏅 Брать могут водители ${bizRankTxt()}` : '';
+  return `<b>${kind}</b> · ${safeName(r.city)}${when}${route}${rk}\n\nОткройте приложение, чтобы взять.`;
 }
 
 async function feedPublish(ride) {
@@ -4956,7 +4975,7 @@ const ACT_PERM = {
 
   'settings-update':'settings','save-settings':'settings',
   'call-cfg-get':'settings','call-cfg-set':'settings','call-stats':'settings',
-  'biz-list':'biz','biz-card':'biz','biz-set':'biz','biz-edit':'biz','biz-staff-remove':'biz',
+  'biz-list':'biz','biz-card':'biz','biz-set':'biz','biz-edit':'biz','biz-staff-remove':'biz','biz-rule-get':'biz','biz-rule-set':'biz',
 
   'stats':'stats','days-stats':'stats','rides-stats':'stats','drivers-stats':'stats','tg-stats':'stats',
 
@@ -5528,8 +5547,21 @@ function rankCfgClean(x) {
     if (r.rides < p.rides) r.rides = p.rides;
   }
   for (const k of Object.keys(RANK_DEF.feat)) out.feat[k] = src.feat && src.feat[k] !== undefined ? !!src.feat[k] : RANK_DEF.feat[k];
+  // заказы точек (магазинов) — с какого звания: none — всем
+  out.bizMin = src.bizMin === 'none' || RANK_CODES.includes(src.bizMin) ? src.bizMin : 'bronze';
   return out;
 }
+// может ли водитель брать заказы точек
+function bizRankOk(u) {
+  const min = (RCFG && RCFG.bizMin) || 'bronze';
+  if (min === 'none' || !ranksReady) return true;
+  if (!u || !u.rank_code || u.rank_paused || !(u.rank_code in RANK_IDX)) return false;
+  return RANK_IDX[u.rank_code] >= RANK_IDX[min];
+}
+const bizRankTxt = () => {
+  const min = (RCFG && RCFG.bizMin) || 'bronze';
+  return min === 'none' ? '' : `от ${{ bronze: '🥉', silver: '🥈', gold: '🥇', platinum: '💠', diamond: '💎' }[min]} ${RANK_GEN[min]}`;
+};
 let RCFG = rankCfgClean(null);
 async function rankCfgLoad() {
   try {
@@ -6096,7 +6128,7 @@ function rankCfgDiff(a, b) {
 async function rankAdmin(me, act, body) {
   if (act === 'rank-cfg-get') return { ok: true, ready: ranksReady, cfg: RCFG, def: RANK_DEF, lim: RANK_LIM, names: RANK_NAMES };
   if (act === 'rank-cfg-set') {
-    const next = rankCfgClean(body.cfg);
+    const next = rankCfgClean({ bizMin: RCFG.bizMin, ...(body.cfg || {}) });
     const diff = rankCfgDiff(RCFG, next);
     if (!diff) return { ok: true, cfg: RCFG, same: true };
     const { error } = await db.from('settings').update({ rank_cfg: next }).eq('id', 1);
@@ -6966,6 +6998,7 @@ http.createServer(async (req, res) => {
       // ---------- водитель ----------
       if (act === 'offer-create') {
         if (!ride) return json(res, 400, { error: 'no_ride' });
+        if (ride.biz_id && !bizRankOk(me)) return json(res, 403, { error: 'rank_low', need: RCFG.bizMin });
         const price = Math.max(0, Math.min(100000, parseInt(body.price) || 0));
         if (!price) return json(res, 400, { error: 'bad_price' });
         const { error } = await db.from('offers').insert({
@@ -7303,7 +7336,9 @@ http.createServer(async (req, res) => {
           db.from('support_msgs').select('*', { count: 'exact', head: true }).eq('answered', false),
           db.from('cars').select('*', { count: 'exact', head: true }).eq('approved', false)
         ]);
-        return json(res, 200, { ok: true, apps: (apps || 0) + (cars || 0), complaints: cmps || 0, support: sup || 0 });
+        let shops = 0;      // точки, ждущие проверки
+        if (bizReady) { const { count } = await db.from('businesses').select('*', { count: 'exact', head: true }).eq('status', 'pending'); shops = count || 0; }
+        return json(res, 200, { ok: true, apps: (apps || 0) + (cars || 0), complaints: cmps || 0, support: sup || 0, shops });
       }
 
       // очистить журнал — только владелец
