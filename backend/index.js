@@ -241,6 +241,17 @@ async function onUpdate(u) {
     }
 
     // «Взять заказ» под карточкой в общей группе — отвечаем сами, окошком
+    if (cq.data && (cq.data.startsWith('bza:') || cq.data.startsWith('bzr:'))) {
+      try { await bizDecideCq(cq, cq.data.startsWith('bza:') ? 'active' : 'rejected'); }
+      catch (e) { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Не получилось, попробуйте ещё раз.' }).catch(() => {}); }
+      return;
+    }
+    if (cq.data && cq.data.startsWith('bzj:')) {
+      try { await bizJoin(cq, cq.data.slice(4)); }
+      catch (e) { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Не получилось, попробуйте ещё раз.' }).catch(() => {}); }
+      return;
+    }
+
     if (cq.data === 'call:off' || cq.data === 'call:on') {
       try { await callToggle(cq, cq.data === 'call:on'); }
       catch (e) { await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Не получилось, попробуйте ещё раз.' }).catch(() => {}); }
@@ -682,6 +693,9 @@ async function onUpdate(u) {
       const r = await askStart(chat, rid);
       if (r) return;
     }
+
+    // приглашение сотрудника в точку: /start biz_CODE
+    if (param.startsWith('biz_')) { await bizJoinPrompt(chat, param.slice(4)); return; }
 
     if (param.startsWith('drv_')) {
       const did = param.slice(4);
@@ -2487,11 +2501,12 @@ async function notifyLoop() {
         const isInter = !!r.to_city;
         const head = r.target_driver_id
           ? (isDel ? '🎯 <b>Доставка лично вам</b>' : isInter ? '🎯 <b>Межгород лично вам</b>' : '🎯 <b>Заявка лично вам</b>')
+          : r.biz_id ? `📦 <b>Доставка от точки</b>\n🏪 ${safeName(r.biz_name)} — проверенная точка`
           : (isDel ? '📦 <b>Новая доставка</b>' : isInter ? `🛣 <b>Межгород в ${r.to_city}</b>` : '🚕 <b>Новая заявка</b>');
         const schedLine = r.scheduled_at
         ? `\n🕒 <b>На ${new Date(r.scheduled_at).toLocaleString('ru', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</b>`
         : '';
-      const extra = `${schedLine}${r.to_city ? `\n🛣 Город назначения: <b>${r.to_city}</b>` : ''}${r.passenger_price ? `\n💰 Пассажир предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
+      const extra = `${schedLine}${r.to_city ? `\n🛣 Город назначения: <b>${r.to_city}</b>` : ''}${r.passenger_price ? `\n💰 ${r.biz_id ? 'Точка' : 'Пассажир'} предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}${r.biz_id ? `\n💳 Доставку оплачивает: ${bizPayerTxt(r.biz_payer)}\n🔒 Телефон и квартира получателя — после того как вас выберут` : ''}`;
         // рассылаем и сразу запоминаем, кому ушло — иначе потом не понять,
         // кто заявку видел и промолчал, а кто вообще её не получал
         const notifRows = [];
@@ -2516,7 +2531,7 @@ async function notifyLoop() {
       // отклик -> пассажиру
       const { data: offs } = await db.from('offers').select('*').eq('notified', false).eq('status', 'pending');
       for (const o of offs || []) {
-        const { data: ride } = await db.from('rides').select('passenger_id,to_address').eq('id', o.ride_id).maybeSingle();
+        const { data: ride } = await db.from('rides').select('passenger_id,to_address,biz_id').eq('id', o.ride_id).maybeSingle();
         if (ride) {
           const tid = await tgIdOf(ride.passenger_id);
           const dtg = await tgIdOf(o.driver_id);
@@ -2531,7 +2546,7 @@ async function notifyLoop() {
             { reply_markup: { inline_keyboard: [
               [{ text: `✅ Согласен, ${o.price} ₽`, callback_data: `acc:${o.id}` }],
               ...(dtg ? [[{ text: '✍️ Написать водителю', callback_data: `ask:${o.ride_id}:${dtg}` }]] : []),
-              [wa('Посмотреть все предложения', 'order')]
+              [wa('Посмотреть все предложения', ride.biz_id ? 'biz' : 'order')]
             ] } });
           // запоминаем сообщение — если водитель поправит цену, погасим его
           if (sent && sent.ok && sent.result) {
@@ -2558,7 +2573,7 @@ async function notifyLoop() {
         if (r.driver_id) {
           const tid = await tgIdOf(r.driver_id);
           if (tid) {
-            const card = await contactCard(r.passenger_id, 'Пассажир');
+            const card = r.biz_id ? await bizDriverCard(r) : await contactCard(r.passenger_id, 'Пассажир');
             await send(tid, `${r.scheduled_at ? '🕒 <b>Вас выбрали на определённое время</b>\n<i>Приезжайте к назначенному часу, не сейчас.</i>' : '✅ <b>Вас выбрали!</b>'}\n\n${route}${card}`,
               { reply_markup: { inline_keyboard: [
                 [wa('Открыть заказ', 'driver')],
@@ -2570,10 +2585,10 @@ async function notifyLoop() {
         if (r.passenger_id) {
           const tid = await tgIdOf(r.passenger_id);
           if (tid) {
-            const card = await contactCard(r.driver_id, 'Водитель');
-            await send(tid, `${r.scheduled_at ? '🕒 <b>Водитель принял заказ на время</b>' : '🚕 <b>Водитель принял заказ</b>'}\n\n${route}${card}`,
+            const card = await contactCard(r.driver_id, r.biz_id ? 'Курьер' : 'Водитель');
+            await send(tid, `${r.biz_id ? '📦 <b>Курьер взял доставку</b>' : r.scheduled_at ? '🕒 <b>Водитель принял заказ на время</b>' : '🚕 <b>Водитель принял заказ</b>'}\n\n${route}${card}`,
               { reply_markup: { inline_keyboard: [
-                [wa('Открыть поездку', 'order')],
+                [r.biz_id ? wa('🏪 Открыть точку', 'biz') : wa('Открыть поездку', 'order')],
                 [{ text: '🏁 Завершить поездку', callback_data: `done:${r.id}` }]
               ] } });
           }
@@ -2616,9 +2631,10 @@ async function notifyLoop() {
         }
         if (r.passenger_id) {
           const tid = await tgIdOf(r.passenger_id);
-          if (tid) await send(tid,
-            `${base}${drvName ? `\n👤 <b>Водитель:</b> ${drvName}${drvCar ? ` (${drvCar})` : ''}` : ''}\n\nОцените поездку — это поможет другим пассажирам.`,
-            { reply_markup: { inline_keyboard: [[wa('Оценить', 'order')]] } });
+          if (tid) await send(tid, r.biz_id
+            ? `${base}${drvName ? `\n👤 <b>Курьер:</b> ${drvName}${drvCar ? ` (${drvCar})` : ''}` : ''}`
+            : `${base}${drvName ? `\n👤 <b>Водитель:</b> ${drvName}${drvCar ? ` (${drvCar})` : ''}` : ''}\n\nОцените поездку — это поможет другим пассажирам.`,
+            { reply_markup: { inline_keyboard: [[r.biz_id ? wa('🏪 Открыть точку', 'biz') : wa('Оценить', 'order')]] } });
         }
         if (r.driver_id) {
           const tid = await tgIdOf(r.driver_id);
@@ -2657,7 +2673,9 @@ async function notifyLoop() {
       const { data: arr } = await db.from('rides').select('*').eq('arrived', true).eq('arrived_notified', false);
       for (const r of arr || []) {
         const tid = await tgIdOf(r.passenger_id);
-        if (tid) await send(tid, `🚗 <b>Водитель на месте</b>\n${r.from_address}\nМашина ждёт вас.`);
+        if (tid) await send(tid, r.biz_id
+          ? `🚗 <b>Курьер у вас</b>\nПодъехал за заказом: ${safeName(r.to_address)}`
+          : `🚗 <b>Водитель на месте</b>\n${r.from_address}\nМашина ждёт вас.`);
         await db.from('rides').update({ arrived_notified: true }).eq('id', r.id);
       }
 
@@ -4013,6 +4031,384 @@ setTimeout(() => { callLoop().catch(() => {}); }, 50 * 1000);
 setInterval(() => { callLoop().catch(() => {}); }, 60 * 1000);
 /* ---------- конец: зов на линию ---------- */
 
+/* ---------- доставка для точек (v169) ----------
+   Магазин, аптека, кафе подключаются из приложения; точка работает только после проверки владельцем.
+   Сотрудники вызывают курьера: адрес точки подставляется сам. Телефон, имя и квартира получателя
+   лежат в закрытой biz_orders и открываются только водителю, который взял заказ.
+   Курьер деньги за товар не берёт — только оплаченный товар (решение владельца 25.10).
+   Пока миграции db-30 нет — всё молчит. */
+const BIZ_KINDS = { shop: 'Магазин', pharmacy: 'Аптека', cafe: 'Кафе', flowers: 'Цветы', water: 'Вода', other: 'Другое' };
+const BIZ_WHAT = ['Пакет', 'Коробка', 'Букет', 'Еда', 'Документы'];
+const BIZ_ST = { pending: 'ждёт проверки', active: 'работает', rejected: 'отклонена', blocked: 'приостановлена' };
+let bizReady = false;
+async function bizCheck() {
+  try { const { error } = await db.from('businesses').select('id').limit(1); bizReady = !error; }
+  catch (e) { bizReady = false; }
+  return bizReady;
+}
+const bizTxt = (v, n) => String(v === null || v === undefined ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
+function bizPhone(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.length === 10) d = '7' + d;
+  if (d.length === 11 && d[0] === '8') d = '7' + d.slice(1);
+  return d.length === 11 ? d : null;
+}
+const bizPhoneTxt = d => d && d.length === 11 ? `+${d[0]} ${d.slice(1, 4)} ${d.slice(4, 7)}-${d.slice(7, 9)}-${d.slice(9)}` : (d || '');
+const bizPayerTxt = p => p === 'client' ? 'получатель' : 'точка';
+const bizInviteLink = code => `https://t.me/${BOT_USERNAME}?start=biz_${code}`;
+const bizCode = () => crypto.randomBytes(9).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 10) || String(Date.now()).slice(-10);
+
+// точка человека: сначала работающая, потом на проверке
+async function bizOf(userId) {
+  if (!bizReady || !userId) return null;
+  const { data: st } = await db.from('biz_staff').select('*').eq('user_id', String(userId));
+  if (!st || !st.length) return null;
+  const { data: bs } = await db.from('businesses').select('*').in('id', st.map(x => x.biz_id));
+  const rank = { active: 0, pending: 1, blocked: 2, rejected: 3 };
+  const list = (bs || []).slice().sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9) || new Date(b.created_at) - new Date(a.created_at));
+  const b = list[0];
+  if (!b) return null;
+  const s = st.find(x => String(x.biz_id) === String(b.id));
+  return { biz: b, role: (s && s.role) || 'staff' };
+}
+async function bizIsStaff(userId, bizId) {
+  if (!bizReady || !userId || !bizId) return false;
+  const { data } = await db.from('biz_staff').select('user_id').eq('biz_id', bizId).eq('user_id', String(userId)).maybeSingle();
+  return !!data;
+}
+async function bizStaffList(bizId) {
+  const { data: st } = await db.from('biz_staff').select('*').eq('biz_id', bizId).order('added_at');
+  const ids = (st || []).map(x => x.user_id);
+  let us = [];
+  if (ids.length) { const { data } = await db.from('users').select('id,name,telegram_id').in('id', ids); us = data || []; }
+  return (st || []).map(x => {
+    const u = us.find(y => String(y.id) === String(x.user_id)) || {};
+    return { user_id: x.user_id, role: x.role, name: u.name || '—', tag: String(u.telegram_id || '').slice(-4) };
+  }).sort((a, b) => (a.role === 'owner' ? 0 : 1) - (b.role === 'owner' ? 0 : 1));
+}
+
+// подсказка цены: сколько обычно платят за доставку в этом городе за 60 дней
+const bizHintCache = new Map();
+async function bizHint(city) {
+  const c = bizHintCache.get(city);
+  if (c && Date.now() - c.t < 30 * 60e3) return c.v;
+  let v = null;
+  try {
+    const { data } = await db.from('rides').select('price').eq('city', city).eq('kind', 'delivery').eq('status', 'completed')
+      .gte('created_at', new Date(Date.now() - 60 * 864e5).toISOString()).not('price', 'is', null).limit(1000);
+    const ps = (data || []).map(x => Number(x.price)).filter(x => x > 0).sort((a, b) => a - b);
+    if (ps.length >= 5) {
+      const q = f => ps[Math.min(ps.length - 1, Math.floor(f * (ps.length - 1)))];
+      const r10 = x => Math.round(x / 10) * 10;
+      v = { lo: r10(q(0.25)), hi: Math.max(r10(q(0.25)), r10(q(0.75))), n: ps.length };
+    }
+  } catch (e) {}
+  bizHintCache.set(city, { t: Date.now(), v });
+  return v;
+}
+
+// приложение: что за точка у человека
+async function bizMe(me) {
+  if (!bizReady && !(await bizCheck())) return { ok: true, ready: false };
+  const x = await bizOf(me.id);
+  if (!x) return { ok: true, ready: true, biz: null };
+  const b = x.biz;
+  const out = { ok: true, ready: true, role: x.role,
+    biz: { id: b.id, name: b.name, kind: b.kind, city: b.city, address: b.address, phone: b.phone, status: b.status, created_at: b.created_at } };
+  if (b.status === 'active') {
+    out.hint = await bizHint(b.city);
+    out.staff = await bizStaffList(b.id);
+    if (x.role === 'owner') {
+      if (!b.invite_code) {
+        const code = bizCode();
+        await db.from('businesses').update({ invite_code: code }).eq('id', b.id);
+        b.invite_code = code;
+      }
+      out.invite = bizInviteLink(b.invite_code);
+    }
+  }
+  return out;
+}
+
+// заявка на подключение
+async function bizApply(me, body) {
+  const name = bizTxt(body.name, 60), address = bizTxt(body.address, 120);
+  const kind = BIZ_KINDS[body.kind] ? body.kind : 'other';
+  const phone = bizPhone(body.phone);
+  if (name.length < 2 || address.length < 3) return { code: 400, error: 'bad_input' };
+  if (!phone) return { code: 400, error: 'bad_phone' };
+  if (!me.city) return { code: 400, error: 'no_city' };
+  const cur = await bizOf(me.id);
+  if (cur && ['active', 'pending'].includes(cur.biz.status)) return { code: 400, error: 'already' };
+  if (cur && cur.biz.status === 'blocked') return { code: 400, error: 'blocked' };
+  const { count } = await db.from('businesses').select('*', { count: 'exact', head: true })
+    .eq('owner_id', me.id).gte('created_at', new Date(Date.now() - 864e5).toISOString());
+  if ((count || 0) >= 3) return { code: 429, error: 'too_many' };
+  const { data: b, error } = await db.from('businesses')
+    .insert({ name, kind, city: me.city, address, phone, owner_id: me.id, status: 'pending' }).select().maybeSingle();
+  if (error || !b) return { code: 500, error: 'save_failed' };
+  await db.from('biz_staff').insert({ biz_id: b.id, user_id: me.id, role: 'owner' });
+  bizNotifyOwner(b, me).catch(() => {});
+  return { ok: true, biz: { id: b.id, name: b.name, kind: b.kind, city: b.city, address: b.address, phone: b.phone, status: b.status } };
+}
+async function bizNotifyOwner(b, u) {
+  if (!OWNER) return;
+  const ph = await phoneOf(u.id);
+  await send(OWNER,
+    `🏪 <b>Новая точка на проверку</b>\n\n<b>${safeName(b.name)}</b> · ${BIZ_KINDS[b.kind] || 'точка'}\n📍 ${safeName(b.city)}, ${safeName(b.address)}\n📞 ${bizPhoneTxt(b.phone)}\n\n` +
+    `Подал: ${safeName(u.name)} #${String(u.telegram_id || '').slice(-4)}${ph ? ` · ${safeName(ph)}` : ''}\n\n` +
+    `<i>Перед тем как одобрить — позвоните или загляните: точка настоящая?</i>`,
+    { reply_markup: { inline_keyboard: [[{ text: '✅ Одобрить', callback_data: 'bza:' + b.id }, { text: '❌ Отклонить', callback_data: 'bzr:' + b.id }]] } });
+}
+
+// решение по точке: одобрить, отклонить, приостановить
+async function bizDecide(actor, id, status) {
+  const { data: b } = await db.from('businesses').select('*').eq('id', id).maybeSingle();
+  if (!b) return { code: 404, error: 'no_biz' };
+  if (b.status === status) return { ok: true, same: true, biz: b };
+  const was = b.status;
+  const upd = { status, decided_at: new Date().toISOString(), decided_by: actor ? String(actor.name || actor.id || '') : null };
+  await db.from('businesses').update(upd).eq('id', id);
+  Object.assign(b, upd);
+  await audit(actor || {}, 'biz-' + status, null, b.name, `${b.name} (${b.city}): ${BIZ_ST[was] || was} → ${BIZ_ST[status]}`);
+  const tid = await tgIdOf(b.owner_id);
+  if (tid) {
+    const t = status === 'active'
+      ? (was === 'blocked'
+        ? `✅ <b>Точка «${safeName(b.name)}» снова работает</b>\nМожно вызывать курьера.`
+        : `✅ <b>Точка «${safeName(b.name)}» подключена!</b>\n\nВ приложении появился режим «Точка»: вызывайте курьера в пару нажатий — адрес точки подставится сам.\n\nСотрудников можно пригласить там же, в разделе «Точка».`)
+      : status === 'rejected'
+      ? `❌ <b>Заявку на точку «${safeName(b.name)}» отклонили</b>\nЕсли это ошибка — напишите в поддержку.`
+      : `⛔ <b>Точка «${safeName(b.name)}» приостановлена</b>\nВызвать курьера от её имени сейчас нельзя. Вопросы — в поддержку.`;
+    await send(tid, t, status === 'active' ? { reply_markup: { inline_keyboard: [[wa('🏪 Открыть точку', 'biz')]] } } : {}).catch(() => {});
+  }
+  return { ok: true, biz: b };
+}
+async function bizDecideCq(cq, status) {
+  const ans = (text, alert) => tg('answerCallbackQuery', { callback_query_id: cq.id, text, show_alert: !!alert });
+  if (cq.from.id !== OWNER) return ans('Это может только владелец', true);
+  const { data: actor } = await db.from('users').select('*').eq('telegram_id', OWNER).maybeSingle();
+  const r = await bizDecide(actor || { name: 'владелец' }, cq.data.slice(4), status);
+  if (r.error) return ans('Точка не найдена', true);
+  await ans(r.same ? 'Уже сделано' : status === 'active' ? 'Одобрено' : 'Отклонено');
+  if (cq.message) {
+    await tg('editMessageReplyMarkup', { chat_id: cq.from.id, message_id: cq.message.message_id, reply_markup: { inline_keyboard: [] } }).catch(() => {});
+    if (!r.same) await send(cq.from.id, status === 'active'
+      ? `✅ Точка «${safeName(r.biz.name)}» подключена — хозяину ушло сообщение.`
+      : `❌ Заявка точки «${safeName(r.biz.name)}» отклонена.`).catch(() => {});
+  }
+}
+
+// сотрудник по ссылке-приглашению: /start biz_CODE
+async function bizJoinPrompt(chat, code) {
+  if (!bizReady && !(await bizCheck())) return send(chat, 'Приглашение пока не работает. Попробуйте позже.');
+  const { data: b } = await db.from('businesses').select('*').eq('invite_code', String(code || '').slice(0, 20)).maybeSingle();
+  if (!b || b.status !== 'active') return send(chat, 'Ссылка-приглашение недействительна. Попросите у хозяина точки новую.');
+  const { data: u } = await db.from('users').select('id').eq('telegram_id', chat).maybeSingle();
+  if (!u) return send(chat, `🏪 <b>Приглашение в точку «${safeName(b.name)}»</b>\n\nСначала откройте приложение — оно создаст ваш профиль. Потом нажмите на ссылку-приглашение ещё раз.`,
+    { reply_markup: { inline_keyboard: [[wa('Открыть приложение', 'order')]] } });
+  if (await bizIsStaff(u.id, b.id)) return send(chat, `Вы уже в точке «${safeName(b.name)}».`, { reply_markup: { inline_keyboard: [[wa('🏪 Открыть точку', 'biz')]] } });
+  return send(chat, `🏪 <b>Вас приглашают в точку «${safeName(b.name)}»</b>\n📍 ${safeName(b.address)}\n\nВы сможете вызывать курьера от имени точки.`,
+    { reply_markup: { inline_keyboard: [[{ text: '✅ Присоединиться', callback_data: 'bzj:' + b.invite_code }]] } });
+}
+async function bizJoin(cq, code) {
+  const chat = cq.from.id;
+  const ans = (text, alert) => tg('answerCallbackQuery', { callback_query_id: cq.id, text, show_alert: !!alert });
+  if (!bizReady && !(await bizCheck())) return ans('Пока не работает', true);
+  const { data: b } = await db.from('businesses').select('*').eq('invite_code', code).maybeSingle();
+  if (!b || b.status !== 'active') return ans('Приглашение недействительно', true);
+  const { data: u } = await db.from('users').select('id,name,telegram_id,is_banned').eq('telegram_id', chat).maybeSingle();
+  if (!u) return ans('Сначала откройте приложение', true);
+  if (u.is_banned) return ans('Нет доступа', true);
+  if (!(await bizIsStaff(u.id, b.id))) {
+    const { count } = await db.from('biz_staff').select('*', { count: 'exact', head: true }).eq('biz_id', b.id);
+    if ((count || 0) >= 20) return ans('В точке уже 20 сотрудников', true);
+    await db.from('biz_staff').insert({ biz_id: b.id, user_id: u.id, role: 'staff' });
+    const otid = await tgIdOf(b.owner_id);
+    if (otid && String(otid) !== String(chat)) send(otid,
+      `👤 ${safeName(u.name)} #${String(u.telegram_id).slice(-4)} присоединился к точке «${safeName(b.name)}».\nУбрать — в приложении: Точка → Сотрудники.`).catch(() => {});
+  }
+  await ans('Готово!');
+  if (cq.message) await tg('editMessageText', { chat_id: chat, message_id: cq.message.message_id, parse_mode: 'HTML',
+    text: `✅ <b>Вы в точке «${safeName(b.name)}»</b>\nВызывайте курьера в приложении — режим «Точка».`,
+    reply_markup: { inline_keyboard: [[wa('🏪 Открыть точку', 'biz', { id: chat, first_name: u.name })]] } }).catch(() => {});
+}
+
+// вызов курьера
+async function bizOrder(me, body) {
+  const x = await bizOf(me.id);
+  if (!x || x.biz.status !== 'active') return { code: 403, error: 'no_biz' };
+  const b = x.biz;
+  const to = bizTxt(noContacts(body.to_address), 200);       // адрес виден всем водителям — номера вырезаем
+  const phone = bizPhone(body.recipient_phone);
+  if (to.length < 3) return { code: 400, error: 'bad_address' };
+  if (!phone) return { code: 400, error: 'bad_phone' };
+  const what = BIZ_WHAT.includes(body.what) ? body.what : '';
+  const note = bizTxt(noContacts(body.note), 150);
+  const payer = body.payer === 'client' ? 'client' : 'biz';
+  const pr = parseInt(body.price);
+  const price = Number.isFinite(pr) && pr > 0 ? Math.min(100000, pr) : null;
+  const { count: act } = await db.from('rides').select('*', { count: 'exact', head: true }).eq('biz_id', b.id).in('status', ['created', 'confirmed']);
+  if ((act || 0) >= 15) return { code: 429, error: 'too_many' };
+  const { data: ride, error } = await db.from('rides').insert({
+    passenger_id: me.id, passenger_name: b.name, from_address: b.address, to_address: to,
+    status: 'created', city: b.city, kind: 'delivery', comment: [what, note].filter(Boolean).join(' · ') || null,
+    passenger_price: price, biz_id: b.id, biz_name: b.name, biz_payer: payer
+  }).select().single();
+  if (error || !ride) return { code: 500, error: 'create_failed' };
+  const { error: e2 } = await db.from('biz_orders').insert({ ride_id: ride.id, biz_id: b.id, created_by: me.id,
+    recipient_phone: phone, recipient_name: bizTxt(body.recipient_name, 60) || null, details: bizTxt(body.details, 120) || null });
+  if (e2) { await db.from('rides').delete().eq('id', ride.id); return { code: 500, error: 'create_failed' }; }
+  return { ok: true, ride };
+}
+
+async function bizStaffRemove(me, body) {
+  const x = await bizOf(me.id);
+  if (!x || x.role !== 'owner') return { code: 403, error: 'not_owner' };
+  if (String(body.user_id) === String(me.id)) return { code: 400, error: 'self' };
+  await db.from('biz_staff').delete().eq('biz_id', x.biz.id).eq('user_id', String(body.user_id)).neq('role', 'owner');
+  return { ok: true, staff: await bizStaffList(x.biz.id) };
+}
+async function bizLeave(me) {
+  const x = await bizOf(me.id);
+  if (!x) return { ok: true };
+  if (x.role === 'owner') return { code: 400, error: 'owner' };
+  await db.from('biz_staff').delete().eq('biz_id', x.biz.id).eq('user_id', String(me.id));
+  return { ok: true };
+}
+async function bizNewInvite(me) {
+  const x = await bizOf(me.id);
+  if (!x || x.role !== 'owner' || x.biz.status !== 'active') return { code: 403, error: 'not_owner' };
+  const code = bizCode();
+  await db.from('businesses').update({ invite_code: code }).eq('id', x.biz.id);
+  return { ok: true, invite: bizInviteLink(code) };
+}
+
+async function bizApi(me, body) {
+  const act = String(body.action || '');
+  if (act === 'me') return bizMe(me);
+  if (!bizReady && !(await bizCheck())) return { code: 400, error: 'not_ready' };
+  if (act === 'apply') return bizApply(me, body);
+  if (act === 'order') return bizOrder(me, body);
+  if (act === 'staff-remove') return bizStaffRemove(me, body);
+  if (act === 'leave') return bizLeave(me);
+  if (act === 'new-invite') return bizNewInvite(me);
+  return { code: 400, error: 'unknown' };
+}
+
+// курьер забрал заказ в точке
+async function bizPicked(me, ride) {
+  if (!ride.biz_id) return { code: 400, error: 'not_biz' };
+  if (ride.picked_at) return { ok: true, same: true };
+  await db.from('rides').update({ picked_at: new Date().toISOString() }).eq('id', ride.id);
+  const tid = await tgIdOf(ride.passenger_id);
+  if (tid) send(tid, `📦 <b>Курьер забрал заказ</b> — везёт\n🏁 ${safeName(ride.to_address)}\n👤 ${safeName(me.name)}${me.car ? ` · ${safeName(me.car)}` : ''}`,
+    { reply_markup: { inline_keyboard: [[wa('🏪 Открыть точку', 'biz')]] } }).catch(() => {});
+  return { ok: true };
+}
+
+// водителю, которого выбрали: где забрать и кому отдать
+async function bizDriverCard(r) {
+  if (!bizReady || !r || !r.biz_id) return '';
+  const [{ data: b }, { data: o }] = await Promise.all([
+    db.from('businesses').select('name,address,phone').eq('id', r.biz_id).maybeSingle(),
+    db.from('biz_orders').select('*').eq('ride_id', r.id).maybeSingle()]);
+  let s = '';
+  if (b) s += `\n\n🏪 <b>Забрать:</b> ${safeName(b.name)}, ${safeName(b.address)}${b.phone ? `\n📞 <a href="tel:+${b.phone}">${bizPhoneTxt(b.phone)}</a>` : ''}`;
+  if (o) s += `\n\n👤 <b>Получатель:</b> ${safeName(o.recipient_name || 'имя не указано')}${o.recipient_phone ? `\n📞 <a href="tel:+${o.recipient_phone}">${bizPhoneTxt(o.recipient_phone)}</a>` : ''}${o.details ? `\n🚪 ${safeName(o.details)}` : ''}`;
+  s += `\n💳 Доставку оплачивает: <b>${bizPayerTxt(r.biz_payer)}</b>`;
+  return s;
+}
+// водителю в приложении: точка и получатель (только тому, кто взял заказ)
+async function bizContact(r) {
+  if (!bizReady || !r || !r.biz_id) return null;
+  const [{ data: b }, { data: o }] = await Promise.all([
+    db.from('businesses').select('name,address,phone').eq('id', r.biz_id).maybeSingle(),
+    db.from('biz_orders').select('*').eq('ride_id', r.id).maybeSingle()]);
+  return { biz: b ? { name: b.name, address: b.address, phone: b.phone ? '+' + b.phone : null } : null,
+    recipient: o ? { name: o.recipient_name, phone: o.recipient_phone ? '+' + o.recipient_phone : null, details: o.details } : null };
+}
+
+// утренняя сводка
+async function bizReportLine(y0, t0) {
+  if (!bizReady) return '';
+  try {
+    const { data: rs } = await db.from('rides').select('biz_id,status').not('biz_id', 'is', null)
+      .gte('created_at', y0.toISOString()).lt('created_at', t0.toISOString());
+    const all = rs || [];
+    const { count: pend } = await db.from('businesses').select('*', { count: 'exact', head: true }).eq('status', 'pending');
+    if (!all.length && !pend) return '';
+    return `🏪 Точки: доставок ${all.length}, довезли ${all.filter(r => r.status === 'completed').length}${pend ? ` · ждут проверки: ${pend}` : ''}`;
+  } catch (e) { return ''; }
+}
+
+// панель: «Ещё → Точки» (право biz)
+async function bizAdmin(me, act, body) {
+  if (!bizReady && !(await bizCheck())) return { ok: true, missing: true };
+  if (act === 'biz-list') {
+    const { data: bs } = await db.from('businesses').select('*').order('created_at', { ascending: false }).limit(500);
+    const list = bs || [];
+    const owners = [...new Set(list.map(b => b.owner_id))];
+    let us = [];
+    if (owners.length) { const { data } = await db.from('users').select('id,name,telegram_id').in('id', owners); us = data || []; }
+    const m0 = new Date(); m0.setHours(0, 0, 0, 0); m0.setDate(1);
+    const ids = list.filter(b => ['active', 'blocked'].includes(b.status)).map(b => b.id);
+    let rs = [], st = [];
+    if (ids.length) {
+      rs = await ptAll(() => db.from('rides').select('biz_id,status,created_at').in('biz_id', ids).gte('created_at', m0.toISOString()).order('created_at'), 10);
+      const { data } = await db.from('biz_staff').select('biz_id').in('biz_id', ids); st = data || [];
+    }
+    const items = list.map(b => {
+      const u = us.find(x => String(x.id) === String(b.owner_id)) || {};
+      const mine = rs.filter(r => String(r.biz_id) === String(b.id));
+      const { invite_code, ...rest } = b;
+      return { ...rest, owner_name: u.name || '—', owner_tag: String(u.telegram_id || '').slice(-4),
+        month: mine.filter(r => r.status === 'completed').length, month_all: mine.length,
+        last: mine.length ? mine[mine.length - 1].created_at : null,
+        staff: st.filter(x => String(x.biz_id) === String(b.id)).length };
+    });
+    return { ok: true, items };
+  }
+  if (act === 'biz-card') {
+    const { data: b } = await db.from('businesses').select('*').eq('id', body.id).maybeSingle();
+    if (!b) return { code: 404, error: 'no_biz' };
+    const staff = await bizStaffList(b.id);
+    const { data: rides } = await db.from('rides').select('id,status,created_at,to_address,price,driver_id,biz_payer')
+      .eq('biz_id', b.id).order('created_at', { ascending: false }).limit(20);
+    const { invite_code, ...rest } = b;
+    return { ok: true, biz: rest, staff, rides: rides || [], owner_phone: await phoneOf(b.owner_id) };
+  }
+  if (act === 'biz-set') {
+    if (!['active', 'rejected', 'blocked'].includes(body.status)) return { code: 400, error: 'bad_status' };
+    return bizDecide(me, body.id, body.status);
+  }
+  if (act === 'biz-edit') {
+    const { data: b } = await db.from('businesses').select('*').eq('id', body.id).maybeSingle();
+    if (!b) return { code: 404, error: 'no_biz' };
+    const upd = {};
+    if (body.name !== undefined) { const v = bizTxt(body.name, 60); if (v.length >= 2 && v !== b.name) upd.name = v; }
+    if (body.address !== undefined) { const v = bizTxt(body.address, 120); if (v.length >= 3 && v !== b.address) upd.address = v; }
+    if (body.phone !== undefined) { const v = bizPhone(body.phone); if (v && v !== b.phone) upd.phone = v; }
+    if (body.kind !== undefined && BIZ_KINDS[body.kind] && body.kind !== b.kind) upd.kind = body.kind;
+    if (body.note !== undefined) { const v = bizTxt(body.note, 200) || null; if (v !== (b.note || null)) upd.note = v; }
+    if (!Object.keys(upd).length) return { ok: true, same: true };
+    await db.from('businesses').update(upd).eq('id', b.id);
+    const L = { name: 'название', address: 'адрес', phone: 'телефон', kind: 'вид', note: 'пометка' };
+    await audit(me, 'biz-edit', null, b.name, Object.keys(upd).map(k => `${L[k]}: ${k === 'kind' ? BIZ_KINDS[upd[k]] : upd[k] || '—'}`).join('; '));
+    return { ok: true };
+  }
+  if (act === 'biz-staff-remove') {
+    const { data: b } = await db.from('businesses').select('name').eq('id', body.id).maybeSingle();
+    await db.from('biz_staff').delete().eq('biz_id', body.id).eq('user_id', String(body.user_id)).neq('role', 'owner');
+    await audit(me, 'biz-staff-remove', String(body.user_id), b ? b.name : null, 'убран из сотрудников точки');
+    return { ok: true, staff: await bizStaffList(body.id) };
+  }
+  return { code: 400, error: 'unknown' };
+}
+setTimeout(() => { bizCheck().catch(() => {}); }, 15 * 1000);
+setInterval(() => { if (!bizReady) bizCheck().catch(() => {}); }, 5 * 60 * 1000);
+/* ---------- конец: доставка для точек ---------- */
+
 /* ============ доступ в водительскую группу ============
    допуск сняли или человека забанили — убираем из группы.
    допуск вернули — разбаниваем и присылаем ссылку обратно. */
@@ -4124,9 +4520,9 @@ async function inviteToDriverGroups(user) {
    только город, вид заказа и цена. подробности в приложении. */
 
 function feedText(r, state) {
-  const kind = r.kind === 'delivery' ? '📦 Доставка'
+  const kind = (r.kind === 'delivery' ? '📦 Доставка'
              : r.to_city ? '🛣 Межгород'
-             : '🚕 Поездка';
+             : '🚕 Поездка') + (r.biz_name ? ` · 🏪 ${safeName(r.biz_name)}` : '');
 
   // во сколько заявку создали — чтобы зашедший позже видел, что он пропустил
   const at = r.created_at
@@ -4525,7 +4921,8 @@ const PERM_GROUPS = {
   settings:   'Общие настройки',
   stats:      'Отчёты и статистика',
   audit:      'Журнал действий',
-  ranks:      'Ранги и баллы: правила, журнал баллов, ручные начисления'
+  ranks:      'Ранги и баллы: правила, журнал баллов, ручные начисления',
+  biz:        'Точки: магазины и кафе — проверка и доставки'
 };
 
 // какое действие к какому разделу относится
@@ -4559,6 +4956,7 @@ const ACT_PERM = {
 
   'settings-update':'settings','save-settings':'settings',
   'call-cfg-get':'settings','call-cfg-set':'settings','call-stats':'settings',
+  'biz-list':'biz','biz-card':'biz','biz-set':'biz','biz-edit':'biz','biz-staff-remove':'biz',
 
   'stats':'stats','days-stats':'stats','rides-stats':'stats','drivers-stats':'stats','tg-stats':'stats',
 
@@ -4971,6 +5369,8 @@ async function dailyReportText() {
   }
   const callLn = await callReportLine(y0, t0);
   if (callLn) L.push(callLn);
+  const bizLn = await bizReportLine(y0, t0);
+  if (bizLn) L.push(bizLn);
   const top = Object.entries(s.byDriver).sort((a, b) => b[1] - a[1])[0];
   if (top) {
     const nm = await rpNames([top[0]]);
@@ -5203,9 +5603,12 @@ async function awardRide(rideId) {
     const t1 = r.completed_at ? new Date(r.completed_at).getTime() : Date.now();
     if (t1 - t0 < L.minMinutes * 60000) { await ptAdd(r.driver_id, 0, 'ride_short', route, uniq, base); return; }
     if (r.passenger_id) {
+      // доставки одной точки — не накрутка: им засчитываем втрое больше в день
+      const peer = r.biz_id ? 'biz:' + r.biz_id : String(r.passenger_id);
+      if (r.biz_id) base.peer_id = peer;
       const { count: same } = await db.from('points').select('*', { count: 'exact', head: true })
-        .eq('driver_id', String(r.driver_id)).eq('peer_id', String(r.passenger_id)).eq('reason', 'ride').gte('created_at', ptDay0());
-      if ((same || 0) >= L.perPassenger) { await ptAdd(r.driver_id, 0, 'ride_same', route, uniq, base); return; }
+        .eq('driver_id', String(r.driver_id)).eq('peer_id', peer).eq('reason', 'ride').gte('created_at', ptDay0());
+      if ((same || 0) >= L.perPassenger * (r.biz_id ? 3 : 1)) { await ptAdd(r.driver_id, 0, 'ride_same', route, uniq, base); return; }
     }
     let pts = P.ride; const tags = [];
     if (P.peak && ptPeak(r.scheduled_at || r.confirmed_at || r.created_at)) { pts += P.peak; tags.push('peak'); }
@@ -5555,7 +5958,7 @@ async function invUnspam(tgId) {
 // первая поездка приглашённого — главный бонус пригласившему
 async function invFirstRide(r) {
   try {
-    if (!RCFG.feat.invites || !RCFG.pts.invRide || !r.passenger_id) return;
+    if (!RCFG.feat.invites || !RCFG.pts.invRide || !r.passenger_id || r.biz_id) return;
     const ptg = await tgIdOf(r.passenger_id);
     if (!ptg) return;
     const { data: iv } = await db.from('invitees').select('*').eq('tg_id', ptg).maybeSingle();
@@ -5734,7 +6137,7 @@ async function rankAdmin(me, act, body) {
     const all = await ptAll(() => { let q = db.from('points').select('delta'); if (since) q = q.gte('created_at', since); if (grp) q = q.in('reason', grp); if (body.group === 'pen') q = q.lt('delta', 0); if (ids) q = q.in('driver_id', ids); return q.order('id'); }, 30);
     const sum = { plus: 0, minus: 0, n: all.length };
     all.forEach(x => { if (x.delta > 0) sum.plus += x.delta; else sum.minus += x.delta; });
-    const uids = [...new Set((rows || []).flatMap(x => [x.driver_id, x.peer_id, x.created_by]).filter(Boolean))];
+    const uids = [...new Set((rows || []).flatMap(x => [x.driver_id, x.peer_id, x.created_by]).filter(x => x && !String(x).startsWith('biz:')))];   // biz:… — точка, не человек
     const names = {};
     for (let i = 0; i < uids.length; i += 100) {
       const { data: us } = await db.from('users').select('id,name,telegram_id,rank_code,rank_paused').in('id', uids.slice(i, i + 100));
@@ -6008,15 +6411,29 @@ http.createServer(async (req, res) => {
     }
 
     // --- телефон второй стороны по активной поездке ---
+    // точки: подключение, сотрудники, вызов курьера
+    if (req.url === '/api/biz') {
+      const r = await bizApi(me, body || {});
+      const code = r.code || 200; delete r.code;
+      return json(res, code, r);
+    }
+
     if (req.url === '/api/ride-contact') {
-      const { data: r } = await db.from('rides').select('passenger_id,driver_id,status').eq('id', body.ride_id).maybeSingle();
+      const { data: r } = await db.from('rides').select('*').eq('id', body.ride_id).maybeSingle();
       if (!r) return json(res, 404, { error: 'no_ride' });
-      const iAmPassenger = r.passenger_id === me.id;
+      let iAmPassenger = r.passenger_id === me.id;
       const iAmDriver = r.driver_id === me.id;
+      // сотрудник точки — как тот, кто вызвал курьера
+      if (!iAmPassenger && !iAmDriver && r.biz_id) iAmPassenger = await bizIsStaff(me.id, r.biz_id);
       if (!iAmPassenger && !iAmDriver) return json(res, 403, { error: 'not_yours' });
       // контакты доступны только пока заказ в работе
       if (!['confirmed', 'in_progress'].includes(r.status)) return json(res, 400, { error: 'not_active' });
       const other = iAmPassenger ? r.driver_id : r.passenger_id;
+      // доставка точки: курьеру — телефон точки и получатель (только ему)
+      if (iAmDriver && r.biz_id) {
+        const bc = await bizContact(r);
+        if (bc) return json(res, 200, { ok: true, phone: (bc.biz && bc.biz.phone) || await phoneOf(other), biz: bc.biz, recipient: bc.recipient });
+      }
       return json(res, 200, { ok: true, phone: await phoneOf(other) });
     }
 
@@ -6450,8 +6867,10 @@ http.createServer(async (req, res) => {
         if (!data) return json(res, 404, { error: 'no_ride' });
         ride = data;
       }
-      const iAmPassenger = ride && String(ride.passenger_id) === String(me.id);
+      let iAmPassenger = ride && String(ride.passenger_id) === String(me.id);
       const iAmDriver    = ride && String(ride.driver_id)    === String(me.id);
+      // сотрудники точки управляют её доставками наравне с тем, кто вызвал курьера
+      if (ride && !iAmPassenger && !iAmDriver && ride.biz_id) iAmPassenger = await bizIsStaff(me.id, ride.biz_id);
 
       // ---------- пассажир ----------
       if (act === 'ride-create') {
@@ -6575,6 +6994,14 @@ http.createServer(async (req, res) => {
         return json(res, 200, { ok: true });
       }
 
+      // доставка точки: курьер забрал заказ
+      if (act === 'ride-picked') {
+        if (!iAmDriver) return json(res, 403, { error: 'not_yours' });
+        const r = await bizPicked(me, ride);
+        const code = r.code || 200; delete r.code;
+        return json(res, code, r);
+      }
+
       if (act === 'ride-cancel-driver') {
         if (!iAmDriver) return json(res, 403, { error: 'not_yours' });
         const why = ['agreed', 'cant', 'noshow', 'other'].includes(body.reason) ? body.reason : 'other';
@@ -6638,6 +7065,13 @@ http.createServer(async (req, res) => {
       }
 
       // ранги и баллы: правила, журнал баллов, ручные начисления
+      // точки: проверка, данные, сотрудники
+      if (/^biz-/.test(String(act || ''))) {
+        const r = await bizAdmin(me, act, body);
+        const code = r.code || 200; delete r.code;
+        return json(res, code, r);
+      }
+
       // зов на линию: правила и итоги
       if (/^call-/.test(String(act || ''))) {
         const r = await callAdmin(me, act, body);
