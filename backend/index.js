@@ -5214,18 +5214,30 @@ const BACKUP_TABLES = [
   'users', 'contacts', 'rides', 'offers', 'reviews', 'messages', 'shifts',
   'cars', 'complaints', 'payments', 'promos', 'sources', 'settings',
   'cities', 'broadcasts', 'audit_log', 'support_msgs', 'admin_msgs',
-  'group_pins', 'winback_queue', 'reports', 'pending_refs', 'pending_src', 'tg_events', 'points', 'inv_links', 'invitees'
+  'group_pins', 'winback_queue', 'reports', 'pending_refs', 'pending_src', 'tg_events', 'points', 'inv_links', 'invitees',
+  'businesses', 'biz_staff', 'biz_orders', 'call_log', 'call_sent', 'ride_notify', 'ride_ask', 'spam_log'
 ];
+// по какому полю листать таблицу (у кого нет id)
+const BACKUP_KEY = { contacts: 'user_id', group_pins: 'city_name', inv_links: 'code', invitees: 'tg_id',
+  pending_refs: 'tg_id', pending_src: 'tg', sources: 'code', biz_staff: 'user_id', biz_orders: 'ride_id' };
 
 async function makeBackup() {
   const dump = {};
   let rows = 0;
   for (const t of BACKUP_TABLES) {
     try {
-      const { data, error } = await db.from(t).select('*').limit(50000);
-      if (error) { dump[t] = { error: error.message }; continue; }
-      dump[t] = data || [];
-      rows += (data || []).length;
+      // база отдаёт не больше 1000 строк за раз — листаем страницами, иначе копия неполная
+      const all = [];
+      let err = null;
+      for (let i = 0; i < 500; i++) {
+        const { data, error } = await db.from(t).select('*').order(BACKUP_KEY[t] || 'id').range(i * 1000, i * 1000 + 999);
+        if (error) { err = error.message; break; }
+        all.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      if (err && !all.length) { dump[t] = { error: err }; continue; }
+      dump[t] = all;
+      rows += all.length;
     } catch (e) {
       dump[t] = { error: String(e.message || e) };
     }
