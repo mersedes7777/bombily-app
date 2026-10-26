@@ -381,6 +381,18 @@ async function onUpdate(u) {
     }
 
     // ошиблись — владелец возвращает человека одной кнопкой
+    if (cq.data && cq.data.startsWith('adban:')) {
+      if (String(chat) !== String(OWNER)) { await send(chat, 'Только владелец.'); return; }
+      const uid = cq.data.slice(6);
+      const { data: t } = await db.from('users').select('id,name,telegram_id,staff_role').eq('id', uid).maybeSingle();
+      if (!t || t.staff_role === 'owner' || String(t.telegram_id) === String(OWNER)) { await send(chat, 'Нельзя.'); return; }
+      await db.from('users').update({ is_banned: true }).eq('id', uid);
+      await db.from('rides').update({ status: 'cancelled' }).eq('passenger_id', uid).eq('status', 'created');
+      const { data: me0 } = await db.from('users').select('*').eq('telegram_id', chat).maybeSingle();
+      audit(me0 || { name: 'owner' }, 'ban', t.telegram_id, t.name, 'реклама в заявке').catch(() => {});
+      await send(chat, `⛔ ${safeName(t.name)} забанен, его заявки отменены.`);
+      return;
+    }
     if (cq.data && cq.data.startsWith('unspam:')) {
       const p = cq.data.split(':');
       if (String(chat) !== String(OWNER)) { await send(chat, 'Только владелец.'); return; }
@@ -2031,6 +2043,9 @@ async function chatOrderCreate(chat) {
   const { data: u } = await db.from('users')
     .select('id,name,city,is_banned,has_phone').eq('telegram_id', chat).maybeSingle();
   if (!u || u.is_banned) { await send(chat, 'Нет доступа.'); return; }
+  { const why = adSpam(d.from_address, d.to_address, d.comment, d.to_city);
+    if (why) { await draftDel(chat); adAlert({ ...u, telegram_id: chat }, why, [d.from_address, d.to_address, d.comment].filter(Boolean).join(' | '));
+      await send(chat, '🚫 В заявке не должно быть ссылок, @ников и рекламы. Напишите только адреса.'); return; } }
 
   // уже есть активная заявка — вторую не плодим
   const { data: act } = await db.from('rides').select('id,status')
@@ -4248,6 +4263,7 @@ async function bizOrder(me, body) {
   const to = bizTxt(noContacts(body.to_address), 200);       // адрес виден всем водителям — номера вырезаем
   const phone = bizPhone(body.recipient_phone);
   if (to.length < 3) return { code: 400, error: 'bad_address' };
+  { const why = adSpam(body.to_address, body.note); if (why) { adAlert(me, why, [body.to_address, body.note].filter(Boolean).join(' | ')); return { code: 400, error: 'ad_text' }; } }
   if (!phone) return { code: 400, error: 'bad_phone' };
   const what = BIZ_WHAT.includes(body.what) ? body.what : '';
   const note = bizTxt(noContacts(body.note), 150);
@@ -5049,6 +5065,25 @@ const rateMap = new Map();
 // безопасная вставка имени в сообщение (имя может содержать угловые скобки)
 // телефоны и ники не должны попадать в публичные надписи: имя, место стоянки.
 // Контакты показываются только тому, кто взял заказ.
+// v174: реклама в заявке — ссылки, @ники, слишком длинный текст
+function adSpam(...parts) {
+  for (let i = 0; i < parts.length; i++) {
+    const t = String(parts[i] || '');
+    if (!t) continue;
+    if (i < 2 && t.length > 120) return 'длинный текст';
+    if (/(https?:\/\/|www\.|t\.me|telegram\.me|tg:\/\/|\.(ru|com|org|net|рф|me|io)\b)/i.test(t)) return 'ссылка';
+    if (/@[a-zA-Z0-9_]{3,}/.test(t)) return '@ник';
+    if (/[a-z0-9_]{3,}_?bot\b/i.test(t)) return 'бот';
+  }
+  return null;
+}
+async function adAlert(u, why, text) {
+  if (!u) return;
+  const tid = u.telegram_id ? String(u.telegram_id).slice(-4) : '';
+  send(OWNER, `🚫 <b>Попытка рекламы через заявку</b>\n${safeName(u.name)} #${tid} (${why})\n\n<code>${safeName(String(text).slice(0, 300))}</code>`,
+    { reply_markup: { inline_keyboard: [[{ text: '⛔ Забанить', callback_data: 'adban:' + u.id }]] } }).catch(() => {});
+}
+
 function noContacts(s) {
   return String(s || '')
     .replace(/(?:\+?\d[\s\-()]*){10,}/g, ' ')
@@ -6934,6 +6969,8 @@ http.createServer(async (req, res) => {
           scheduled_at: body.scheduled_at ? new Date(body.scheduled_at).toISOString() : null
         };
         if (body.target_driver_id) row.target_driver_id = String(body.target_driver_id);
+        { const why = adSpam(row.from_address, row.to_address, row.comment, row.to_city);
+          if (why) { adAlert(me, why, [row.from_address, row.to_address, row.comment].filter(Boolean).join(' | ')); return json(res, 400, { error: 'ad_text' }); } }
         // одна активная заявка на человека: иначе к нему едут двое (заказ на время — можно)
         if (!row.scheduled_at) {
           const { data: act } = await db.from('rides').select('*').eq('passenger_id', me.id).in('status', ['created', 'confirmed']);

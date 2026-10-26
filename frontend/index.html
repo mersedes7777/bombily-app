@@ -2359,7 +2359,7 @@ async function bSend(){
  if(ph.length<10)return T('Проверьте телефон получателя');
  const btn=document.getElementById('bo_send');if(btn){btn.disabled=true;btn.textContent='Отправляю…';}
  const r=await api('/api/biz',{action:'order',to_address:to,details:bForm.det||'',recipient_phone:bForm.ph,recipient_name:bForm.nm||'',what:bForm.what||'',note:bForm.note||'',payer:bForm.payer||'biz',price:bForm.price||null});
- if(r.error){if(btn){btn.disabled=false;btn.textContent='Вызвать курьера';}return T(({bad_address:'Проверьте адрес',bad_phone:'Проверьте телефон получателя',too_many:'Слишком много доставок одновременно',no_biz:'Точка не активна'})[r.error]||'Не получилось вызвать');}
+ if(r.error){if(btn){btn.disabled=false;btn.textContent='Вызвать курьера';}return T(({bad_address:'Проверьте адрес',bad_phone:'Проверьте телефон получателя',too_many:'Слишком много доставок одновременно',no_biz:'Точка не активна',ad_text:'Без ссылок и @ников — только адрес'})[r.error]||'Не получилось вызвать');}
  bForm={what:'',payer:bForm.payer||'biz',price:null};
  T('Ищем курьера — предложения появятся здесь');bTab='home';drawB();
 }
@@ -2872,6 +2872,7 @@ async function _send(did){
  if(did)row.target_driver_id=did;
  const _rc=await api('/api/action',Object.assign({action:'ride-create'},row));
  const data=_rc.ride||null;const error=_rc.error?{message:'Не удалось создать заявку'}:null;
+ if(_rc.error==='ad_text'){T('В заявке не должно быть ссылок, @ников и рекламы — только адреса');return;}
  if(_rc.error==='has_active'){T('У вас уже есть заявка — вот она. Чтобы изменить цену, отмените её и создайте новую');await restore();pTab=active?'ride':'home';drawP();return;}
  if(error||!data){T('Не удалось создать заявку');return;}
  targetDrv=null;
