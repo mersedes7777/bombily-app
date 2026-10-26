@@ -6651,10 +6651,11 @@ async function finCities(c){
  </div>
  <div class="head"><h2>Документы водителей</h2></div>
  <div class="form">
-  <div class="fr"><label>Хранить после проверки, дней</label>
+  <div class="obar" style="margin:0 0 10px"><div style="flex:1;padding-right:10px"><div class="l">Никогда не удалять</div><div class="obhint">Права и техпаспорт хранятся всегда, пока вы сами их не удалите.</div></div><div class="tg ${SETTINGS.docs_keep_days===0?'on':''}" onclick="togDocsNever()"><div class="kn"></div></div></div>
+  ${SETTINGS.docs_keep_days===0?'':`<div class="fr"><label>Хранить после проверки, дней</label>
    <input id="dkeep" type="number" min="1" max="90" value="${SETTINGS.docs_keep_days??3}"></div>
-  <div class="obhint" style="padding:2px 0 12px">Права и техпаспорт удаляются сами через указанный срок. В карточке водителя остаётся отметка: кто проверил и когда. Чем меньше срок — тем меньше риска, если базу попытаются украсть.</div>
-  <button class="btn" onclick="saveDocsKeep()">Сохранить срок</button>
+  <div class="obhint" style="padding:2px 0 12px">Права и техпаспорт удаляются сами через указанный срок. В карточке водителя остаётся отметка: кто проверил и когда.</div>
+  <button class="btn" onclick="saveDocsKeep()">Сохранить срок</button>`}
  </div>
  <div class="head"><h2>Карточки водителей в группе</h2></div>
  <div class="form">
@@ -6777,6 +6778,14 @@ async function saveDpost(){
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Не удалось сохранить');
  if(r.settings)SETTINGS=r.settings; else SETTINGS.dpost_minutes=v;
  T('Сохранено: каждые '+v+' мин');
+}
+async function togDocsNever(){
+ const d=SETTINGS.docs_keep_days===0?3:0;
+ const r=await api('/api/admin',{action:'settings-update',fields:{docs_keep_days:d}});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Не удалось сохранить');
+ if(r.settings)SETTINGS=r.settings; else SETTINGS.docs_keep_days=d;
+ T(d===0?'Документы больше не удаляются':'Документы снова удаляются через 3 дн.');
+ finCities(document.getElementById('fincont'));
 }
 async function saveDocsKeep(){
  const d=Math.max(1,Math.min(90,parseInt(document.getElementById('dkeep').value)||3));

@@ -5345,6 +5345,7 @@ async function docsKeepDays() {
   try {
     const { data } = await db.from('settings').select('docs_keep_days').eq('id', 1).maybeSingle();
     const n = data && data.docs_keep_days;
+    if (n === 0 || n === '0') return 0;           // 0 — хранить всегда, не удалять
     return Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : 3;
   } catch (e) { return 3; }
 }
@@ -5361,6 +5362,7 @@ function storagePath(url, bucket) {
 async function wipeDocs() {
   const nowIso = new Date().toISOString();
   let wiped = 0;
+  if ((await docsKeepDays()) === 0) return 0;     // владелец выбрал «никогда не удалять»
 
   try {
     // машины
@@ -7816,7 +7818,7 @@ http.createServer(async (req, res) => {
           approved: true,
           docs_checked_at: new Date().toISOString(),
           docs_checked_by: me.name,
-          docs_wipe_at: new Date(Date.now() + keepD * 86400000).toISOString()
+          docs_wipe_at: keepD ? new Date(Date.now() + keepD * 86400000).toISOString() : null
         };
         if (body.brand) { upd2.brand = String(body.brand).slice(0, 60); c.brand = upd2.brand; }
         if (body.plate) { upd2.plate = String(body.plate).toUpperCase().slice(0, 15); c.plate = upd2.plate; }
