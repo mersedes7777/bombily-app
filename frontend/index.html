@@ -4878,6 +4878,52 @@ async function togCall(k){
  drawD();
 }
 let callCfg=null;
+var guardCfg=null,guardRows=[];
+async function finGuard(c){
+ c.innerHTML='<div class="empty">Загрузка…</div>';
+ const[g,l]=await Promise.all([api('/api/admin',{action:'guard-get'}),api('/api/admin',{action:'guard-list'})]);
+ if(!g||g.error){c.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
+ guardCfg={...g.cfg};guardRows=(l&&l.rows)||[];
+ guardDraw(c);
+}
+function guardDraw(c){
+ const C=guardCfg,rows=guardRows;
+ const wt=m=>m>=60?Math.floor(m/60)+' ч'+(m%60?' '+m%60+' мин':''):m+' мин';
+ c.innerHTML=`<div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px"><div class="l">Пауза за частые отмены</div><div class="obhint">Пассажир отменяет заявки одну за другой — новую он сможет создать только после паузы. Первая отмена за сутки бесплатно. Счёт обнуляется через сутки.</div></div><div class="tg ${C.on?'on':''}" onclick="togGuard()"><div class="kn"></div></div></div>
+ <div class="sec">Сейчас часто отменяют</div>
+ ${rows.length?`<div class="st-card cl-list">${rows.map(r=>`<div class="cl-row"><div class="a"><b>${esc(r.name||'Без имени')} #${esc(r.tag)}</b><span>${r.banned?'забанен':r.left?'пауза ещё '+wt(r.left):'без паузы'}</span></div><div class="w">${r.n} ${plural(r.n,['отмена','отмены','отмен'])} за сутки${r.left?` · <a href="#" onclick="guardReset('${r.id}');return false" style="color:var(--acc,#4caf50)">Снять паузу</a>`:''}</div></div>`).join('')}</div>`:'<div class="obhint" style="margin:6px 18px 0">Никто не отменял заявки по 2 раза и больше за сутки.</div>'}
+ <div class="sec">Паузы, минут</div>
+ <div class="form">
+  ${C.steps.map((v,i)=>`<div class="fr"><label>После ${i+2}-й отмены</label><input class="gstep" type="number" inputmode="numeric" min="0" max="10080" value="${v}"></div>`).join('')}
+  <div class="obhint" style="padding:0 0 12px">Последняя пауза действует и на все следующие отмены. 60 = час, 180 = 3 часа, 720 = 12 часов. 0 — без паузы.</div>
+  <div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" style="flex:1;opacity:.8" onclick="guardStep(1)">+ ступень</button><button class="btn" style="flex:1;opacity:.8" onclick="guardStep(-1)">− ступень</button></div>
+  <div class="fr"><label>Писать мне в бот, начиная с отмены №</label><input id="g_alert" type="number" inputmode="numeric" min="2" max="20" value="${C.alertFrom}"></div>
+  <button class="btn" onclick="saveGuard()">Сохранить</button>
+ </div>
+ <div style="height:20px"></div>`;
+}
+function guardRead(){
+ const steps=[...document.querySelectorAll('.gstep')].map(e=>Number(e.value)||0);
+ const a=document.getElementById('g_alert');
+ return{on:!!guardCfg.on,steps:steps.length?steps:guardCfg.steps,alertFrom:a?Number(a.value):guardCfg.alertFrom};
+}
+function guardStep(d){
+ const cfg=guardRead();
+ if(d>0&&cfg.steps.length<10)cfg.steps.push(cfg.steps[cfg.steps.length-1]||60);
+ if(d<0&&cfg.steps.length>1)cfg.steps.pop();
+ guardCfg=cfg;guardDraw(document.getElementById('fincont'));
+}
+async function saveGuard(){
+ const r=await api('/api/admin',{action:'guard-set',cfg:guardRead()});
+ if(r.error)return T(r.error==='no_column'?'Сначала нужна миграция db-32':'Не удалось сохранить');
+ T('Сохранено');finGuard(document.getElementById('fincont'));
+}
+async function togGuard(){guardCfg=guardRead();guardCfg.on=!guardCfg.on;await saveGuard();}
+async function guardReset(id){
+ const r=await api('/api/admin',{action:'guard-reset',user_id:id});
+ if(r.error)return T(r.error==='no_column'?'Сначала нужна миграция db-32':'Не удалось');
+ T('Пауза снята');finGuard(document.getElementById('fincont'));
+}
 async function finCall(c){
  c.innerHTML='<div class="empty">Загрузка…</div>';
  const[g,s]=await Promise.all([api('/api/admin',{action:'call-cfg-get'}),api('/api/admin',{action:'call-stats'})]);
@@ -4967,9 +5013,9 @@ const MORE_GROUPS=[
  ['Точки',[['biz','Магазины и кафе','проверка точек, сотрудники, доставки','biz']]],
  ['Продвижение',[['mail','Рассылка в бота','написать всем или части людей','broadcast'],['src','Метки и QR-коды','откуда приходят люди и кто из них заказывает','refs'],['promo','Промокоды','бесплатные дни и скидки','promos'],['ref','Рефералка','бонус за приглашённого водителя','refs'],['back','Возврат водителей','кто перестал платить и давно не заходил','broadcast']]],
  ['Деньги',[['sub','Подписка и тарифы','платно или бесплатно, когда снимать с линии','settings'],['bal','Баланс водителей','начислить или списать вручную','balance']]],
- ['Система',[['rep','Сводки в Telegram','утренняя сводка вам и итоги недели водителям','settings'],['log','Журнал действий','что делали администраторы','audit']]]
+ ['Система',[['rep','Сводки в Telegram','утренняя сводка вам и итоги недели водителям','settings'],['guard','Защита от спама','паузы за частые отмены заявок, кто сейчас на паузе','settings'],['log','Журнал действий','что делали администраторы','audit']]]
 ];
-const MORE_ICO={biz:'<path d="M3 9.5 4.5 4h15L21 9.5"/><path d="M3 9.5h18v1.5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13.5V20h14v-6.5"/><path d="M10 20v-4h4v4"/>',call:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',ranks:'<path d="M8.5 2h3l1.6 6M15.5 2h-3"/><circle cx="12" cy="14.5" r="6.5"/><path d="m12 11.2 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"/>',city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
+const MORE_ICO={guard:'<path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>',biz:'<path d="M3 9.5 4.5 4h15L21 9.5"/><path d="M3 9.5h18v1.5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13.5V20h14v-6.5"/><path d="M10 20v-4h4v4"/>',call:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',ranks:'<path d="M8.5 2h3l1.6 6M15.5 2h-3"/><circle cx="12" cy="14.5" r="6.5"/><path d="m12 11.2 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"/>',city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
  promo:'<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',ref:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',back:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
  sub:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',bal:'<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',rep:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',log:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>'};
 function moreAllowed(id){
@@ -6302,6 +6348,7 @@ async function aFin(m){
  if(finTab==='rep')return finReports(c);
  if(finTab==='ranks')return finRanks(c);
  if(finTab==='call')return finCall(c);
+ if(finTab==='guard')return finGuard(c);
  if(finTab==='biz')return finBiz(c);
  if(finTab==='sub')finSub(c);
  else if(finTab==='promo')finPromo(c);

@@ -4993,6 +4993,7 @@ const ACT_PERM = {
   'city-list':'cities','city-save':'cities','city-delete':'cities','pin-now':'cities',
 
   'settings-update':'settings','save-settings':'settings',
+  'guard-get':'settings','guard-set':'settings','guard-list':'settings','guard-reset':'settings',
   'call-cfg-get':'settings','call-cfg-set':'settings','call-stats':'settings',
   'biz-list':'biz','biz-card':'biz','biz-set':'biz','biz-edit':'biz','biz-staff-remove':'biz','biz-rule-get':'biz','biz-rule-set':'biz',
 
@@ -5068,26 +5069,91 @@ const rateMap = new Map();
 // безопасная вставка имени в сообщение (имя может содержать угловые скобки)
 // телефоны и ники не должны попадать в публичные надписи: имя, место стоянки.
 // Контакты показываются только тому, кто взял заказ.
-// v175: пауза за частые отмены — 1-я отмена бесплатно, дальше 3, 7, 15 мин, час, 3 часа, 12 часов
-const CANCEL_STEPS = [0, 0, 3, 7, 15, 60, 180, 720];
+// v175/176: пауза за частые отмены — ступени и включение меняются в панели (Ещё → Защита от спама)
+const GUARD_DEF = { on: true, steps: [3, 7, 15, 60, 180, 720], alertFrom: 5 };
+let GCFG = { ...GUARD_DEF }, _gAt = 0;
+function guardClean(c) {
+  c = c || {};
+  let steps = Array.isArray(c.steps) ? c.steps.map(x => Math.round(Number(x))).filter(x => Number.isFinite(x) && x >= 0 && x <= 10080).slice(0, 10) : GUARD_DEF.steps;
+  if (!steps.length) steps = GUARD_DEF.steps;
+  const af = Math.round(Number(c.alertFrom));
+  return { on: c.on !== false, steps, alertFrom: Number.isFinite(af) && af >= 2 && af <= 20 ? af : GUARD_DEF.alertFrom };
+}
+async function guardLoad(force) {
+  if (!force && Date.now() - _gAt < 60e3) return GCFG;
+  try { const { data } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
+    GCFG = guardClean(data && data.guard_cfg); _gAt = Date.now(); } catch (e) {}
+  return GCFG;
+}
+// сколько минут паузы за n отмен: 1-я бесплатно, 2-я — steps[0], 3-я — steps[1]…
+function guardMins(n) { return n < 2 ? 0 : GCFG.steps[Math.min(n - 2, GCFG.steps.length - 1)]; }
+async function guardResetAt(uid) {
+  const { data, error } = await db.from('users').select('cancel_reset_at').eq('id', uid).maybeSingle();
+  return !error && data && data.cancel_reset_at ? data.cancel_reset_at : null;
+}
+async function guardState(uid, resetAt) {
+  let since = new Date(Date.now() - 24 * 3600e3).toISOString();
+  if (resetAt && resetAt > since) since = resetAt;
+  const { data } = await db.from('rides').select('created_at')
+    .eq('passenger_id', uid).eq('status', 'cancelled_by_passenger_free').is('biz_id', null)
+    .gt('created_at', since).order('created_at', { ascending: false }).limit(30);
+  const n = (data || []).length, mins = guardMins(n);
+  const left = mins ? Math.ceil((new Date(data[0].created_at).getTime() + mins * 60e3 - Date.now()) / 60e3) : 0;
+  return { n, mins, left: left > 0 ? left : 0 };
+}
 const _cdAlerted = new Map();
 async function cancelCooldown(u) {
-  const since = new Date(Date.now() - 24 * 3600e3).toISOString();
-  const { data } = await db.from('rides').select('created_at')
-    .eq('passenger_id', u.id).eq('status', 'cancelled_by_passenger_free').is('biz_id', null)
-    .gte('created_at', since).order('created_at', { ascending: false }).limit(20);
-  const n = (data || []).length;
-  const mins = CANCEL_STEPS[Math.min(n, CANCEL_STEPS.length - 1)];
-  if (!mins) return 0;
-  const left = Math.ceil((new Date(data[0].created_at).getTime() + mins * 60e3 - Date.now()) / 60e3);
-  if (left <= 0) return 0;
-  if (n >= 5 && _cdAlerted.get(u.id) !== n) {
+  await guardLoad();
+  if (!GCFG.on) return 0;
+  const { n, mins, left } = await guardState(u.id, await guardResetAt(u.id));
+  if (!left) return 0;
+  if (n >= GCFG.alertFrom && _cdAlerted.get(u.id) !== n) {
     _cdAlerted.set(u.id, n);
     const tid = u.telegram_id ? String(u.telegram_id).slice(-4) : '';
-    send(OWNER, `⚠️ <b>Частые отмены заявок</b>\n${safeName(u.name)} #${tid} — ${n} отмен за сутки, пауза ${mins >= 60 ? mins / 60 + ' ч' : mins + ' мин'}.`,
+    send(OWNER, `⚠️ <b>Частые отмены заявок</b>\n${safeName(u.name)} #${tid} — ${n} отмен за сутки, пауза ${waitTxt(mins)}.\nСнять паузу — панель: Ещё → Защита от спама.`,
       { reply_markup: { inline_keyboard: [[{ text: '⛔ Забанить', callback_data: 'adban:' + u.id }]] } }).catch(() => {});
   }
   return left;
+}
+async function guardAdmin(me, act, body) {
+  if (act === 'guard-get') { await guardLoad(true); return { ok: true, cfg: GCFG, def: GUARD_DEF }; }
+  if (act === 'guard-set') {
+    const next = guardClean(body.cfg);
+    const { error } = await db.from('settings').update({ guard_cfg: next }).eq('id', 1);
+    if (error) return { code: 500, ok: false, error: /guard_cfg/.test(error.message) ? 'no_column' : 'save_failed' };
+    GCFG = next; _gAt = Date.now();
+    await audit(me, 'guard-cfg', null, null, `${next.on ? 'вкл' : 'выкл'}; паузы ${next.steps.join('/')} мин; сигнал с ${next.alertFrom}`);
+    return { ok: true, cfg: GCFG };
+  }
+  if (act === 'guard-list') {
+    await guardLoad();
+    const since = new Date(Date.now() - 24 * 3600e3).toISOString();
+    const { data: r } = await db.from('rides').select('passenger_id').eq('status', 'cancelled_by_passenger_free')
+      .is('biz_id', null).gt('created_at', since).limit(2000);
+    const cnt = {};
+    for (const x of r || []) cnt[x.passenger_id] = (cnt[x.passenger_id] || 0) + 1;
+    const ids = Object.keys(cnt).filter(id => cnt[id] >= 2).slice(0, 60);
+    if (!ids.length) return { ok: true, rows: [] };
+    const { data: us } = await db.from('users').select('*').in('id', ids);
+    const rows = [];
+    for (const u of us || []) {
+      const st = await guardState(u.id, u.cancel_reset_at || null);
+      if (!st.n) continue;
+      rows.push({ id: u.id, name: u.name, tag: u.telegram_id ? String(u.telegram_id).slice(-4) : '', banned: !!u.is_banned, n: st.n, left: GCFG.on ? st.left : 0 });
+    }
+    rows.sort((x, y) => y.left - x.left || y.n - x.n);
+    return { ok: true, rows };
+  }
+  if (act === 'guard-reset') {
+    const { data: t } = await db.from('users').select('id,name,telegram_id').eq('id', String(body.user_id || '')).maybeSingle();
+    if (!t) return { code: 404, ok: false, error: 'not_found' };
+    const { error } = await db.from('users').update({ cancel_reset_at: new Date().toISOString() }).eq('id', t.id);
+    if (error) return { code: 500, ok: false, error: /cancel_reset_at/.test(error.message) ? 'no_column' : 'save_failed' };
+    _cdAlerted.delete(t.id);
+    await audit(me, 'guard-reset', t.telegram_id, t.name, 'снята пауза за отмены');
+    return { ok: true };
+  }
+  return { code: 400, ok: false, error: 'unknown' };
 }
 function waitTxt(m) { return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60 ? (m % 60) + ' мин' : ''}`.trim() : `${m} мин`; }
 
@@ -7195,6 +7261,12 @@ http.createServer(async (req, res) => {
       // точки: проверка, данные, сотрудники
       if (/^biz-/.test(String(act || ''))) {
         const r = await bizAdmin(me, act, body);
+        const code = r.code || 200; delete r.code;
+        return json(res, code, r);
+      }
+
+      if (/^guard-/.test(String(act || ''))) {
+        const r = await guardAdmin(me, act, body);
         const code = r.code || 200; delete r.code;
         return json(res, code, r);
       }
