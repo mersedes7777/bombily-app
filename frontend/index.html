@@ -2869,6 +2869,7 @@ async function _send(did){
  if(did)row.target_driver_id=did;
  const _rc=await api('/api/action',Object.assign({action:'ride-create'},row));
  const data=_rc.ride||null;const error=_rc.error?{message:'Не удалось создать заявку'}:null;
+ if(_rc.error==='has_active'){T('У вас уже есть заявка — вот она. Чтобы изменить цену, отмените её и создайте новую');await restore();pTab=active?'ride':'home';drawP();return;}
  if(error||!data){T('Не удалось создать заявку');return;}
  targetDrv=null;
  if(schedAt&&new Date(schedAt).getTime()-Date.now()>60*60*1000){

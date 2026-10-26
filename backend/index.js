@@ -6934,6 +6934,12 @@ http.createServer(async (req, res) => {
           scheduled_at: body.scheduled_at ? new Date(body.scheduled_at).toISOString() : null
         };
         if (body.target_driver_id) row.target_driver_id = String(body.target_driver_id);
+        // одна активная заявка на человека: иначе к нему едут двое (заказ на время — можно)
+        if (!row.scheduled_at) {
+          const { data: act } = await db.from('rides').select('*').eq('passenger_id', me.id).in('status', ['created', 'confirmed']);
+          const busy = (act || []).find(x => !x.scheduled_at && !x.biz_id);
+          if (busy) return json(res, 409, { error: 'has_active', ride_id: busy.id, status: busy.status });
+        }
         const { data, error } = await db.from('rides').insert(row).select().single();
         if (error) return json(res, 500, { error: 'create_failed' });
         return json(res, 200, { ok: true, ride: data });
@@ -7013,6 +7019,18 @@ http.createServer(async (req, res) => {
         if (ride.biz_id && !bizRankOk(me)) return json(res, 403, { error: 'rank_low', need: RCFG.bizMin });
         const price = Math.max(0, Math.min(100000, parseInt(body.price) || 0));
         if (!price) return json(res, 400, { error: 'bad_price' });
+        // уже предлагал по этой заявке — меняем цену, а не плодим одинаковые предложения
+        const { data: was } = await db.from('offers').select('*').eq('ride_id', ride.id).eq('driver_id', me.id).eq('status', 'pending').order('created_at', { ascending: false });
+        if (was && was.length) {
+          const keep = was[0];
+          if (was.length > 1) await db.from('offers').update({ status: 'declined' }).in('id', was.slice(1).map(x => x.id));
+          if (Number(keep.price) === price) return json(res, 200, { ok: true, same: true });
+          await db.from('offers').update({ price, notified: false, notify_msg_id: null, notify_chat: null }).eq('id', keep.id);
+          if (keep.notify_msg_id && keep.notify_chat) tg('editMessageText', { chat_id: keep.notify_chat, message_id: keep.notify_msg_id,
+            text: `<s>💰 ${safeName(me.name) || 'Водитель'} назвал цену: ${keep.price} ₽</s>\n\n<i>Цена изменена — смотрите сообщение ниже.</i>`,
+            parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } }).catch(() => {});
+          return json(res, 200, { ok: true, updated: true });
+        }
         const { error } = await db.from('offers').insert({
           ride_id: ride.id, driver_id: me.id, driver_name: me.name,
           car: me.car, price, eta_minutes: 5
