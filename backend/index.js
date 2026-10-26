@@ -2047,6 +2047,9 @@ async function chatOrderCreate(chat) {
     if (why) { await draftDel(chat); adAlert({ ...u, telegram_id: chat }, why, [d.from_address, d.to_address, d.comment].filter(Boolean).join(' | '));
       await send(chat, '🚫 В заявке не должно быть ссылок, @ников и рекламы. Напишите только адреса.'); return; } }
 
+  { const w = await cancelCooldown({ ...u, telegram_id: chat });
+    if (w > 0) { await draftDel(chat); await send(chat, `⏳ Вы часто отменяете заявки. Новую можно создать через ${waitTxt(w)}.`); return; } }
+
   // уже есть активная заявка — вторую не плодим
   const { data: act } = await db.from('rides').select('id,status')
     .eq('passenger_id', u.id).in('status', ['created', 'confirmed', 'in_progress']).maybeSingle();
@@ -5065,6 +5068,29 @@ const rateMap = new Map();
 // безопасная вставка имени в сообщение (имя может содержать угловые скобки)
 // телефоны и ники не должны попадать в публичные надписи: имя, место стоянки.
 // Контакты показываются только тому, кто взял заказ.
+// v175: пауза за частые отмены — 1-я отмена бесплатно, дальше 3, 7, 15 мин, час, 3 часа, 12 часов
+const CANCEL_STEPS = [0, 0, 3, 7, 15, 60, 180, 720];
+const _cdAlerted = new Map();
+async function cancelCooldown(u) {
+  const since = new Date(Date.now() - 24 * 3600e3).toISOString();
+  const { data } = await db.from('rides').select('created_at')
+    .eq('passenger_id', u.id).eq('status', 'cancelled_by_passenger_free').is('biz_id', null)
+    .gte('created_at', since).order('created_at', { ascending: false }).limit(20);
+  const n = (data || []).length;
+  const mins = CANCEL_STEPS[Math.min(n, CANCEL_STEPS.length - 1)];
+  if (!mins) return 0;
+  const left = Math.ceil((new Date(data[0].created_at).getTime() + mins * 60e3 - Date.now()) / 60e3);
+  if (left <= 0) return 0;
+  if (n >= 5 && _cdAlerted.get(u.id) !== n) {
+    _cdAlerted.set(u.id, n);
+    const tid = u.telegram_id ? String(u.telegram_id).slice(-4) : '';
+    send(OWNER, `⚠️ <b>Частые отмены заявок</b>\n${safeName(u.name)} #${tid} — ${n} отмен за сутки, пауза ${mins >= 60 ? mins / 60 + ' ч' : mins + ' мин'}.`,
+      { reply_markup: { inline_keyboard: [[{ text: '⛔ Забанить', callback_data: 'adban:' + u.id }]] } }).catch(() => {});
+  }
+  return left;
+}
+function waitTxt(m) { return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60 ? (m % 60) + ' мин' : ''}`.trim() : `${m} мин`; }
+
 // v174: реклама в заявке — ссылки, @ники, слишком длинный текст
 function adSpam(...parts) {
   for (let i = 0; i < parts.length; i++) {
@@ -6971,6 +6997,7 @@ http.createServer(async (req, res) => {
         if (body.target_driver_id) row.target_driver_id = String(body.target_driver_id);
         { const why = adSpam(row.from_address, row.to_address, row.comment, row.to_city);
           if (why) { adAlert(me, why, [row.from_address, row.to_address, row.comment].filter(Boolean).join(' | ')); return json(res, 400, { error: 'ad_text' }); } }
+        { const w = await cancelCooldown(me); if (w > 0) return json(res, 400, { error: 'cooldown', minutes: w }); }
         // одна активная заявка на человека: иначе к нему едут двое (заказ на время — можно)
         if (!row.scheduled_at) {
           const { data: act } = await db.from('rides').select('*').eq('passenger_id', me.id).in('status', ['created', 'confirmed']);

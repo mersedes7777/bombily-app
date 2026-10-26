@@ -1509,7 +1509,7 @@ async function api(path,payload){
   const j=await r.json();
   if(r.status===403&&j.error==='banned'){document.body.innerHTML='<div style="color:#e2585a;padding:40px;font-family:Golos Text,sans-serif;text-align:center;line-height:1.7"><b>Доступ закрыт</b><br><br>Ваш аккаунт заблокирован модерацией.</div>';return{error:'banned'};}
   if(r.status===429){T('Слишком много действий подряд — подождите минуту');return{error:'too_many'};}
-  if(!r.ok)return{error:j.error||'error'};
+  if(!r.ok)return Object.assign({},j,{error:j.error||'error'});
   return j;
  }catch(e){return{error:'network'};}
 }
@@ -2872,6 +2872,7 @@ async function _send(did){
  if(did)row.target_driver_id=did;
  const _rc=await api('/api/action',Object.assign({action:'ride-create'},row));
  const data=_rc.ride||null;const error=_rc.error?{message:'Не удалось создать заявку'}:null;
+ if(_rc.error==='cooldown'){const m=_rc.minutes||1;T('Вы часто отменяете заявки. Новую можно создать через '+(m>=60?Math.floor(m/60)+' ч '+(m%60?m%60+' мин':''):m+' мин'));return;}
  if(_rc.error==='ad_text'){T('В заявке не должно быть ссылок, @ников и рекламы — только адреса');return;}
  if(_rc.error==='has_active'){T('У вас уже есть заявка — вот она. Чтобы изменить цену, отмените её и создайте новую');await restore();pTab=active?'ride':'home';drawP();return;}
  if(error||!data){T('Не удалось создать заявку');return;}
