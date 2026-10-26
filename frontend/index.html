@@ -1241,6 +1241,9 @@ body[data-t="light"] .rk-c-platinum{--mt:#1d9a90;}body[data-t="light"] .rk-c-dia
 .rk-pt b{font-family:'Roboto Mono',monospace;font-weight:700;font-size:15px;}
 .rk-pt b.p,.rk-h .v.p{color:var(--g);}.rk-pt b.m,.rk-h .v.m{color:var(--red);}
 .rk-note{font-size:12px;color:var(--dim);line-height:1.5;background:var(--card2);border-radius:12px;padding:10px 12px;margin-top:10px;}
+.rk-warn{font-size:12.5px;line-height:1.5;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(226,88,90,.10);border:1px solid rgba(226,88,90,.35);color:var(--ink);}
+.rk-warn b{color:var(--red);}
+.rate-warn{font-size:11.5px;color:var(--dim2);margin-top:10px;line-height:1.4;text-align:center;}
 .rk-h{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line);}
 .st-ct+.rk-h{border-top:none;}
 .rk-h .t{flex:1;min-width:0;}.rk-h .t b{display:block;font-size:13.5px;font-weight:600;}.rk-h .t span{display:block;font-size:12px;color:var(--dim2);margin-top:2px;line-height:1.4;}
@@ -2994,7 +2997,7 @@ function rateSheet(rid,did,dn,kind,after){
  kind=kind||'driver';
  let val=5;
  const m=document.createElement('div');m.className='mask';m.id='sh';
- m.innerHTML=`<div class="sheet"><h3>${kind==='driver'?'Как поездка?':'Оцените пассажира'}</h3><div class="s">${kind==='driver'?'Оценка поможет другим пассажирам':'Это увидят другие водители'}<br><span style="color:var(--g)">Отзыв откроется, когда оценит и вторая сторона</span></div><div class="stars" id="st"></div><textarea class="ta" id="rc" placeholder="Комментарий (не обязательно)"></textarea><div class="sa"><button class="c" onclick="closeSh();${after||"pGo('home')"}">Пропустить</button><button class="o" onclick="sendRate('${rid}','${did}','${dn}','${kind}')">Отправить</button></div></div>`;
+ m.innerHTML=`<div class="sheet"><h3>${kind==='driver'?'Как поездка?':'Оцените пассажира'}</h3><div class="s">${kind==='driver'?'Оценка поможет другим пассажирам':'Это увидят другие водители'}<br><span style="color:var(--g)">Отзыв откроется, когда оценит и вторая сторона</span></div><div class="stars" id="st"></div><textarea class="ta" id="rc" placeholder="Комментарий (не обязательно)"></textarea><div class="sa"><button class="c" onclick="closeSh();${after||"pGo('home')"}">Пропустить</button><button class="o" onclick="sendRate('${rid}','${did}','${dn}','${kind}')">Отправить</button></div><div class="rate-warn">Оценки за деньги или по договорённости — бан навсегда.</div></div>`;
  document.getElementById('device').appendChild(m);
  window._after=after;
  const draw=()=>{document.getElementById('st').innerHTML=[1,2,3,4,5].map(i=>`<span class="${i<=val?'on':''}" onclick="window._rv(${i})">★</span>`).join('');};
@@ -3747,6 +3750,7 @@ function rkMeHTML(j){
    `С одним пассажиром засчитываем ${X.perPassenger||2} ${plural(X.perPassenger||2,['поездку','поездки','поездок'])} в день.`,
    `Поездки короче ${X.minMinutes||5} минут и закрытые автоматически — без баллов, поэтому нажимайте «Завершить поездку».`,
    F.invites!==false&&X.invMonthCap?`За друзей — не больше ${X.invMonthCap} в месяц.`:''].filter(Boolean).join(' ')}<br><br>Больше ${X.pauseDays||30} дней без поездок — ранг на паузе, пока не сделаете ${X.unpauseRides||5} ${plural(X.unpauseRides||5,['поездку','поездки','поездок'])}.</div>
+  <div class="rk-warn">⚠️ <b>За накрутку — бан навсегда.</b> Поездки «для галочки», заказы самому себе или знакомым ради баллов, договорные оценки и отзывы, приглашение ботов в группу. Баллы и звание обнуляются, доступ к заказам закрывается.</div>
  </div>`;
  // история
  const hist=j.hist||[];
