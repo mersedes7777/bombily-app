@@ -4055,6 +4055,60 @@ setTimeout(() => { callLoop().catch(() => {}); }, 50 * 1000);
 setInterval(() => { callLoop().catch(() => {}); }, 60 * 1000);
 /* ---------- конец: зов на линию ---------- */
 
+/* ---------- v177: «Работа водителей» — статистика и снятие допуска у давно неработающих ---------- */
+async function workAdmin(me, act, body) {
+  if (act === 'work-list') {
+    const days = [7, 30].includes(Number(body.days)) ? Number(body.days) : 7;
+    const since = new Date(Date.now() - days * 864e5).toISOString();
+    const drv = await ptAll(() => db.from('users').select('*').eq('driver_status', 'approved').order('id'), 5);
+    if (!drv.length) return { ok: true, days, rows: [] };
+    const ids = new Set(drv.map(d => String(d.id)));
+    const [sh, of, rd, last] = await Promise.all([
+      ptAll(() => db.from('shifts').select('driver_id,started_at,ended_at,minutes').gte('started_at', since).order('started_at'), 20),
+      ptAll(() => db.from('offers').select('driver_id,status').gte('created_at', since).order('created_at'), 50),
+      ptAll(() => db.from('rides').select('driver_id,status,cancelled_by').gte('created_at', since).not('driver_id', 'is', null).order('created_at'), 50),
+      ptAll(() => db.from('rides').select('driver_id,completed_at').eq('status', 'completed').not('driver_id', 'is', null).order('completed_at', { ascending: false }), 50)
+    ]);
+    const S = {}; const g = id => S[id] = S[id] || { mins: 0, offers: 0, done: 0, refused: 0, last_ride: null };
+    for (const x of sh) { if (!ids.has(String(x.driver_id))) continue;
+      const m = x.minutes || (x.ended_at ? 0 : Math.round((Date.now() - new Date(x.started_at)) / 60000));
+      g(x.driver_id).mins += Math.max(0, Math.min(m, days * 1440)); }
+    for (const x of of) if (ids.has(String(x.driver_id))) g(x.driver_id).offers++;
+    for (const x of rd) { if (!ids.has(String(x.driver_id))) continue;
+      if (x.status === 'completed') g(x.driver_id).done++;
+      else if (x.cancelled_by === 'driver') g(x.driver_id).refused++; }
+    for (const x of last) { if (!ids.has(String(x.driver_id))) continue; const o = g(x.driver_id); if (!o.last_ride) o.last_ride = x.completed_at; }
+    const rows = drv.filter(d => d.staff_role !== 'owner').map(d => { const o = g(d.id); return {
+      id: d.id, name: d.name, tag: d.telegram_id ? String(d.telegram_id).slice(-4) : '', city: d.city, rating: d.rating,
+      rank: d.rank_code || null, rank_paused: !!d.rank_paused, online: d.status === 'online', banned: !!d.is_banned,
+      hours: Math.round(o.mins / 6) / 10, offers: o.offers, done: o.done, refused: o.refused,
+      last_ride: o.last_ride, last_active: d.last_active || null, since: d.created_at || null }; });
+    return { ok: true, days, rows };
+  }
+  if (act === 'work-revoke') {
+    const list = (Array.isArray(body.ids) ? body.ids : []).map(String).slice(0, 200);
+    let n = 0;
+    for (const tid of list) {
+      const { data: t } = await db.from('users').select('*').eq('id', tid).maybeSingle();
+      if (!t || t.driver_status !== 'approved' || t.staff_role === 'owner' || String(t.telegram_id) === String(OWNER)) continue;
+      const { data: sh } = await db.from('shifts').select('*').eq('driver_id', tid).is('ended_at', null).limit(1);
+      if (sh && sh.length) {
+        const mins = Math.max(1, Math.round((Date.now() - new Date(sh[0].started_at)) / 60000));
+        await db.from('shifts').update({ ended_at: new Date().toISOString(), minutes: mins }).eq('id', sh[0].id);
+      }
+      await db.from('offers').update({ status: 'cancelled' }).eq('driver_id', tid).eq('status', 'pending');
+      const { error } = await db.from('users').update({ driver_status: 'none', role: 'passenger', status: 'offline' }).eq('id', tid);
+      if (error) continue;
+      kickFromDriverGroups(t, 'revoke').catch(() => {}); setDriverTag(t, false).catch(() => {});
+      await audit(me, 'driver-status', tid, t.name, 'снял права водителя (давно не работает)');
+      n++;
+    }
+    return { ok: true, n };
+  }
+  return { code: 400, ok: false, error: 'unknown' };
+}
+/* ---------- конец: работа водителей ---------- */
+
 /* ---------- доставка для точек (v169) ----------
    Магазин, аптека, кафе подключаются из приложения; точка работает только после проверки владельцем.
    Сотрудники вызывают курьера: адрес точки подставляется сам. Телефон, имя и квартира получателя
@@ -4993,6 +5047,7 @@ const ACT_PERM = {
   'city-list':'cities','city-save':'cities','city-delete':'cities','pin-now':'cities',
 
   'settings-update':'settings','save-settings':'settings',
+  'work-list':'drivers','work-revoke':'drivers',
   'guard-get':'settings','guard-set':'settings','guard-list':'settings','guard-reset':'settings',
   'call-cfg-get':'settings','call-cfg-set':'settings','call-stats':'settings',
   'biz-list':'biz','biz-card':'biz','biz-set':'biz','biz-edit':'biz','biz-staff-remove':'biz','biz-rule-get':'biz','biz-rule-set':'biz',
@@ -7265,6 +7320,11 @@ http.createServer(async (req, res) => {
         return json(res, code, r);
       }
 
+      if (/^work-/.test(String(act || ''))) {
+        const r = await workAdmin(me, act, body);
+        const code = r.code || 200; delete r.code;
+        return json(res, code, r);
+      }
       if (/^guard-/.test(String(act || ''))) {
         const r = await guardAdmin(me, act, body);
         const code = r.code || 200; delete r.code;

@@ -4878,6 +4878,50 @@ async function togCall(k){
  drawD();
 }
 let callCfg=null;
+/* ===== v175: «Работа водителей» ===== */
+var wkDays=7,wkIdle=14,wkOnlyIdle=false,wkRows=[],wkSel={};
+async function finWork(c){
+ c.innerHTML='<div class="empty">Загрузка…</div>';
+ const r=await api('/api/admin',{action:'work-list',days:wkDays});
+ if(!r||r.error){c.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
+ wkRows=r.rows||[];wkSel={};wkDraw(c);
+}
+function wkAgo(d){if(!d)return null;return Math.floor((Date.now()-new Date(d).getTime())/864e5);}
+function wkAgoTxt(d){const n=wkAgo(d);if(n===null)return 'никогда';if(n<1)return 'сегодня';if(n<2)return 'вчера';return n+' '+plural(n,['день','дня','дней'])+' назад';}
+function wkIsIdle(x){const n=wkAgo(x.last_ride);const reg=wkAgo(x.since);return n===null?(reg===null||reg>=wkIdle):n>=wkIdle;}
+function wkDraw(c){
+ c=c||document.getElementById('fincont');
+ const idle=wkRows.filter(wkIsIdle);
+ const list=(wkOnlyIdle?idle:wkRows).slice().sort((a,b)=>{const x=wkAgo(a.last_ride),y=wkAgo(b.last_ride);return (y===null?1e9:y)-(x===null?1e9:x)||a.done-b.done;});
+ const tot=wkRows.reduce((a,x)=>(a.h+=x.hours,a.d+=x.done,a.o+=x.offers,a),{h:0,d:0,o:0});
+ const nsel=Object.keys(wkSel).filter(k=>wkSel[k]).length;
+ c.innerHTML=`<div class="st-per">${[7,30].map(d=>`<div class="${wkDays===d?'on':''}" onclick="wkDays=${d};finWork(document.getElementById('fincont'))">${d} дней</div>`).join('')}</div>
+ <div class="pp-stats" style="margin:10px 18px 0"><div><b>${wkRows.length}</b><span>водителей</span></div><div><b>${Math.round(tot.h)}</b><span>часов на линии</span></div><div><b>${tot.d}</b><span>поездок</span></div></div>
+ <div class="obar" style="margin:12px 18px 6px"><div style="flex:1;padding-right:10px"><div class="l">Только давно не работают (${idle.length})</div><div class="obhint">Ни одной поездки за <input id="wk_idle" type="number" inputmode="numeric" min="1" max="365" value="${wkIdle}" style="width:52px;padding:2px 6px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:transparent;color:inherit" onchange="wkIdle=Math.max(1,Number(this.value)||14);wkSel={};wkDraw()"> дней</div></div><div class="tg ${wkOnlyIdle?'on':''}" onclick="wkOnlyIdle=!wkOnlyIdle;wkSel={};wkDraw()"><div class="kn"></div></div></div>
+ ${list.length?`<div class="st-card cl-list">${list.map(x=>{const id=wkIsIdle(x);return `<div class="cl-row" style="display:flex;gap:10px;align-items:flex-start">
+  ${wkOnlyIdle?`<input type="checkbox" ${wkSel[x.id]?'checked':''} onchange="wkSel['${x.id}']=this.checked;wkDraw()" style="width:20px;height:20px;margin-top:2px;flex:none">`:''}
+  <div style="flex:1;min-width:0"><div class="a"><b onclick="userCard('${x.id}')" style="cursor:pointer">${x.online?'🟢 ':''}${esc(x.name||'Без имени')} <span class="idtag">#${esc(x.tag)}</span>${typeof rkPill==='function'?rkPill(x.rank,x.rank_paused):''}</b><span style="${id?'color:var(--red,#e2585a)':''}">поездка: ${wkAgoTxt(x.last_ride)}</span></div>
+  <div class="w">${x.hours} ч на линии · откликов ${x.offers} · довёз ${x.done}${x.refused?' · отказов '+x.refused:''}${x.rating?' · ★'+Number(x.rating).toFixed(1):''}</div>
+  <div class="w" style="opacity:.7">заходил: ${wkAgoTxt(x.last_active)}${x.city?' · '+esc(x.city):''}${x.banned?' · забанен':''}</div></div></div>`;}).join('')}</div>`:`<div class="obhint" style="margin:10px 18px 0">${wkOnlyIdle?'Все водители работали за последние '+wkIdle+' '+plural(wkIdle,['день','дня','дней'])+'.':'Пока нет водителей с допуском.'}</div>`}
+ ${wkOnlyIdle&&list.length?`<div style="display:flex;gap:8px;margin:12px 18px 0"><button class="btn" style="flex:1;opacity:.8" onclick="list_all_wk()">${nsel===list.length?'Снять все':'Выбрать всех'}</button><button class="btn" style="flex:1;background:var(--red,#e2585a);border-color:var(--red,#e2585a);color:#fff" ${nsel?'':'disabled'} onclick="wkRevokeAsk()">Убрать из водителей (${nsel})</button></div>`:''}
+ <div class="obhint" style="margin:10px 18px 0">«Убрать» — снять допуск: человек остаётся пассажиром, история сохраняется, бот исключит его из группы водителей. Вернуть допуск можно в карточке.</div>
+ <div style="height:20px"></div>`;
+}
+function list_all_wk(){const idle=wkRows.filter(wkIsIdle);const all=idle.every(x=>wkSel[x.id]);wkSel={};if(!all)idle.forEach(x=>wkSel[x.id]=true);wkDraw();}
+function wkRevokeAsk(){
+ const ids=Object.keys(wkSel).filter(k=>wkSel[k]);if(!ids.length)return;
+ const m=document.createElement('div');m.className='mask';m.id='sh2';
+ m.innerHTML=`<div class="sheet"><h3>Убрать из водителей: ${ids.length}</h3><div class="s">У них снимется допуск, они выйдут с линии, бот исключит их из группы водителей. Аккаунты и история останутся.</div>
+ <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" style="background:var(--red);border-color:var(--red);color:#fff" onclick="wkRevoke()">Убрать</button></div></div>`;
+ document.getElementById('device').appendChild(m);
+}
+async function wkRevoke(){
+ const ids=Object.keys(wkSel).filter(k=>wkSel[k]);
+ const sh=document.getElementById('sh2');if(sh)sh.remove();
+ const r=await api('/api/admin',{action:'work-revoke',ids});
+ if(r.error)return T('Не получилось');
+ T('Убрано из водителей: '+(r.n||0));finWork(document.getElementById('fincont'));
+}
 var guardCfg=null,guardRows=[];
 async function finGuard(c){
  c.innerHTML='<div class="empty">Загрузка…</div>';
@@ -5009,13 +5053,13 @@ const TAB_PERM={over:null,ppl:'users',stat:'stats'};
 // «Ещё»: разделы бывших «Финансов» по смыслу; у каждого — своё право
 const MORE_GROUPS=[
  ['Города и группы',[['city','Города и группы Telegram','ссылки, закреп, заказы в чате, карточки водителей','cities']]],
- ['Водители',[['ranks','Ранги и баллы','журнал баллов, начисления вручную, правила','ranks'],['call','Зов на линию','бот зовёт водителей, когда заявки ждут','settings']]],
+ ['Водители',[['work','Работа водителей','кто сколько работает, кто давно не выходил','drivers'],['ranks','Ранги и баллы','журнал баллов, начисления вручную, правила','ranks'],['call','Зов на линию','бот зовёт водителей, когда заявки ждут','settings']]],
  ['Точки',[['biz','Магазины и кафе','проверка точек, сотрудники, доставки','biz']]],
  ['Продвижение',[['mail','Рассылка в бота','написать всем или части людей','broadcast'],['src','Метки и QR-коды','откуда приходят люди и кто из них заказывает','refs'],['promo','Промокоды','бесплатные дни и скидки','promos'],['ref','Рефералка','бонус за приглашённого водителя','refs'],['back','Возврат водителей','кто перестал платить и давно не заходил','broadcast']]],
  ['Деньги',[['sub','Подписка и тарифы','платно или бесплатно, когда снимать с линии','settings'],['bal','Баланс водителей','начислить или списать вручную','balance']]],
  ['Система',[['rep','Сводки в Telegram','утренняя сводка вам и итоги недели водителям','settings'],['guard','Защита от спама','паузы за частые отмены заявок, кто сейчас на паузе','settings'],['log','Журнал действий','что делали администраторы','audit']]]
 ];
-const MORE_ICO={guard:'<path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>',biz:'<path d="M3 9.5 4.5 4h15L21 9.5"/><path d="M3 9.5h18v1.5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13.5V20h14v-6.5"/><path d="M10 20v-4h4v4"/>',call:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',ranks:'<path d="M8.5 2h3l1.6 6M15.5 2h-3"/><circle cx="12" cy="14.5" r="6.5"/><path d="m12 11.2 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"/>',city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
+const MORE_ICO={work:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',guard:'<path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>',biz:'<path d="M3 9.5 4.5 4h15L21 9.5"/><path d="M3 9.5h18v1.5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13.5V20h14v-6.5"/><path d="M10 20v-4h4v4"/>',call:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',ranks:'<path d="M8.5 2h3l1.6 6M15.5 2h-3"/><circle cx="12" cy="14.5" r="6.5"/><path d="m12 11.2 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"/>',city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
  promo:'<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',ref:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',back:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
  sub:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',bal:'<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',rep:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',log:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>'};
 function moreAllowed(id){
@@ -6349,6 +6393,7 @@ async function aFin(m){
  if(finTab==='ranks')return finRanks(c);
  if(finTab==='call')return finCall(c);
  if(finTab==='guard')return finGuard(c);
+ if(finTab==='work')return finWork(c);
  if(finTab==='biz')return finBiz(c);
  if(finTab==='sub')finSub(c);
  else if(finTab==='promo')finPromo(c);
