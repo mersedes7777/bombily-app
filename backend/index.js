@@ -113,10 +113,10 @@ async function deliverStaffReply(staffChat, link, m, text, hasPhoto){
   if (!staff) { await send(staffChat, '⛔ Отвечать могут только администраторы.'); return true; }
   const photoId = hasPhoto ? m.photo[m.photo.length - 1].file_id : null;
   if (photoId) {
-    await tg('sendPhoto', { chat_id: link.target_tg, photo: photoId, caption: `<b>Ответ администрации</b>${text ? '\n' + text : ''}`, parse_mode: 'HTML' });
+    await tg('sendPhoto', { chat_id: link.target_tg, photo: photoId, caption: `<b>Ответ администрации</b>${text ? '\n' + hx(text) : ''}`, parse_mode: 'HTML' });
   } else {
     if (!text) { await send(staffChat, 'Напишите текст ответа.'); return true; }
-    await send(link.target_tg, `<b>Ответ администрации:</b>\n${text}`);
+    await send(link.target_tg, `<b>Ответ администрации:</b>\n${hx(text)}`);
   }
   if (link.support_id) {
     try {
@@ -469,9 +469,9 @@ async function onUpdate(u) {
 
       const { data: uu } = await db.from('users').select('id').eq('telegram_id', chatC).maybeSingle();
       if (uu) {
-        await db.from('users').update({ phone: phone11, has_phone: true }).eq('id', uu.id);
-        await db.from('contacts').upsert({ user_id: uu.id, phone: phone11, updated_at: new Date().toISOString() })
-          .then(() => {}, () => {});
+        // v179: номер — только в закрытую таблицу contacts; в открытой users лишь отметка «номер есть»
+        await db.from('contacts').upsert({ user_id: uu.id, phone: phone11, updated_at: new Date().toISOString() });
+        await db.from('users').update({ has_phone: true }).eq('id', uu.id);
       }
       await send(chatC, '✅ Номер сохранён. Его увидит только тот водитель, который возьмёт заказ.',
         { reply_markup: { remove_keyboard: true } });
@@ -498,6 +498,20 @@ async function onUpdate(u) {
 
   // отмена режима ответа
   if (text === '/cancel') { await clearStaffReply(chat); return send(chat, 'Отменено.'); }
+
+  // v179: проверка групп и последних событий — только владельцу
+  if (text === '/groupcheck') {
+    if (chat !== OWNER) return;
+    try {
+      const o = await groupDiag();
+      const ev = Array.isArray(o.последние_события) ? o.последние_события.slice(0, 8) : [o.последние_события];
+      const errs = Object.entries(notifyErrors).slice(0, 6).map(([k, v]) => `• ${hx(k)}: ${hx(String(v).slice(0, 120))}`);
+      await send(chat, `🔎 <b>Проверка групп</b> (${hx(VERSION)})\n` + o.шаги.map(hx).join('\n') +
+        `\n\n<b>Последние события:</b>\n` + ev.map(x => hx(x)).join('\n') +
+        (errs.length ? `\n\n<b>Ошибки уведомлений:</b>\n` + errs.join('\n') : ''));
+    } catch (e) { await send(chat, '❌ ' + hx(e.message)); }
+    return;
+  }
 
   // копия базы по запросу — только владельцу
   if (text === '/backup') {
@@ -611,10 +625,10 @@ async function onUpdate(u) {
       if (!staff) { await send(chat, '⛔ Отвечать могут только администраторы.'); return; }
       const photoId = m.photo && m.photo.length ? m.photo[m.photo.length - 1].file_id : null;
       if (photoId) {
-        await tg('sendPhoto', { chat_id: link.target_tg, photo: photoId, caption: `<b>Ответ администрации</b>${text ? '\n' + text : ''}`, parse_mode: 'HTML' });
+        await tg('sendPhoto', { chat_id: link.target_tg, photo: photoId, caption: `<b>Ответ администрации</b>${text ? '\n' + hx(text) : ''}`, parse_mode: 'HTML' });
       } else {
         if (!text) { await send(chat, 'Напишите текст ответа.'); return; }
-        await send(link.target_tg, `<b>Ответ администрации:</b>\n${text}`);
+        await send(link.target_tg, `<b>Ответ администрации:</b>\n${hx(text)}`);
       }
       if (link.support_id) {
         try {
@@ -717,7 +731,7 @@ async function onUpdate(u) {
       if (!drv) return send(chat, 'Такого водителя не нашлось. Откройте приложение и выберите из списка.');
 
       const busy = await driverStatusNow(drv);
-      const car = drv.car || (drv.vehicle_type === 'moto' ? 'мотоцикл' : 'машина не указана');
+      const car = hx(drv.car) || (drv.vehicle_type === 'moto' ? 'мотоцикл' : 'машина не указана');
       const head = `🚗 <b>${safeName(noContacts(drv.name))}</b>${rankBit(drv)} · ⭐ ${Number(drv.rating || 5).toFixed(1)}\n${car}` +
         (drv.spot ? `\n📍 Стоит: ${safeName(noContacts(drv.spot))}` : '');
 
@@ -742,11 +756,11 @@ async function onUpdate(u) {
         if (inviter) {
           if (meRow && inviter.id !== meRow.id && !meRow.ref_by) {
             await db.from('users').update({ ref_by: inviter.id }).eq('id', meRow.id);
-            await send(chat, `👋 Вас пригласил <b>${inviter.name}</b>. Добро пожаловать в Бомбилы!`);
+            await send(chat, `👋 Вас пригласил <b>${hx(inviter.name)}</b>. Добро пожаловать в Бомбилы!`);
           } else if (!meRow) {
             // ещё не зарегистрирован — запомним код, апка подхватит
             await db.from('pending_refs').upsert({ tg_id: chat, ref_code: code });
-            await send(chat, `👋 Вас пригласил <b>${inviter.name}</b>. Откройте приложение, чтобы начать.`);
+            await send(chat, `👋 Вас пригласил <b>${hx(inviter.name)}</b>. Откройте приложение, чтобы начать.`);
           }
         }
       } catch (e) {}
@@ -763,7 +777,7 @@ async function onUpdate(u) {
     const { data: c2 } = await db.from('cities').select('name,group_link')
       .eq('name', u2 && u2.city ? u2.city : '').maybeSingle();
     if (c2 && c2.group_link) {
-      return send(chat, `📣 <b>Bombily | ${c2.name}</b>
+      return send(chat, `📣 <b>Bombily | ${hx(c2.name)}</b>
 
 Новости города, объявления и обсуждения. Там же публикуем акции и предупреждаем о непогоде.`,
         { reply_markup: { inline_keyboard: [[{ text: 'Открыть группу', url: c2.group_link }]] } });
@@ -800,8 +814,8 @@ async function onUpdate(u) {
       if (ins.data) supportId = ins.data.id;
     } catch (e) {}
 
-    const who = `${m.from.first_name || ''} ${m.from.username ? '@' + m.from.username : ''} (ID ${chat})`;
-    const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${who}\n\n${text || ''}\n\n<i>Нажмите «Ответить» ниже или ответьте на это сообщение.</i>`;
+    const who = `${hx(m.from.first_name || '')} ${m.from.username ? '@' + hx(m.from.username) : ''} (ID ${chat})`;
+    const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${who}\n\n${hx(text || '')}\n\n<i>Нажмите «Ответить» ниже или ответьте на это сообщение.</i>`;
 
     // уведомляем всю модерацию, каждому запоминаем связку для ответа
     const { data: staff } = await db.from('users').select('telegram_id')
@@ -1049,7 +1063,7 @@ async function takePrice(chat, wait, text) {
   }
   const { data: me } = await db.from('users')
     .select('*').eq('telegram_id', chat).maybeSingle();
-  if (!me) { await send(chat, 'Нет доступа.'); return; }
+  if (!me || me.is_banned || me.driver_status !== 'approved') { await send(chat, 'Нет доступа: откликаться могут только водители с допуском.'); return; }
   if (ride.biz_id && !bizRankOk(me)) { await send(chat, `🏅 Заказы магазинов берут водители ${bizRankTxt()}.\nПолучите звание — и они станут доступны.`); return; }
 
   // телеграм пассажира — чтобы дать кнопку «написать» рядом с ценой
@@ -2524,18 +2538,18 @@ async function notifyLoop() {
         const head = r.target_driver_id
           ? (isDel ? '🎯 <b>Доставка лично вам</b>' : isInter ? '🎯 <b>Межгород лично вам</b>' : '🎯 <b>Заявка лично вам</b>')
           : r.biz_id ? `📦 <b>Доставка от точки</b>\n🏪 ${safeName(r.biz_name)} — проверенная точка`
-          : (isDel ? '📦 <b>Новая доставка</b>' : isInter ? `🛣 <b>Межгород в ${r.to_city}</b>` : '🚕 <b>Новая заявка</b>');
+          : (isDel ? '📦 <b>Новая доставка</b>' : isInter ? `🛣 <b>Межгород в ${hx(r.to_city)}</b>` : '🚕 <b>Новая заявка</b>');
         const schedLine = r.scheduled_at
         ? `\n🕒 <b>На ${new Date(r.scheduled_at).toLocaleString('ru', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</b>`
         : '';
-      const extra = `${schedLine}${r.to_city ? `\n🛣 Город назначения: <b>${r.to_city}</b>` : ''}${r.passenger_price ? `\n💰 ${r.biz_id ? 'Точка' : 'Пассажир'} предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}${r.biz_id ? `\n💳 Доставку оплачивает: ${bizPayerTxt(r.biz_payer)}\n🔒 Телефон и квартира получателя — после того как вас выберут` : ''}`;
+      const extra = `${schedLine}${r.to_city ? `\n🛣 Город назначения: <b>${hx(r.to_city)}</b>` : ''}${r.passenger_price ? `\n💰 ${r.biz_id ? 'Точка' : 'Пассажир'} предлагает: <b>${r.passenger_price} ₽</b>` : ''}${r.comment ? `\n💬 ${hx(r.comment)}` : ''}${r.biz_id ? `\n💳 Доставку оплачивает: ${bizPayerTxt(r.biz_payer)}\n🔒 Телефон и квартира получателя — после того как вас выберут` : ''}`;
         // рассылаем и сразу запоминаем, кому ушло — иначе потом не понять,
         // кто заявку видел и промолчал, а кто вообще её не получал
         const notifRows = [];
         for (const d of drv || []) {
           if (!d.telegram_id) continue;
           if (r.biz_id && !r.target_driver_id && !bizRankOk(d)) continue;      // заказы точек — со звания
-          const ok = await send(d.telegram_id, `${head}\n📍 ${r.from_address}\n🏁 ${r.to_address}\nОт: ${r.passenger_name || 'пассажир'}${extra}`,
+          const ok = await send(d.telegram_id, `${head}\n📍 ${hx(r.from_address)}\n🏁 ${hx(r.to_address)}\nОт: ${hx(r.passenger_name || 'пассажир')}${extra}`,
             { reply_markup: { inline_keyboard: [[
               { text: 'Открыть заявку', web_app: { url: appUrl('driver', null, { ride: r.id }) } }
             ]] } });
@@ -2590,7 +2604,7 @@ async function notifyLoop() {
         const schedTxt = r.scheduled_at
         ? `\n🕒 <b>На ${new Date(r.scheduled_at).toLocaleString('ru', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</b>`
         : '';
-      const route = `📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${schedTxt}${r.price ? `\n💰 <b>Цена:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}`;
+      const route = `📍 <b>Откуда:</b> ${hx(r.from_address)}\n🏁 <b>Куда:</b> ${hx(r.to_address)}${schedTxt}${r.price ? `\n💰 <b>Цена:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${hx(r.comment)}` : ''}`;
 
         // водителю — контакты пассажира
         if (r.driver_id) {
@@ -2630,7 +2644,7 @@ async function notifyLoop() {
           const other = msg.sender_id === ride.passenger_id ? ride.driver_id : ride.passenger_id;
           if (other) {
             const tid = await tgIdOf(other);
-            if (tid) await send(tid, `💬 <b>${msg.sender_name || 'Новое сообщение'}</b>\n${msg.text}`,
+            if (tid) await send(tid, `💬 <b>${hx(msg.sender_name || 'Новое сообщение')}</b>\n${hx(msg.text)}`,
               { reply_markup: { inline_keyboard: [[{ text: '💬 Ответить', web_app: { url: `${APP_URL}?s=chat&ride=${msg.ride_id}` } }]] } });
           }
         }
@@ -2645,12 +2659,12 @@ async function notifyLoop() {
       for (const r of fin || []) {
         const kindTxt = r.kind === 'delivery' ? '📦 Доставка выполнена' : '🏁 Поездка завершена';
         const when = new Date(r.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        const base = `<b>${kindTxt}</b>\n\n📍 <b>Откуда:</b> ${r.from_address}\n🏁 <b>Куда:</b> ${r.to_address}${r.to_city ? `\n🛣 <b>Город:</b> ${r.to_city}` : ''}${r.price ? `\n💰 <b>Сумма:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}\n🕒 ${when}`;
+        const base = `<b>${kindTxt}</b>\n\n📍 <b>Откуда:</b> ${hx(r.from_address)}\n🏁 <b>Куда:</b> ${hx(r.to_address)}${r.to_city ? `\n🛣 <b>Город:</b> ${hx(r.to_city)}` : ''}${r.price ? `\n💰 <b>Сумма:</b> ${r.price} ₽` : ''}${r.comment ? `\n💬 ${hx(r.comment)}` : ''}\n🕒 ${when}`;
         // пассажиру
         let drvName = '', drvCar = '';
         if (r.driver_id) {
           const { data: dv } = await db.from('users').select('name,car,plate').eq('id', r.driver_id).maybeSingle();
-          if (dv) { drvName = dv.name || ''; drvCar = `${dv.car || ''}${dv.plate ? ' · ' + dv.plate : ''}`; }
+          if (dv) { drvName = hx(dv.name || ''); drvCar = `${hx(dv.car || '')}${dv.plate ? ' · ' + hx(dv.plate) : ''}`; }
         }
         if (r.passenger_id) {
           const tid = await tgIdOf(r.passenger_id);
@@ -2662,7 +2676,7 @@ async function notifyLoop() {
         if (r.driver_id) {
           const tid = await tgIdOf(r.driver_id);
           if (tid) await send(tid,
-            `${base}${r.passenger_name ? `\n👤 <b>Пассажир:</b> ${r.passenger_name}` : ''}\n\nСпасибо за работу!`,
+            `${base}${r.passenger_name ? `\n👤 <b>Пассажир:</b> ${hx(r.passenger_name)}` : ''}\n\nСпасибо за работу!`,
             { reply_markup: { inline_keyboard: [[wa('К заявкам', 'driver')]] } });
         }
         await db.from('rides').update({ done_notified: true }).eq('id', r.id);
@@ -2698,7 +2712,7 @@ async function notifyLoop() {
         const tid = await tgIdOf(r.passenger_id);
         if (tid) await send(tid, r.biz_id
           ? `🚗 <b>Курьер у вас</b>\nПодъехал за заказом: ${safeName(r.to_address)}`
-          : `🚗 <b>Водитель на месте</b>\n${r.from_address}\nМашина ждёт вас.`);
+          : `🚗 <b>Водитель на месте</b>\n${hx(r.from_address)}\nМашина ждёт вас.`);
         await db.from('rides').update({ arrived_notified: true }).eq('id', r.id);
       }
 
@@ -2727,7 +2741,7 @@ async function notifyLoop() {
         const tid = await tgIdOf(rv.target_id);
         if (tid) {
           const stars = '⭐'.repeat(rv.rating);
-          await send(tid, `📝 <b>Новый отзыв о вас</b>\n${stars}${rv.comment ? '\n«' + rv.comment + '»' : ''}\n\nОткройте приложение, вкладка «Отзывы».`);
+          await send(tid, `📝 <b>Новый отзыв о вас</b>\n${stars}${rv.comment ? '\n«' + hx(rv.comment) + '»' : ''}\n\nОткройте приложение, вкладка «Отзывы».`);
         }
         await db.from('reviews').update({ notified: true }).eq('id', rv.id);
       }
@@ -2739,7 +2753,7 @@ async function notifyLoop() {
       const { data: ams } = await db.from('admin_msgs').select('*').eq('sent', false);
       for (const a of ams || []) {
         const tid = await tgIdOf(a.to_user);
-        if (tid) await send(tid, `<b>Сообщение от администрации Бомбилы:</b>\n${a.text}`);
+        if (tid) await send(tid, `<b>Сообщение от администрации Бомбилы:</b>\n${hx(a.text)}`);
         await db.from('admin_msgs').update({ sent: true }).eq('id', a.id);
       }
 
@@ -2769,7 +2783,7 @@ async function notifyLoop() {
         .like('status', 'cancelled%').eq('cancel_notified', false);
       for (const r of canc || []) {
         const byPassenger = String(r.status).includes('passenger');
-        const route = `${r.from_address} → ${r.to_address}`;
+        const route = `${hx(r.from_address)} → ${hx(r.to_address)}`;
         if (byPassenger && r.driver_id) {
           const tid = await tgIdOf(r.driver_id);
           if (tid) await send(tid, `❌ <b>Пассажир отменил заказ</b>\n${route}\n\nМожете принимать другие заявки.`,
@@ -2791,7 +2805,7 @@ async function notifyLoop() {
       for (const r of back || []) {
         if (r.passenger_id) {
           const tid = await tgIdOf(r.passenger_id);
-          if (tid) await send(tid, `↩️ <b>Водитель отказался от заказа</b>\n${r.from_address} → ${r.to_address}\n\nЗаявка снова активна — ждём других водителей.`,
+          if (tid) await send(tid, `↩️ <b>Водитель отказался от заказа</b>\n${hx(r.from_address)} → ${hx(r.to_address)}\n\nЗаявка снова активна — ждём других водителей.`,
             { reply_markup: { inline_keyboard: [[wa('Открыть заявку', 'order')]] } });
         }
         await db.from('rides').update({ cancel_notified: true }).eq('id', r.id);
@@ -2828,7 +2842,7 @@ async function notifyLoop() {
         if (tid) {
           const isDrv = other === r.driver_id;
           await send(tid,
-            `⭐ <b>Оцените ${isDrv ? 'пассажира' : 'поездку'}</b>\n${r.from_address} → ${r.to_address}\n\nВторая сторона уже оставила оценку. Оставьте свою — отзывы откроются обоим.`,
+            `⭐ <b>Оцените ${isDrv ? 'пассажира' : 'поездку'}</b>\n${hx(r.from_address)} → ${hx(r.to_address)}\n\nВторая сторона уже оставила оценку. Оставьте свою — отзывы откроются обоим.`,
             { reply_markup: { inline_keyboard: [[wa('Оценить', isDrv ? 'driver' : 'order')]] } });
         }
         await db.from('rides').update({ review_nudged: true }).eq('id', r.id);
@@ -2847,7 +2861,7 @@ async function expireLoop() {
     for (const r of old || []) {
       await db.from('rides').update({ status: 'expired' }).eq('id', r.id);
       const tid = await tgIdOf(r.passenger_id);
-      if (tid) await send(tid, `⌛️ <b>Заявка устарела</b>\n${r.from_address} → ${r.to_address}\nНикто не откликнулся за 10 минут. Если поездка ещё нужна — создайте новую.`,
+      if (tid) await send(tid, `⌛️ <b>Заявка устарела</b>\n${hx(r.from_address)} → ${hx(r.to_address)}\nНикто не откликнулся за 10 минут. Если поездка ещё нужна — создайте новую.`,
         { reply_markup: { inline_keyboard: [[wa('Создать новую', 'order')]] } });
     }
     // заказ на время: прошло 15 минут после назначенного времени, а водителя так и нет
@@ -4834,7 +4848,7 @@ async function schedLoop() {
           if (dv && dv.telegram_id) {
             const h = Math.floor(mins / 60), mm = mins % 60;
             await send(dv.telegram_id,
-              `🔔 <b>Напоминание о заказе</b>\nЧерез ${h ? h + ' ч ' : ''}${mm} мин вам ехать.\n\n🕒 ${dayStr}\n📍 ${r.from_address}\n🏁 ${r.to_address}${r.price ? `\n💰 ${r.price} ₽` : ''}\n\nПодробности и телефон пассажира придут ещё раз за 40 минут.`,
+              `🔔 <b>Напоминание о заказе</b>\nЧерез ${h ? h + ' ч ' : ''}${mm} мин вам ехать.\n\n🕒 ${dayStr}\n📍 ${hx(r.from_address)}\n🏁 ${hx(r.to_address)}${r.price ? `\n💰 ${r.price} ₽` : ''}\n\nПодробности и телефон пассажира придут ещё раз за 40 минут.`,
               { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
           }
           await db.from('rides').update({ early_sent: true }).eq('id', r.id);
@@ -4843,7 +4857,7 @@ async function schedLoop() {
 
       // за 40 минут — напоминание обеим сторонам
       if (r.driver_id && !r.remind_sent && mins <= 40 && mins > 0) {
-        const route = `📍 ${r.from_address}\n🏁 ${r.to_address}`;
+        const route = `📍 ${hx(r.from_address)}\n🏁 ${hx(r.to_address)}`;
         const pt = await tgIdOf(r.passenger_id);
         if (pt) {
           const dcard = await contactCard(r.driver_id, 'Водитель');
@@ -4853,7 +4867,7 @@ async function schedLoop() {
         const dt = await tgIdOf(r.driver_id);
         if (dt) {
           const pcard = await contactCard(r.passenger_id, 'Пассажир');
-          await send(dt, `⏰ <b>Через ${mins} мин заказ</b>\n\n${route}\n🕒 ${timeStr}${r.price ? `\n💰 ${r.price} ₽` : ''}${r.comment ? `\n💬 ${r.comment}` : ''}${pcard}\n\nПора выезжать.`,
+          await send(dt, `⏰ <b>Через ${mins} мин заказ</b>\n\n${route}\n🕒 ${timeStr}${r.price ? `\n💰 ${r.price} ₽` : ''}${r.comment ? `\n💬 ${hx(r.comment)}` : ''}${pcard}\n\nПора выезжать.`,
             { reply_markup: { inline_keyboard: [[wa('Открыть заказ', 'driver')]] } });
         }
         await db.from('rides').update({ remind_sent: true }).eq('id', r.id);
@@ -4868,7 +4882,7 @@ async function schedLoop() {
         for (const d of drv || []) {
           if (!d.telegram_id) continue;
           await send(d.telegram_id,
-            `🕒 <b>Заказ на ${timeStr}, водителя нет</b>\n📍 ${r.from_address}\n🏁 ${r.to_address}${r.passenger_price ? `\n💰 Пассажир предлагает ${r.passenger_price} ₽` : ''}\n\nЧеловек ждёт машину. Если можете — возьмите.`,
+            `🕒 <b>Заказ на ${timeStr}, водителя нет</b>\n📍 ${hx(r.from_address)}\n🏁 ${hx(r.to_address)}${r.passenger_price ? `\n💰 Пассажир предлагает ${r.passenger_price} ₽` : ''}\n\nЧеловек ждёт машину. Если можете — возьмите.`,
             { reply_markup: { inline_keyboard: [[wa('Взять заказ', 'driver')]] } });
         }
         const pt2 = await tgIdOf(r.passenger_id);
@@ -4935,10 +4949,10 @@ const contactCard = async (uid, label) => {
   const { data: u } = await db.from('users').select('name,tg_username,car,plate,rating').eq('id', uid).maybeSingle();
   if (!u) return '';
   const phone = await phoneOf(uid);
-  let s = `\n\n<b>${label}:</b> ${u.name || '—'}`;
-  if (u.car) s += `\n🚗 ${u.car}${u.plate ? ' · ' + u.plate : ''}`;
-  if (phone) s += `\n📞 <a href="tel:${phone}">${phone}</a>`;
-  if (u.tg_username) s += `\n✈️ @${u.tg_username}`;
+  let s = `\n\n<b>${label}:</b> ${hx(u.name || '—')}`;
+  if (u.car) s += `\n🚗 ${hx(u.car)}${u.plate ? ' · ' + hx(u.plate) : ''}`;
+  if (phone) { const pd = String(phone).replace(/[^\d+]/g, ''); s += `\n📞 <a href="tel:${pd}">${hx(phone)}</a>`; }
+  if (u.tg_username) s += `\n✈️ @${hx(u.tg_username)}`;
   else s += `\n✈️ ник не указан — пишите в чате приложения`;
   return s;
 };
@@ -5242,6 +5256,25 @@ function noContacts(s) {
 
 function safeName(v) {
   return String(v || '?').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+// v179: то же, но пустое остаётся пустым — для адресов, комментариев, текстов в сообщениях бота
+function hx(v) {
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+// v179: лимит на действие человека (жалобы, поддержка): не больше n за окно ms
+const _actLim = new Map();
+function actLimit(key, n, ms) {
+  const now = Date.now(), arr = (_actLim.get(key) || []).filter(t => now - t < ms);
+  if (arr.length >= n) { _actLim.set(key, arr); return false; }
+  arr.push(now); _actLim.set(key, arr); return true;
+}
+setInterval(() => { const now = Date.now(); for (const [k, a] of _actLim) if (!a.some(t => now - t < 3600e3)) _actLim.delete(k); }, 600e3);
+// v179: путь файла в хранилище документов должен лежать в папке этого человека
+function ownPath(p, uid, prefix) {
+  if (p === null || p === undefined || p === '') return true;
+  const x = String(p);
+  if (x.includes('..') || x.includes('//') || x.length > 200) return false;
+  return x.startsWith(prefix || (String(uid) + '/'));
 }
 
 // ============ сторож: замечает накрутку и раздачу прав ============
@@ -6453,11 +6486,8 @@ function json(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-/* ---------- защищённый API ---------- */
-http.createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') return json(res, 200, {});
-  if (req.method === 'GET' && req.url.includes('group')) {
-    // подробная проверка настройки групп
+// v179: проверка групп — раньше открытая страница сервера, теперь только владельцу командой /groupcheck
+async function groupDiag() {
     const out = { ok: true, версия: VERSION, шаги: [] };
     try {
       const { data: st } = await db.from('settings').select('*').eq('id', 1).maybeSingle();
@@ -6497,14 +6527,15 @@ http.createServer(async (req, res) => {
     } catch (e) { out.шаги.push('❌ города: ' + e.message); }
 
     out.последние_события = groupLog.length ? groupLog : 'из групп сообщений не приходило — скорее всего не выключен Group Privacy у @BotFather, либо бот не переподключён после этого';
-    return json(res, 200, out);
-  }
+    return out;
+}
 
-  if (req.method === 'GET') return json(res, 200, {
-    ok: true, service: 'bombily-backend', version: VERSION,
-    notify_errors: Object.keys(notifyErrors).length ? notifyErrors : 'нет ошибок',
-    group_log: groupLog.length ? groupLog : 'из групп сообщений не приходило'
-  });
+/* ---------- защищённый API ---------- */
+http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') return json(res, 200, {});
+  // v179: служебные страницы больше ничего не рассказывают о группах и событиях.
+  // Проверка групп — командой /groupcheck владельцу в боте.
+  if (req.method === 'GET') return json(res, 200, { ok: true, service: 'bombily-backend', version: VERSION });
 
   const body = await readBody(req);
 
@@ -6678,6 +6709,7 @@ http.createServer(async (req, res) => {
       if (!brand || !plate) return json(res, 400, { error: 'bad_input' });
       // мотоцикл — достаточно прав, машина — права, техпаспорт и фото с номером
       if (!body.doc_license) return json(res, 400, { error: 'need_docs' });
+      if (![body.doc_license, body.doc_pts, body.photo].every(x => ownPath(x, me.id))) return json(res, 400, { error: 'bad_path' });
       if (kind === 'car' && (!body.photo || !body.doc_pts)) return json(res, 400, { error: 'need_docs' });
       const { count } = await db.from('cars').select('*', { count: 'exact', head: true }).eq('user_id', me.id);
       if ((count || 0) >= 5) return json(res, 400, { error: 'too_many' });
@@ -6744,6 +6776,9 @@ http.createServer(async (req, res) => {
     if (req.url === '/api/support-send') {
       const txt = String(body.text || '').trim().slice(0, 2000);
       if (!txt && !body.photo) return json(res, 400, { error: 'empty' });
+      // v179: фото — только своё, из папки support; не больше 10 обращений в час
+      if (body.photo && !ownPath(body.photo, me.id, 'support/' + me.id + '_')) return json(res, 400, { error: 'bad_path' });
+      if (!actLimit('sup:' + me.id, 10, 3600e3)) return json(res, 400, { error: 'too_many' });
       let supportId = null;
       try {
         const ins = await db.from('support_msgs').insert({
@@ -6759,7 +6794,7 @@ http.createServer(async (req, res) => {
         const { data: sg } = await db.storage.from('docs').createSignedUrl(body.photo, 3600);
         if (sg && sg.signedUrl) photoUrl = sg.signedUrl;
       }
-      const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${me.name}${me.tg_username ? ' @' + me.tg_username : ''} (ID ${me.telegram_id})\n\n${txt}\n\n<i>Нажмите «Ответить» ниже.</i>`;
+      const head = `📨 <b>Сообщение в поддержку</b>\nОт: ${hx(me.name)}${me.tg_username ? ' @' + hx(me.tg_username) : ''} (ID ${me.telegram_id})\n\n${hx(txt)}\n\n<i>Нажмите «Ответить» ниже.</i>`;
       try {
         const { data: staff } = await db.from('users').select('telegram_id').in('staff_role', ['owner', 'admin', 'moderator']);
         const ids = new Set((staff || []).map(s => s.telegram_id).filter(Boolean));
@@ -6929,6 +6964,16 @@ http.createServer(async (req, res) => {
     if (req.url === '/api/review') {
       const target = body.target_id;
       if (!target || !body.ride_id) return json(res, 400, { error: 'bad_input' });
+      // v179: оценивать может только участник завершённой поездки — и только вторую сторону
+      const { data: rvRide } = await db.from('rides').select('id,status,passenger_id,driver_id,biz_id').eq('id', String(body.ride_id)).maybeSingle();
+      if (!rvRide || rvRide.status !== 'completed') return json(res, 403, { error: 'not_yours' });
+      let rvPass = String(rvRide.passenger_id) === String(me.id);
+      const rvDrv = String(rvRide.driver_id) === String(me.id);
+      if (!rvPass && !rvDrv && rvRide.biz_id) rvPass = await bizIsStaff(me.id, rvRide.biz_id);
+      const rvOther = rvDrv ? rvRide.passenger_id : rvPass ? rvRide.driver_id : null;
+      if (!rvOther || String(rvOther) !== String(target)) return json(res, 403, { error: 'not_yours' });
+      body.kind = rvDrv ? 'passenger' : 'driver';
+      { const { data: tn } = await db.from('users').select('name').eq('id', String(target)).maybeSingle(); body.target_name = (tn && tn.name) || ''; }
       const rating = Math.max(1, Math.min(5, Number(body.rating) || 5));
       // не даём оценить одну поездку дважды
       const { data: dup } = await db.from('reviews').select('id').eq('ride_id', body.ride_id).eq('from_id', me.id).limit(1);
@@ -6957,17 +7002,19 @@ http.createServer(async (req, res) => {
     // --- жалоба / спор по отзыву (сам пользователь) ---
     if (req.url === '/api/complaint') {
       const isReview = body.kind === 'review';
+      // v179: не больше 5 жалоб в час — иначе можно завалить администрацию сообщениями
+      if (!actLimit('cmp:' + me.id, 5, 3600e3)) return json(res, 400, { error: 'too_many' });
       await db.from('complaints').insert({
         from_id: me.id, from_name: me.name,
         target_id: body.target_id || me.id, target_name: body.target_name || me.name,
         reason: String(body.reason || '').slice(0, 200),
         comment: String(body.comment || '').slice(0, 500),
         review_id: body.review_id || null,
-        kind: body.kind || 'user'
+        kind: isReview ? 'review' : 'user'
       });
       try {
         await notifyStaff(
-          `${isReview ? '📝' : '⚠️'} <b>${isReview ? 'Спор по отзыву' : 'Новая жалоба'}</b>\nОт: ${me.name}${isReview ? '' : `\nНа: ${body.target_name || '—'}`}\nПричина: ${String(body.reason || '').slice(0, 200)}`,
+          `${isReview ? '📝' : '⚠️'} <b>${isReview ? 'Спор по отзыву' : 'Новая жалоба'}</b>\nОт: ${hx(me.name)}${isReview ? '' : `\nНа: ${hx(body.target_name || '—')}`}\nПричина: ${hx(String(body.reason || '').slice(0, 200))}`,
           { reply_markup: { inline_keyboard: [[wa('Открыть панель', 'admin')]] } });
       } catch (e) { console.error('notifyStaff complaint', e.message); }
       return json(res, 200, { ok: true });
@@ -7013,11 +7060,7 @@ http.createServer(async (req, res) => {
         name:        v => stripPhone(String(v).trim()).slice(0, 60),
         theme:       v => ['green','orange','light','mono','blue'].includes(v) ? v : 'green',
         show_in_group: v => !!v,
-        phone:       v => {
-          const d = String(v || '').replace(/\D/g, '');
-          return d.length === 11 ? d : null;
-        },
-        has_phone:   () => true,
+        // v179: phone сюда больше не пишется (открытая таблица) — обрабатывается ниже, в contacts
         city:        v => v === null ? null : String(v).trim().slice(0, 60),
         spot:        v => v === null ? null : stripPhone(String(v).trim()).slice(0, 120),
         age:         v => v === null ? null : Math.max(0, Math.min(120, parseInt(v) || 0)) || null,
@@ -7040,6 +7083,26 @@ http.createServer(async (req, res) => {
       };
 
       const upd = {};
+      // v179: номер — только в закрытую таблицу contacts
+      if (body && body.phone !== undefined) {
+        const pd = String(body.phone || '').replace(/\D/g, '');
+        if (pd.length !== 11) return json(res, 400, { error: 'bad_phone' });
+        await db.from('contacts').upsert({ user_id: me.id, phone: pd, updated_at: new Date().toISOString() });
+        upd.has_phone = true;
+      }
+      // v179: аватар — только своя картинка из нашего хранилища (иначе можно подставить чужую или внешнюю ссылку)
+      if (body && body.avatar !== undefined && body.avatar !== null) {
+        const a = String(body.avatar);
+        const reAv = new RegExp('^' + String(me.id) + '(\\.jpg|_\\d{10,16}\\.jpg)(\\?t=\\d+)?$');
+        const okAv = [process.env.SUPABASE_URL, 'https://wygmuydnodwpbtsdfjuq.supabase.co']
+          .map(u => String(u || '').replace(/\/+$/, '') + '/storage/v1/object/public/avatars/')
+          .some(base => base.length > 40 && a.startsWith(base) && reAv.test(a.slice(base.length)));
+        if (!okAv) return json(res, 400, { error: 'bad_avatar' });
+      }
+      // v179: документы — только файлы из своей папки
+      for (const k of ['doc_license', 'doc_pts', 'doc_car']) {
+        if (body && body[k] !== undefined && !ownPath(body[k], me.id)) return json(res, 400, { error: 'bad_path' });
+      }
       // переключатели «звать на линию» — только когда миграция db-29 уже на месте
       if (body && ('call_on' in body || 'call_night' in body) && !callReady) await callCheck();
       Object.keys(body || {}).forEach(k => {
@@ -7134,9 +7197,20 @@ http.createServer(async (req, res) => {
 
       if (act === 'ride-pick-driver') {
         if (!iAmPassenger) return json(res, 403, { error: 'not_yours' });
-        const price = body.price ? Math.max(0, Math.min(100000, parseInt(body.price) || 0)) : null;
+        // v179: выбрать можно только того, кто откликнулся на эту заявку; водитель и цена — из отклика.
+        // Раньше сервер верил присланному driver_id — так можно было «назначить» кого угодно и получить его телефон.
+        if (!String(ride.status || '').startsWith('created')) return json(res, 400, { error: 'not_open' });
+        if (!body.offer_id) return json(res, 400, { error: 'no_offer' });
+        const { data: pickOf } = await db.from('offers').select('*').eq('id', String(body.offer_id)).maybeSingle();
+        if (!pickOf || String(pickOf.ride_id) !== String(ride.id) || pickOf.status !== 'pending') return json(res, 400, { error: 'no_offer' });
+        if (body.driver_id && String(body.driver_id) !== String(pickOf.driver_id)) return json(res, 400, { error: 'no_offer' });
+        { const { data: pd } = await db.from('users').select('driver_status,is_banned').eq('id', pickOf.driver_id).maybeSingle();
+          if (!pd || pd.is_banned || pd.driver_status !== 'approved') return json(res, 400, { error: 'driver_off' }); }
+        body.driver_id = pickOf.driver_id;
+        body.offer_status = body.offer_status === 'accepted' ? 'accepted' : 'selected';
+        const price = Math.max(0, Math.min(100000, parseInt(pickOf.price) || 0)) || null;
         const upd = {
-          driver_id: String(body.driver_id), status: 'confirmed',
+          driver_id: String(pickOf.driver_id), status: 'confirmed',
           price, confirmed_at: nowIso
         };
         // для заказа «на время» сбрасываем флаги напоминаний
@@ -7203,6 +7277,10 @@ http.createServer(async (req, res) => {
       // ---------- водитель ----------
       if (act === 'offer-create') {
         if (!ride) return json(res, 400, { error: 'no_ride' });
+        // v179: откликаться может только водитель с допуском и только на открытую чужую заявку
+        if (me.driver_status !== 'approved') return json(res, 403, { error: 'not_driver' });
+        if (!String(ride.status || '').startsWith('created') || ride.driver_id) return json(res, 400, { error: 'not_open' });
+        if (String(ride.passenger_id) === String(me.id)) return json(res, 400, { error: 'own_ride' });
         if (ride.biz_id && !bizRankOk(me)) return json(res, 403, { error: 'rank_low', need: RCFG.bizMin });
         const price = Math.max(0, Math.min(100000, parseInt(body.price) || 0));
         if (!price) return json(res, 400, { error: 'bad_price' });
@@ -7492,7 +7570,7 @@ http.createServer(async (req, res) => {
         const utid = await tgIdOf(tid);
         if (utid) {
           if (body.status === 'approved') {
-            await send(utid, `✅ <b>Заявка одобрена</b>\nВы теперь водитель Бомбилы.${upd.car ? `\n🚗 ${upd.car}${upd.plate ? ' · ' + upd.plate : ''}` : ''}\n\nВыходите на линию и принимайте заявки.`,
+            await send(utid, `✅ <b>Заявка одобрена</b>\nВы теперь водитель Бомбилы.${upd.car ? `\n🚗 ${hx(upd.car)}${upd.plate ? ' · ' + hx(upd.plate) : ''}` : ''}\n\nВыходите на линию и принимайте заявки.`,
               { reply_markup: { inline_keyboard: [[wa('Выйти на линию', 'driver')]] } });
           } else if (body.revoke) {
             await send(utid, `ℹ️ <b>Права водителя сняты</b>\nВы больше не можете выходить на линию. Пользоваться сервисом как пассажир по-прежнему можно.\n\nЕсли считаете это ошибкой — напишите в поддержку.`);
@@ -7508,9 +7586,9 @@ http.createServer(async (req, res) => {
         const changes = [];
         try {
           const { data: oldU } = await db.from('users').select('*').eq('id', tid).maybeSingle();
-          const { data: oldC } = await db.from('contacts').select('phone,full_name').eq('user_id', tid).maybeSingle();
+          const { data: oldC } = await db.from('contacts').select('*').eq('user_id', tid).maybeSingle();
           for (const k of Object.keys(f)) {
-            const was = (k === 'phone' || k === 'full_name')
+            const was = (k === 'phone' || k === 'full_name' || (k === 'admin_note' && oldC && 'admin_note' in oldC && !(oldU && oldU.admin_note)))
               ? (oldC ? oldC[k] : null)
               : (oldU ? oldU[k] : null);
             const now = f[k];
@@ -7521,8 +7599,25 @@ http.createServer(async (req, res) => {
         await audit(me, 'edit-user', tid, targetUser ? targetUser.name : null,
           changes.length ? changes.join('\n') : 'ничего не изменилось');
         const allowed = {};
-        ['name','age','spot','rating','role','driver_status','balance','admin_note'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        ['name','age','spot','rating','role','driver_status','balance'].forEach(k => { if (f[k] !== undefined) allowed[k] = f[k]; });
+        // v179: раздел «Люди» не даёт менять баланс и допуск — для этого свои разделы
+        { const { data: was0 } = await db.from('users').select('balance,role,driver_status').eq('id', tid).maybeSingle();
+          const nz = { balance: v => String(Number(v) || 0), role: v => String(v || 'passenger'), driver_status: v => String(v || 'none') };
+          const same = (k) => nz[k](was0 ? was0[k] : null) === nz[k](allowed[k]);
+          if ('balance' in allowed && !same('balance') && !can(me, 'balance')) return json(res, 403, { error: 'no_perm', need: 'balance' });
+          if ('balance' in allowed && same('balance')) delete allowed.balance;
+          for (const k of ['role', 'driver_status']) {
+            if (k in allowed && !same(k) && !can(me, 'drivers')) return json(res, 403, { error: 'no_perm', need: 'drivers' });
+            if (k in allowed && same(k)) delete allowed[k];
+          } }
         if (Object.keys(allowed).length) await db.from('users').update(allowed).eq('id', tid);
+        // v179: личная пометка — в закрытую таблицу contacts (users читается приложением открыто)
+        if (f.admin_note !== undefined) {
+          const note = String(f.admin_note || '').slice(0, 300) || null;
+          const { error: ne } = await db.from('contacts').upsert({ user_id: tid, admin_note: note, updated_at: new Date().toISOString() });
+          if (ne && /admin_note/.test(ne.message || '')) await db.from('users').update({ admin_note: note }).eq('id', tid);   // до миграции db-33
+          else await db.from('users').update({ admin_note: null }).eq('id', tid);
+        }
         if (f.full_name !== undefined) {
           await db.from('contacts').upsert({ user_id: tid, full_name: String(f.full_name || '').slice(0, 120), updated_at: new Date().toISOString() });
         }
@@ -7532,7 +7627,7 @@ http.createServer(async (req, res) => {
             await db.from('contacts').upsert({ user_id: tid, phone: ph, updated_at: new Date().toISOString() });
             await db.from('users').update({ has_phone: true }).eq('id', tid);
           } else {
-            await db.from('contacts').delete().eq('user_id', tid);
+            await db.from('contacts').update({ phone: null, updated_at: new Date().toISOString() }).eq('user_id', tid);   // v179: не удаляем строку целиком — в ней ФИО и пометка
             await db.from('users').update({ has_phone: false }).eq('id', tid);
           }
         }
@@ -7641,10 +7736,17 @@ http.createServer(async (req, res) => {
         const repeat  = ids.filter(i => byUser[i].made > 1).length;
         const loyal   = ids.filter(i => byUser[i].done > 2).length;
 
+        // v179: личные пометки администрации — из закрытой таблицы
+        let notes = {};
+        try {
+          const nr = await ptAll(() => db.from('contacts').select('user_id,admin_note').not('admin_note', 'is', null).order('user_id'), 10);
+          for (const x of nr) if (x.admin_note) notes[x.user_id] = x.admin_note;
+        } catch (e) { notes = {}; }
         return json(res, 200, {
           ok: true,
           funnel: { total: total || 0, ordered, arrived, repeat, loyal },
-          users: byUser
+          users: byUser,
+          notes
         });
       }
 
@@ -7832,7 +7934,7 @@ http.createServer(async (req, res) => {
           await db.from('users').update({ car: c.brand, plate: c.plate }).eq('id', c.user_id);
         }
         const tid2 = await tgIdOf(c.user_id);
-        if (tid2) await send(tid2, `✅ <b>Машина одобрена</b>\n${c.brand} · ${c.plate}\n\nМожете выбрать её как рабочую в профиле.`);
+        if (tid2) await send(tid2, `✅ <b>Машина одобрена</b>\n${hx(c.brand)} · ${hx(c.plate)}\n\nМожете выбрать её как рабочую в профиле.`);
         return json(res, 200, { ok: true });
       }
 
@@ -7850,7 +7952,7 @@ http.createServer(async (req, res) => {
           }
         }
         const tid3 = await tgIdOf(c.user_id);
-        if (tid3) await send(tid3, `ℹ️ <b>Машина удалена модерацией</b>\n${c.brand} · ${c.plate}`);
+        if (tid3) await send(tid3, `ℹ️ <b>Машина удалена модерацией</b>\n${hx(c.brand)} · ${hx(c.plate)}`);
         return json(res, 200, { ok: true });
       }
 

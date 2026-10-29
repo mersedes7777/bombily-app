@@ -1742,7 +1742,7 @@ function maskPhone(el){
   try{el.setSelectionRange(el.value.length,el.value.length);}catch(e){}
  }
 }
-const esc=s=>String(s==null?'':s).replace(/[<>"']/g,'');
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/[<>"'\\]/g,'');
 const jget=f=>{try{return JSON.parse(me[f]||'[]')}catch(e){return[]}};
 const places=()=>jget('places');
 const favs=()=>jget('favs');
@@ -2934,7 +2934,8 @@ function startCd(created){
  upd();cdTick=setInterval(upd,1000);
 }
 async function accept(oid,did,price){
- await api('/api/action',{action:'ride-pick-driver',ride_id:active.id,driver_id:did,price:price||null,offer_id:oid,offer_status:'selected'});
+ const _pk=await api('/api/action',{action:'ride-pick-driver',ride_id:active.id,driver_id:did,price:price||null,offer_id:oid,offer_status:'selected'});
+ if(_pk.error){T(_pk.error==='driver_off'?'Этот водитель сейчас недоступен — выберите другого':'Предложение уже неактуально — обновляю список');try{await restore();}catch(e){}drawP();return;}
  active.status='confirmed';active.driver_id=did;subRide(active.id);watchCompletion();watchUnread(active.id);
  if(offCh){db.removeChannel(offCh);offCh=null;}
  active.status='confirmed';T('Водитель подтверждён');openRide();
@@ -3076,7 +3077,8 @@ function complain(rid,did,dn){
  window._cr=r=>{reason=r;draw();};window._crGet=()=>reason;draw();
 }
 async function sendComplain(rid,did,dn){
- await api('/api/complaint',{target_id:did,target_name:dn,reason:window._crGet(),comment:document.getElementById('cc').value.trim(),kind:'user'});
+ const r=await api('/api/complaint',{target_id:did,target_name:dn,reason:window._crGet(),comment:document.getElementById('cc').value.trim(),kind:'user'});
+ if(r.error==='too_many')return T('Слишком много жалоб за час — подождите немного');
  closeSh();T('Жалоба отправлена');
 }
 
@@ -3132,7 +3134,8 @@ function disputeRev(rid,about,text){
  window._dr=r=>{reason=r;draw();};window._drGet=()=>reason;draw();
 }
 async function sendDispute(rid){
- await api('/api/complaint',{reason:'Спор по отзыву: '+window._drGet(),comment:document.getElementById('dc').value.trim(),review_id:rid,kind:'review'});
+ const r=await api('/api/complaint',{reason:'Спор по отзыву: '+window._drGet(),comment:document.getElementById('dc').value.trim(),review_id:rid,kind:'review'});
+ if(r.error==='too_many')return T('Слишком много обращений за час — подождите немного');
  closeSh();T('Жалоба на отзыв отправлена модерации');
 }
 async function communityOffer(city,force){
@@ -3344,8 +3347,9 @@ async function loadPlanOffers(r){
 }
 async function acceptPlan(offerId,did,price,rideId){
  return once('accplan', async()=>{
-  await api('/api/action',{action:'ride-pick-driver',ride_id:rideId,driver_id:did,price:price||null,
+  const _pk=await api('/api/action',{action:'ride-pick-driver',ride_id:rideId,driver_id:did,price:price||null,
    offer_id:offerId,offer_status:'accepted',reset_notify:true});
+  if(_pk.error){closeSh();T('Предложение уже неактуально — откройте заказ заново');return;}
   const p=planned.find(x=>x.id===rideId);
   if(p){p.driver_id=did;p.status='confirmed';p.price=price;}
   closeSh();T('Водитель назначен — приедет к назначенному времени');drawP();
@@ -3385,10 +3389,10 @@ function pickAvatar(){
   T('Загружаем фото…');
   try{
    const small=await shrink(f,600);
-   const path=`${me.id}.jpg`;
-   const{error}=await db.storage.from('avatars').upload(path,small,{upsert:true,contentType:'image/jpeg'});
+   const path=`${me.id}_${Date.now()}.jpg`;
+   const{error}=await db.storage.from('avatars').upload(path,small,{upsert:false,contentType:'image/jpeg'});
    if(error){T('Не загрузилось: '+error.message);return;}
-   const url=db.storage.from('avatars').getPublicUrl(path).data.publicUrl+'?t='+Date.now();
+   const url=db.storage.from('avatars').getPublicUrl(path).data.publicUrl;
    const _rc=await api('/api/me/update',{avatar:url});const e2=_rc.error?{message:'ошибка'}:null;
    if(e2){T('Не сохранилось');return;}
    me.avatar=url;
@@ -3415,7 +3419,7 @@ function pickSupPhoto(){
   try{
    const small=await shrink(f,1400);
    const path=`support/${me.id}_${Date.now()}.jpg`;
-   const{error}=await db.storage.from('docs').upload(path,small,{upsert:true,contentType:'image/jpeg'});
+   const{error}=await db.storage.from('docs').upload(path,small,{upsert:false,contentType:'image/jpeg'});
    if(error){if(st)st.textContent='ошибка';T('Не загрузилось');return;}
    window._supPhoto=path;
    if(st){st.textContent='готово ✓';st.style.color='var(--g)';}
@@ -3428,7 +3432,7 @@ async function _sendSupport(){
  const t=(document.getElementById('supmsg').value||'').trim();
  if(!t&&!window._supPhoto)return T('Напишите сообщение или приложите фото');
  const r=await api('/api/support-send',{text:t,photo:window._supPhoto||null});
- if(r.error)return T(r.error==='empty'?'Напишите сообщение':'Не удалось отправить');
+ if(r.error)return T(r.error==='empty'?'Напишите сообщение':r.error==='too_many'?'Слишком много обращений за час — подождите немного':'Не удалось отправить');
  closeSh();window._supPhoto=null;T('Отправлено — ответ придёт в бота');
 }
 async function myReviews(){
@@ -3522,7 +3526,7 @@ function pick(kind){
   try{
    const small=await shrink(f,1200);
    const path=`${me.id}/${kind}_${Date.now()}.jpg`;
-   const{error}=await db.storage.from('docs').upload(path,small,{upsert:true,contentType:'image/jpeg'});
+   const{error}=await db.storage.from('docs').upload(path,small,{upsert:false,contentType:'image/jpeg'});
    if(error)throw error;
    const url=path;
    const col={license:'doc_license',pts:'doc_pts',car:'doc_car'}[kind];
@@ -4212,9 +4216,11 @@ function actLine(id){
  const drv=a.drives?` · возит ${a.drives}`:'';
  return `<span style="color:var(--g)">${a.made} ${plural(a.made,['заказ','заказа','заказов'])}</span>${a.done?', доехал '+a.done:''}${d?' · '+d:''}${drv}`;
 }
+var NOTES={};
+const unote=u=>(u&&NOTES[u.id])||(u&&u.admin_note)||'';
 async function loadActivity(){
  const r=await api('/api/admin',{action:'activity'});
- if(r&&!r.error){ACT=r.users||{};ACTfun=r.funnel||null;}
+ if(r&&!r.error){ACT=r.users||{};ACTfun=r.funnel||null;NOTES=r.notes||{};}
 }
 async function loadAvatars(ids){
  const need=ids.filter(id=>!(id in pplAvatars));
@@ -4822,7 +4828,7 @@ function pickCarDoc(which){
   try{
    const small=await shrink(f,1400);
    const path=`${me.id}/${which==='pts'?'carpts':which==='lic'?'carlic':'car'}_${Date.now()}.jpg`;
-   const{error}=await db.storage.from('docs').upload(path,small,{upsert:true,contentType:'image/jpeg'});
+   const{error}=await db.storage.from('docs').upload(path,small,{upsert:false,contentType:'image/jpeg'});
    if(error){if(st)st.textContent='ошибка';T('Не загрузилось');return;}
    if(which==='pts')window._carPts=path; else if(which==='lic')window._carLic=path; else window._carPhoto=path;
    if(st){st.textContent='готово ✓';st.style.color='var(--g)';}
@@ -7174,7 +7180,7 @@ async function aPpl(m){
  let pool=all;
  if(pplQuery){
   const q=nrm(pplQuery),qd=pplQuery.replace(/\D/g,'');
-  pool=pool.filter(u=>nrm(u.name).includes(q)||nrm(u.full_name).includes(q)||nrm(u.admin_note).includes(q)||nrm(u.car).includes(q)||nrm(u.plate).includes(q)
+  pool=pool.filter(u=>nrm(u.name).includes(q)||nrm(u.full_name).includes(q)||nrm(unote(u)).includes(q)||nrm(u.car).includes(q)||nrm(u.plate).includes(q)
    ||(qd.length>=3&&String(u.telegram_id||'').includes(qd))||(qd.length>=3&&pplPhones[u.id]&&pplPhones[u.id].replace(/\D/g,'').includes(qd)));
  }
  if(!PPL_F.find(f=>f[0]===pplFilter))pplFilter='all';
@@ -7195,7 +7201,7 @@ async function aPpl(m){
     <div class="pp-t"><div class="pp-n"><b>${esc(u.name)||'Без имени'}</b>${u.id===me.id?'<span class="pp-me">вы</span>':''}${tag?`<span class="idtag">#${tag}</span>`:''}</div>
      ${pplPills(u)?`<div class="pp-pills">${pplPills(u)}</div>`:''}
      <div class="pp-w">${pplWhat(u)}</div>
-     ${u.admin_note?`<div class="unote">✎ ${esc(u.admin_note)}</div>`:''}
+     ${unote(u)?`<div class="unote">✎ ${esc(unote(u))}</div>`:''}
      <div class="pp-s">${tail}</div></div>
     <svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>`;}).join('')}</div>
    ${list.length>shown.length?`<button class="pj-more" onclick="pplShown+=150;aPpl(document.getElementById('main'))">Показать ещё ${Math.min(150,list.length-shown.length)} из ${list.length-shown.length}</button>`:''}`
@@ -7256,7 +7262,7 @@ async function userCard(id){
   <div><b>${rkNum?rkNum(rating.toFixed(1)):rating.toFixed(1)}</b><span>рейтинг</span></div>
  </div>
  <div class="pp-sec">Пометка для себя <small>видите только вы</small></div>
- <input class="pp-in" id="e_admin_note" value="${esc(u.admin_note)}" placeholder="напр. Витя с рынка, синяя Нива">
+ <input class="pp-in" id="e_admin_note" value="${esc(unote(u))}" placeholder="напр. Витя с рынка, синяя Нива">
  <div class="pp-sec">Водитель</div>
  <div class="drvbox">
   <div class="drvst">
@@ -7427,7 +7433,8 @@ async function saveUser(id){
  const g=x=>document.getElementById('e_'+x).value.trim();
  const fields={name:g('name'),full_name:g('full_name'),admin_note:g('admin_note'),phone:g('phone'),age:parseInt(g('age'))||null,spot:g('spot'),rating:parseFloat(g('rating'))||5,role:g('role')||'passenger',driver_status:g('ds')||'none',balance:parseFloat(g('balance'))||0};
  const r=await api('/api/admin',{action:'edit-user',target_id:id,fields});
- if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка: '+r.error);
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':r.error==='no_perm'?(r.need==='balance'?'Менять баланс можно только с разделом «Баланс»':'Менять допуск можно только с разделом «Водители»'):'Ошибка: '+r.error);
+ if(fields.admin_note)NOTES[id]=fields.admin_note; else delete NOTES[id];
  closeSh();T('Изменения сохранены');drawA();
 }
 async function toggleBan(id,now){
