@@ -5043,7 +5043,8 @@ const ACT_PERM = {
 
   'rides-list':'rides','del-review':'rides','ride-notify-list':'rides','ride-card':'rides',
 
-  'complaint-resolve':'complaints','resolve-complaint':'complaints',
+  'complaint-resolve':'complaints','resolve-complaint':'complaints','complaints-list':'complaints','complaints-count':'complaints',
+  'payments-list':'balance',
 
   'support-list':'support','support-answer':'support','support-hide':'support',
   'support-count':'support','support-answered':'support',
@@ -7465,7 +7466,7 @@ http.createServer(async (req, res) => {
         'cars-pending','cars-pending-list','doc-urls','user-phone','apps-phones','admin-counts','stats',
         'drivers-stats','days-stats','user-search','avatars','avatar-fetch','ride-notify-list','ride-card',
         'audit-list','audit-actors','activity','broadcast-count','broadcast-list','rides-stats','rides-list','src-list','rides-list',
-        'city-list','group-check']);
+        'city-list','group-check','complaints-list','complaints-count','payments-list']);
       const customLog = new Set(['edit-user', 'adjust-balance', 'driver-status', 'ban', 'car-edit']);
       if (!readOnly.has(act) && !customLog.has(act)) {
         const clean = {};
@@ -7747,6 +7748,21 @@ http.createServer(async (req, res) => {
           users: byUser,
           notes
         });
+      }
+
+      // v181: жалобы и операции по балансу — панель читает через сервер (таблицы закрываются от публичного ключа, db-33)
+      if (act === 'complaints-list') {
+        const { data } = await db.from('complaints').select('*').in('status', ['new', 'pending'])
+          .order('created_at', { ascending: false }).limit(200);
+        return json(res, 200, { ok: true, items: data || [] });
+      }
+      if (act === 'complaints-count') {
+        const { count } = await db.from('complaints').select('*', { count: 'exact', head: true }).in('status', ['new', 'pending']);
+        return json(res, 200, { ok: true, count: count || 0 });
+      }
+      if (act === 'payments-list') {
+        const { data } = await db.from('payments').select('*').order('created_at', { ascending: false }).limit(25);
+        return json(res, 200, { ok: true, items: data || [] });
       }
 
       // ---- рассылка ----

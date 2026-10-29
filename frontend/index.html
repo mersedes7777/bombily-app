@@ -5242,7 +5242,7 @@ async function aOver(m){
  const [s,sc,cmpR,rvR,waiting,going,onl,pend]=await Promise.all([
   canSee('stats')?api('/api/admin',{action:'stats'}).catch(()=>null):Promise.resolve(null),
   canSee('support')?api('/api/admin',{action:'support-count'}).catch(()=>null):Promise.resolve(null),
-  db.from('complaints').select('id').in('status',['new','pending']).then(r=>r,()=>({data:[]})),
+  canSee('complaints')?api('/api/admin',{action:'complaints-count'}).catch(()=>null):Promise.resolve(null),
   db.from('reviews').select('*').eq('visible',true).order('created_at',{ascending:false}).limit(5).then(r=>r,()=>({data:[]})),
   cnt(db.from('rides').select('*',{count:'exact',head:true}).eq('status','created').gte('created_at',since)),
   cnt(db.from('rides').select('*',{count:'exact',head:true}).in('status',['confirmed','in_progress'])),
@@ -5253,7 +5253,7 @@ async function aOver(m){
  const S=s&&!s.error?s:null;
  const online=onl;
  const sup=(sc&&sc.count)||0;
- const cmp=((cmpR&&cmpR.data)||[]).length;
+ const cmp=(cmpR&&!cmpR.error&&cmpR.count)||0;
  const apps=pend;
  const rv=(rvR&&rvR.data)||[];
  const now=new Date();
@@ -5344,7 +5344,9 @@ async function okDrv(id){
 }
 async function noDrv(id){const r=await api('/api/admin',{action:'driver-status',target_id:id,status:'none'});if(r.error)return T('Ошибка');T('Отклонено');drawA();}
 async function aCmp(m){
- const{data}=await db.from('complaints').select('*').in('status',['new','pending']).order('created_at',{ascending:false});
+ const _cl=await api('/api/admin',{action:'complaints-list'});
+ if(_cl.error){m.innerHTML='<div class="empty">Не удалось загрузить жалобы</div>';return;}
+ const data=_cl.items||[];
  const uids=[...new Set((data||[]).flatMap(c=>[c.target_id,c.from_id]).filter(Boolean))];
  let umap={};
  if(uids.length){const{data:us}=await db.from('users').select('id,name,tg_username,has_phone').in('id',uids);(us||[]).forEach(u=>{umap[u.id]=u;});}
@@ -6899,7 +6901,7 @@ function finSub(c){
 }
 async function finBal(c){
  const{data:drv}=await db.from('users').select('*').in('role',['driver','both']).order('name');
- const{data:recent}=await db.from('payments').select('*').order('created_at',{ascending:false}).limit(25);
+ const _pl=await api('/api/admin',{action:'payments-list'});const recent=(_pl&&!_pl.error&&_pl.items)||[];
  c.innerHTML=`<div class="sec">Начислить / списать вручную</div>
  <div style="padding:0 14px 4px">
   <div class="fr"><label>Водитель</label><select id="fu" style="width:100%;background:transparent;border:none;color:var(--ink);font-size:15px;outline:none">${(drv||[]).map(d=>`<option value="${d.id}">${esc(d.name)} · ${d.balance||0} ₽</option>`).join('')}</select></div>
