@@ -4562,7 +4562,7 @@ async function offer(rid,fixed){
  const v=fixed||document.getElementById('p'+rid).value;
  if(!v)return T('Укажите цену');
  if(Number(v)<1||Number(v)>100000)return T('Проверьте цену');
- const _ro2=await api('/api/action',{action:'offer-create',ride_id:rid,price:Number(v)});const error=_ro2.error?{message:'Не удалось отправить цену'}:null;if(error)T('Не удалось отправить цену');
+ const _ro2=await api('/api/action',{action:'offer-create',ride_id:rid,price:Number(v)});const error=_ro2.error?{message:'Не удалось отправить цену'}:null;if(error)T(({not_driver:'Откликаться могут только водители',not_open:'Заявка уже закрыта или её взял другой водитель',rank_low:'Заказы магазинов — водителям со званием',bad_price:'Проверьте цену',no_ride:'Заявка не найдена'})[_ro2.error]||'Не удалось отправить цену');
  if(error)return;
  const{data:nofr}=await db.from('offers').select('*').eq('ride_id',rid).eq('driver_id',me.id).eq('status','pending').limit(1);
  if(nofr&&nofr.length)myOffs.unshift(nofr[0]);

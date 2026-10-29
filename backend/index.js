@@ -1063,7 +1063,7 @@ async function takePrice(chat, wait, text) {
   }
   const { data: me } = await db.from('users')
     .select('*').eq('telegram_id', chat).maybeSingle();
-  if (!me || me.is_banned || me.driver_status !== 'approved') { await send(chat, 'Нет доступа: откликаться могут только водители с допуском.'); return; }
+  if (!me || me.is_banned || !['driver', 'both'].includes(me.role)) { await send(chat, 'Нет доступа: откликаться могут только водители.'); return; }
   if (ride.biz_id && !bizRankOk(me)) { await send(chat, `🏅 Заказы магазинов берут водители ${bizRankTxt()}.\nПолучите звание — и они станут доступны.`); return; }
 
   // телеграм пассажира — чтобы дать кнопку «написать» рядом с ценой
@@ -7204,8 +7204,8 @@ http.createServer(async (req, res) => {
         const { data: pickOf } = await db.from('offers').select('*').eq('id', String(body.offer_id)).maybeSingle();
         if (!pickOf || String(pickOf.ride_id) !== String(ride.id) || pickOf.status !== 'pending') return json(res, 400, { error: 'no_offer' });
         if (body.driver_id && String(body.driver_id) !== String(pickOf.driver_id)) return json(res, 400, { error: 'no_offer' });
-        { const { data: pd } = await db.from('users').select('driver_status,is_banned').eq('id', pickOf.driver_id).maybeSingle();
-          if (!pd || pd.is_banned || pd.driver_status !== 'approved') return json(res, 400, { error: 'driver_off' }); }
+        { const { data: pd } = await db.from('users').select('role,is_banned').eq('id', pickOf.driver_id).maybeSingle();
+          if (!pd || pd.is_banned || !['driver', 'both'].includes(pd.role)) return json(res, 400, { error: 'driver_off' }); }
         body.driver_id = pickOf.driver_id;
         body.offer_status = body.offer_status === 'accepted' ? 'accepted' : 'selected';
         const price = Math.max(0, Math.min(100000, parseInt(pickOf.price) || 0)) || null;
@@ -7277,10 +7277,9 @@ http.createServer(async (req, res) => {
       // ---------- водитель ----------
       if (act === 'offer-create') {
         if (!ride) return json(res, 400, { error: 'no_ride' });
-        // v179: откликаться может только водитель с допуском и только на открытую чужую заявку
-        if (me.driver_status !== 'approved') return json(res, 403, { error: 'not_driver' });
+        // v180: откликаться может только водитель (роль driver/both — так же считает рассылка заявок) и только на открытую заявку
+        if (!['driver', 'both'].includes(me.role)) return json(res, 403, { error: 'not_driver' });
         if (!String(ride.status || '').startsWith('created') || ride.driver_id) return json(res, 400, { error: 'not_open' });
-        if (String(ride.passenger_id) === String(me.id)) return json(res, 400, { error: 'own_ride' });
         if (ride.biz_id && !bizRankOk(me)) return json(res, 403, { error: 'rank_low', need: RCFG.bizMin });
         const price = Math.max(0, Math.min(100000, parseInt(body.price) || 0));
         if (!price) return json(res, 400, { error: 'bad_price' });
