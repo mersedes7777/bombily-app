@@ -1463,6 +1463,13 @@ body[data-t="light"] .rk-c-platinum{--mt:#1d9a90;}body[data-t="light"] .rk-c-dia
 .pp-fold{display:none;}
 .pp-fold.open{display:block;}
 .pp-sel{width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:10px;color:var(--ink);font-family:Golos Text,sans-serif;font-size:14px;}
+.cg-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.cg-chip{flex:none;white-space:nowrap;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:9px;background:var(--surf2,rgba(255,255,255,.05));color:var(--dim);border:1px solid var(--line2)}
+.cg-chip.cg-yes{color:var(--g);border-color:rgba(51,209,126,.35);background:rgba(51,209,126,.08)}
+.cg-city{cursor:pointer;margin:0 14px 9px}
+.cg-arr{width:20px;height:20px;fill:none;stroke:var(--dim);stroke-width:2;flex:none}
+.cg-o .fr input{width:100%}
+.cg-o .btn{margin-top:8px}
 </style>
 </head>
 <body>
@@ -5058,14 +5065,14 @@ async function loadPerms(){
 const TAB_PERM={over:null,ppl:'users',stat:'stats'};
 // «Ещё»: разделы бывших «Финансов» по смыслу; у каждого — своё право
 const MORE_GROUPS=[
- ['Города и группы',[['city','Города и группы Telegram','ссылки, закреп, заказы в чате, карточки водителей','cities']]],
- ['Водители',[['work','Работа водителей','кто сколько работает, кто давно не выходил','drivers'],['ranks','Ранги и баллы','журнал баллов, начисления вручную, правила','ranks'],['call','Зов на линию','бот зовёт водителей, когда заявки ждут','settings']]],
+ ['Города и группы',[['city','Города и группы Telegram','города, группы, порядок в чате, лента для водителей','cities']]],
+ ['Водители',[['docs','Документы водителей','сколько хранить права и техпаспорта','settings'],['work','Работа водителей','кто сколько работает, кто давно не выходил','drivers'],['ranks','Ранги и баллы','журнал баллов, начисления вручную, правила','ranks'],['call','Зов на линию','бот зовёт водителей, когда заявки ждут','settings']]],
  ['Точки',[['biz','Магазины и кафе','проверка точек, сотрудники, доставки','biz']]],
- ['Продвижение',[['mail','Рассылка в бота','написать всем или части людей','broadcast'],['src','Метки и QR-коды','откуда приходят люди и кто из них заказывает','refs'],['promo','Промокоды','бесплатные дни и скидки','promos'],['ref','Рефералка','бонус за приглашённого водителя','refs'],['back','Возврат водителей','кто перестал платить и давно не заходил','broadcast']]],
+ ['Продвижение',[['mail','Рассылка в бота','написать всем или части людей','broadcast'],['winback','Напоминания уснувшим','бот пишет тем, кто давно не заходил','settings'],['src','Метки и QR-коды','откуда приходят люди и кто из них заказывает','refs'],['promo','Промокоды','бесплатные дни и скидки','promos'],['ref','Рефералка','бонус за приглашённого водителя','refs'],['back','Возврат водителей','кто перестал платить и давно не заходил','broadcast']]],
  ['Деньги',[['sub','Подписка и тарифы','платно или бесплатно, когда снимать с линии','settings'],['bal','Баланс водителей','начислить или списать вручную','balance']]],
  ['Система',[['rep','Сводки в Telegram','утренняя сводка вам и итоги недели водителям','settings'],['guard','Защита от спама','паузы за частые отмены заявок, кто сейчас на паузе','settings'],['log','Журнал действий','что делали администраторы','audit']]]
 ];
-const MORE_ICO={work:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',guard:'<path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>',biz:'<path d="M3 9.5 4.5 4h15L21 9.5"/><path d="M3 9.5h18v1.5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13.5V20h14v-6.5"/><path d="M10 20v-4h4v4"/>',call:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',ranks:'<path d="M8.5 2h3l1.6 6M15.5 2h-3"/><circle cx="12" cy="14.5" r="6.5"/><path d="m12 11.2 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"/>',city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
+const MORE_ICO={docs:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M14 10h4M14 13h3M6 16h6"/>',winback:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',work:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',guard:'<path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/>',biz:'<path d="M3 9.5 4.5 4h15L21 9.5"/><path d="M3 9.5h18v1.5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13.5V20h14v-6.5"/><path d="M10 20v-4h4v4"/>',call:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',ranks:'<path d="M8.5 2h3l1.6 6M15.5 2h-3"/><circle cx="12" cy="14.5" r="6.5"/><path d="m12 11.2 1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"/>',city:'<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-6h6v6"/>',mail:'<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',src:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/>',
  promo:'<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',ref:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',back:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
  sub:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',bal:'<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',rep:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',log:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>'};
 function moreAllowed(id){
@@ -6396,6 +6403,8 @@ async function aFin(m){
  if(finTab==='src')return finSrc(c);
  if(finTab==='mail')return finMail(c);
  if(finTab==='city')return finCities(c);
+ if(finTab==='docs')return finDocs(c);
+ if(finTab==='winback')return finWinback(c);
  if(finTab==='log')return finLog(c);
  if(finTab==='rep')return finReports(c);
  if(finTab==='ranks')return finRanks(c);
@@ -6630,129 +6639,96 @@ async function mailSend(){
   setTimeout(()=>aFin(document.getElementById('main')),1200);
  });
 }
+/* ===== v181: «Города и группы» — по вкладкам ===== */
+var cgTab='cities';
+const cgTog=(on,click,title,hint,extra='')=>`<div class="obar cg-o" style="display:block"><div style="display:flex;align-items:center;justify-content:space-between"><div style="flex:1;padding-right:10px"><div class="l">${title}</div><div class="obhint">${hint}</div></div><div class="tg ${on?'on':''}" onclick="${click}"><b></b></div></div>${extra}</div>`;
+function cgOrderMode(){return !SETTINGS.group_moderate?'off':(SETTINGS.group_order_mode==='reply'?'reply':'delete');}
+async function setOrderHandling(mode){
+ const fields=mode==='off'?{group_moderate:false}:{group_moderate:true,group_order_mode:mode};
+ const r=await api('/api/admin',{action:'settings-update',fields});
+ if(r.error)return T(r.error==='forbidden'?'Нет прав':'Ошибка');
+ if(r.settings)SETTINGS=r.settings; else Object.assign(SETTINGS,fields);
+ T(mode==='off'?'Бот не трогает заказы в чате':mode==='reply'?'Бот отвечает подсказкой под заказом':'Бот убирает заказ и пишет человеку в личку');
+ aFin(document.getElementById('main'));
+}
 async function finCities(c){
  c.innerHTML='<div class="empty">Загрузка…</div>';
- const r=await api('/api/admin',{action:'city-list'});
- if(r.error){c.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
- const items=r.items||[];
- const on=!!SETTINGS.community_enabled;
- c.innerHTML=`
- <div class="sec">Приглашение в группу</div>
- <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Предлагать вступить</div><div class="obhint">${on
-   ? 'После выбора города человеку показывают карточку группы, в профиле виден раздел «Группа города».'
-   : 'Выключено. Людей не зовут в группу и раздел в профиле скрыт — удобно, пока группа пустая. Модерация чата при этом работает.'}</div></div><div class="tg ${on?'on':''}" onclick="togCommunity()"><b></b></div></div>
-
- <div class="sec">Бот в группе</div>
- <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Убирать заказы из чата</div><div class="obhint">${SETTINGS.group_moderate
-   ? 'Сообщения вроде «кто свободен» удаляются, бот отвечает ссылкой на приложение.'
-   : 'Выключено. Люди смогут договариваться о поездках прямо в чате, минуя приложение.'}</div></div><div class="tg ${SETTINGS.group_moderate?'on':''}" onclick="togGroup('group_moderate')"><b></b></div></div>
- <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Чистить «вступил / вышел»</div><div class="obhint">Служебные сообщения о входе и выходе удаляются сразу.</div></div><div class="tg ${SETTINGS.group_clean_service!==false?'on':''}" onclick="togGroup('group_clean_service')"><b></b></div></div>
- <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Приветствовать новичков</div><div class="obhint">Короткое приветствие с кнопкой на бота.</div></div><div class="tg ${SETTINGS.group_welcome?'on':''}" onclick="togGroup('group_welcome')"><b></b></div></div>
- <div class="head"><h2>Через сколько убирать сообщения бота</h2></div>
- <div class="form">
-  <div class="fr"><label>Подсказка «заказывайте в боте», секунд</label>
-   <input id="gdel" type="number" min="0" max="3600" value="${SETTINGS.group_del_sec??90}"></div>
-  <div class="fr"><label>Приветствие новичкам, секунд</label>
-   <input id="gwel" type="number" min="0" max="3600" value="${SETTINGS.group_welcome_sec??120}"></div>
-  <div class="obhint" style="padding:2px 0 12px">Поставьте <b>0</b>, чтобы сообщение оставалось в чате навсегда. Обычно хватает 60–120 секунд: подсказку успевают прочитать, и чат не засоряется.</div>
-  <button class="btn" onclick="saveGroupTimers()">Сохранить время</button>
- </div>
- <div class="head"><h2>Документы водителей</h2></div>
- <div class="form">
-  <div class="obar" style="margin:0 0 10px"><div style="flex:1;padding-right:10px"><div class="l">Никогда не удалять</div><div class="obhint">Права и техпаспорт хранятся всегда, пока вы сами их не удалите.</div></div><div class="tg ${SETTINGS.docs_keep_days===0?'on':''}" onclick="togDocsNever()"><div class="kn"></div></div></div>
-  ${SETTINGS.docs_keep_days===0?'':`<div class="fr"><label>Хранить после проверки, дней</label>
-   <input id="dkeep" type="number" min="1" max="90" value="${SETTINGS.docs_keep_days??3}"></div>
-  <div class="obhint" style="padding:2px 0 12px">Права и техпаспорт удаляются сами через указанный срок. В карточке водителя остаётся отметка: кто проверил и когда.</div>
-  <button class="btn" onclick="saveDocsKeep()">Сохранить срок</button>`}
- </div>
- <div class="head"><h2>Карточки водителей в группе</h2></div>
- <div class="form">
-  <div class="fr"><label>Публиковать заново каждые, минут</label>
-   <input id="dpost" type="number" min="5" max="720" value="${SETTINGS.dpost_minutes??30}"></div>
-  <div class="obhint" style="padding:2px 0 12px">Водитель включает показ у себя в кабинете. Старая карточка убирается, чтобы чат не засорялся. Между публикациями обновляется только статус — свободен или занят.</div>
-  <button class="btn" onclick="saveDpost()">Сохранить</button>
- </div>
- <div class="obar" style="margin:14px 18px 10px"><div style="flex:1;padding-right:10px">
-   <div class="l">Запретить рекламу в чате</div>
-   <div class="obhint">Объявления, анкеты и номера телефонов убираются, автору приходит объяснение в личку. Второй раз за сутки — предупреждение, третий — сутки без права писать. Перевозчиков бот зовёт оформиться водителем. Заказы поездок не трогает.</div>
-  </div><div class="tg ${SETTINGS.group_no_ads!==false?'on':''}" onclick="togGroup('group_no_ads')"><b></b></div></div>
-
- <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
-   <div class="l">Заказы в чате города</div>
-   <div class="obhint">Новая заявка появляется в общей группе без адреса, с кнопкой «Взять заказ». Проверенному водителю бот присылает адрес в личку, остальным предлагает пройти верификацию. Когда заказ взяли — карточка меняется на «принят».</div>
-  </div><div class="tg ${SETTINGS.group_orders_on?'on':''}" onclick="togGroup('group_orders_on')"><b></b></div></div>
-
- <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
-   <div class="l">Удалять заказы из чата</div>
-   <div class="obhint">${SETTINGS.group_order_mode==='reply'
-     ?'Сейчас <b>мягкий режим</b>: сообщение с заказом остаётся в чате, а бот отвечает под ним, как оформить в боте. Ответ бота сам исчезает через пару минут.'
-     :'Сейчас сообщение с заказом убирается из чата, а человеку приходит кнопка оформления в личку.'} Спам удаляется в любом режиме.</div>
-  </div><div class="tg ${SETTINGS.group_order_mode!=='reply'?'on':''}" onclick="togOrderMode()"><b></b></div></div>
-
- <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
-   <div class="l">Проверка новичков при входе</div>
-   <div class="obhint">Новый участник решает простой пример на сложение, пока не решит — писать не может. Три попытки, потом исключение без бана: сможет зайти снова. Отсекает автоматических ботов, но не живых спамеров. Боту нужно право «Блокировать участников» в группе.</div>
-  </div><div class="tg ${SETTINGS.captcha_on?'on':''}" onclick="togGroup('captcha_on')"><b></b></div></div>
-
- <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
-   <div class="l">Чистить спам в группах</div>
-   <div class="obhint">Убирает рекламу запрещённого, «знакомства» и лёгкий заработок. Считает по сочетанию признаков, а не по одному слову — обычные сообщения не трогает. Каждая сработка приходит вам в бота, там же кнопка вернуть человека, если ошиблись.</div>
-  </div><div class="tg ${SETTINGS.antispam_on!==false?'on':''}" onclick="togGroup('antispam_on')"><b></b></div></div>
- <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
-   <div class="l">Банить спамеров, а не только удалять</div>
-   <div class="obhint">При явном спаме человек вылетает из группы. Если признаков мало — сообщение просто удаляется.</div>
-  </div><div class="tg ${SETTINGS.antispam_ban!==false?'on':''}" onclick="togGroup('antispam_ban')"><b></b></div></div>
-
- <div class="head"><h2>Напоминания уснувшим</h2></div>
- <div class="form">
-  <div class="fr"><label>Первое напоминание через, дней тишины</label>
-   <input id="wbf" type="number" min="3" max="120" value="${SETTINGS.winback_first_days??14}"></div>
-  <div class="fr"><label>Потом повторять раз в, дней</label>
-   <input id="wbn" type="number" min="7" max="180" value="${SETTINGS.winback_next_days??30}"></div>
-  <div class="obhint" style="padding:2px 0 12px">Пассажирам, которые давно не заходили. Кто зашёл в приложение — отсчёт начинается заново, лишнего не получит. Всего не больше четырёх напоминаний на человека, потом бот замолкает навсегда. Чаще двух недель ставить не стоит: люди начнут блокировать бота, а вернуть заблокировавшего невозможно.</div>
-  <button class="btn" onclick="saveWinback()">Сохранить</button>
- </div>
- <div class="obar" style="margin:0 18px 10px"><div style="flex:1;padding-right:10px">
-   <div class="l">Напоминания включены</div>
-   <div class="obhint">Выключите, если не хотите писать уснувшим совсем.</div>
-  </div><div class="tg ${SETTINGS.winback_users_on!==false?'on':''}" onclick="togGroup('winback_users_on')"><b></b></div></div>
-
- <div class="obar" style="margin:14px 18px 10px"><div style="flex:1;padding-right:10px">
-   <div class="l">Лента заказов для водителей</div>
-   <div class="obhint">Присылать в водительскую группу уведомления о новых заказах. Адресов там нет — только вид заказа и цена. Когда заказ берут, сообщение меняется на «принят».</div>
-  </div><div class="tg ${SETTINGS.driver_feed_enabled!==false?'on':''}" onclick="togGroup('driver_feed_enabled')"><b></b></div></div>
- <div class="note" style="margin:10px 14px 14px">Работает независимо от приглашений — только в группах, чей ID указан ниже. В чужие группы бот не вмешивается, администраторов не трогает.</div>
-
- <div class="sec">Подписка на группу</div>
- <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Требовать подписку</div><div class="obhint">${SETTINGS.require_sub
-   ? 'Без вступления в группу приложением пользоваться нельзя. Следите за заказами: часть людей может уйти.'
-   : 'Выключено. Людям только предлагают вступить, никого не заставляем.'}</div></div><div class="tg ${SETTINGS.require_sub?'on':''}" onclick="togGroup('require_sub')"><b></b></div></div>
-
- <div class="sec">Живой закреп</div>
- <div class="obar"><div style="flex:1;padding-right:10px"><div class="l">Закреп со статистикой</div><div class="obhint">${SETTINGS.pin_enabled
-   ? 'Бот держит в группе одно закреплённое сообщение и молча его переписывает. Пока водителей мало, цифры не показываются.'
-   : 'Выключено. Включите — бот создаст закреп и будет обновлять его сам, без новых уведомлений в чате.'}</div></div><div class="tg ${SETTINGS.pin_enabled?'on':''}" onclick="togGroup('pin_enabled')"><b></b></div></div>
- ${SETTINGS.pin_enabled?`
- <div class="sec" style="padding-bottom:4px">Как часто обновлять</div>
- <div class="seg">${[3,5,10,15].map(v=>`<div class="${(SETTINGS.pin_minutes||5)===v?'on':''}" onclick="setPinMin(${v})">${v} мин</div>`).join('')}</div>
- <div class="sec" style="padding-bottom:4px">Показывать сводку заново</div>
- <div class="seg">${[[0,'Не пересоздавать'],[6,'раз в 6 ч'],[12,'раз в 12 ч'],[24,'раз в сутки']].map(v=>`<div class="${(SETTINGS.pin_renew_hours||0)===v[0]?'on':''}" onclick="setPinRenew(${v[0]})">${v[1]}</div>`).join('')}</div>
- <div class="note" style="margin:6px 14px 0">При пересоздании старое сообщение удаляется, а новое появляется внизу чата — его снова замечают. Людям придёт одно уведомление.</div>
- <div style="padding:8px 14px 0"><button class="rolebtn" onclick="pinNow()">обновить закреп сейчас</button></div>
- `:''}
- <div class="sec">Города</div>
- <div class="note" style="margin:0 14px 12px">Выключенный город исчезает из выбора, но у тех, кто уже его выбрал, остаётся.</div>
- <div style="padding:0 14px 10px"><button class="rolebtn" onclick="cityEdit()">+ добавить город</button></div>
- ${items.length?items.map(x=>`<div class="card" style="flex-direction:column;align-items:stretch;gap:8px">
-   <div style="display:flex;align-items:center;gap:10px">
-    <div style="flex:1;min-width:0">
-     <div class="nm">${esc(x.name)} ${x.active?'':'<span class="badge red">выключен</span>'}</div>
-     <div class="sub">${x.group_link?'сообщество подключено':'группа не указана'}${x.group_id?' · проверка подписки работает':''}</div>
-    </div>
-    <button class="rolebtn" onclick='cityEdit(${JSON.stringify(x).replace(/'/g,"&#39;")})'>изменить</button>
-   </div>
-  </div>`).join(''):'<div class="empty">Городов нет</div>'}
- <div style="height:16px"></div>`;
+ const tabs=[['cities','Города'],['chat','Чат города'],['drv','Водители'],['join','Вступление']];
+ let body='';
+ if(cgTab==='cities'){
+  const r=await api('/api/admin',{action:'city-list'});
+  if(r.error){c.innerHTML='<div class="empty">Не удалось загрузить</div>';return;}
+  const items=r.items||[];
+  const chip=(ok,t)=>`<span class="cg-chip ${ok?'cg-yes':''}">${ok?'✓':'—'} ${t}</span>`;
+  body=`<div class="obhint" style="margin:0 18px 12px">Здесь подключаются группы города и группы водителей. Что бот делает в группах — на вкладках «Чат города» и «Водители».</div>
+  ${items.length?items.map(x=>`<div class="card cg-city" onclick='cityEdit(${JSON.stringify(x).replace(/'/g,"&#39;")})'>
+   <div style="flex:1;min-width:0">
+    <div class="nm">${esc(x.name)}${x.active===false?' <span class="badge red">скрыт в приложении</span>':''}</div>
+    <div class="cg-chips">${chip(!!x.group_id,'группа города')}${chip(!!x.driver_group_id,'группа водителей')}${chip(!!x.group_link,'ссылка')}</div>
+   </div><svg class="cg-arr" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></div>`).join(''):'<div class="empty">Городов пока нет</div>'}
+  <div style="padding:4px 14px 0"><button class="btn ghost" onclick="cityEdit()">+ Добавить город</button></div>
+  <div class="obhint" style="margin:10px 18px 0">Нажмите на город, чтобы вписать ID групп, ссылку или разослать водителям приглашения. Скрытый город пропадает из выбора, но у тех, кто его уже выбрал, остаётся.</div>`;
+ }
+ if(cgTab==='chat'){
+  const om=cgOrderMode();
+  const omHint={off:'Бот не вмешивается: люди могут договариваться о поездках прямо в чате, минуя приложение.',
+   reply:'Сообщение остаётся в чате, а бот отвечает под ним, как оформить заказ. Ответ бота исчезает сам.',
+   delete:'Сообщение с заказом удаляется, а человеку в личку приходит кнопка оформления.'}[om];
+  body=`<div class="sec">Заказы в чате</div>
+  <div class="obar cg-o" style="display:block"><div class="l">Если в чате пишут заказ текстом</div>
+   <div class="seg" style="padding:10px 0 4px">${[['off','Не трогать'],['reply','Подсказать'],['delete','Убрать']].map(v=>`<div class="${om===v[0]?'on':''}" onclick="setOrderHandling('${v[0]}')">${v[1]}</div>`).join('')}</div>
+   <div class="obhint">${omHint} Спам удаляется в любом случае.</div>
+   ${om!=='off'?`<div class="fr" style="margin-top:10px"><label>Подсказка бота исчезает через, секунд (0 — не убирать)</label><input id="gdel" type="number" min="0" max="3600" value="${SETTINGS.group_del_sec??90}"></div><button class="btn ghost" onclick="saveGroupTimers()">Сохранить</button>`:`<input id="gdel" type="hidden" value="${SETTINGS.group_del_sec??90}">`}
+  </div>
+  ${cgTog(SETTINGS.group_orders_on,"togGroup('group_orders_on')",'Публиковать заявки в чате','Новая заявка появляется в группе без адреса, с кнопкой «Взять заказ». Адрес бот присылает в личку только проверенному водителю.')}
+  <div class="sec">Порядок в чате</div>
+  ${cgTog(SETTINGS.group_clean_service!==false,"togGroup('group_clean_service')",'Убирать «вступил / вышел»','Служебные сообщения о входе и выходе удаляются сразу.')}
+  ${cgTog(SETTINGS.group_welcome,"togGroup('group_welcome')",'Приветствовать новичков','Короткое приветствие с кнопкой на бота.',
+    SETTINGS.group_welcome?`<div class="fr" style="margin-top:10px"><label>Приветствие исчезает через, секунд (0 — не убирать)</label><input id="gwel" type="number" min="0" max="3600" value="${SETTINGS.group_welcome_sec??120}"></div><button class="btn ghost" onclick="saveGroupTimers()">Сохранить</button>`:`<input id="gwel" type="hidden" value="${SETTINGS.group_welcome_sec??120}">`)}
+  ${cgTog(SETTINGS.group_no_ads!==false,"togGroup('group_no_ads')",'Запретить рекламу','Объявления, анкеты и номера телефонов убираются, автору приходит объяснение в личку. Повторы — предупреждение, затем запрет писать на сутки.')}
+  ${cgTog(SETTINGS.antispam_on!==false,"togGroup('antispam_on')",'Чистить спам','Убирает рекламу запрещённого, «знакомства» и «лёгкий заработок». Смотрит на сочетание признаков, обычные сообщения не трогает.')}
+  ${SETTINGS.antispam_on!==false?cgTog(SETTINGS.antispam_ban!==false,"togGroup('antispam_ban')",'Банить спамеров','При явном спаме человек вылетает из группы. Если признаков мало — сообщение просто удаляется.'):''}
+  <div class="sec">Закреп со статистикой</div>
+  ${cgTog(SETTINGS.pin_enabled,"togGroup('pin_enabled')",'Живой закреп',SETTINGS.pin_enabled?'Бот держит в группе одно закреплённое сообщение и тихо его обновляет. Пока водителей мало, цифры не показываются.':'Выключено. Включите — бот создаст закреп и будет обновлять его сам.')}
+  ${SETTINGS.pin_enabled?`<div class="obar cg-o" style="display:block"><div class="l">Обновлять цифры</div>
+   <div class="seg" style="padding:10px 0 4px">${[3,5,10,15].map(v=>`<div class="${(SETTINGS.pin_minutes||5)===v?'on':''}" onclick="setPinMin(${v})">раз в ${v} мин</div>`).join('')}</div>
+   <div class="l" style="margin-top:12px">Поднимать закреп вниз чата</div>
+   <div class="seg" style="padding:10px 0 4px">${[[0,'Не поднимать'],[6,'раз в 6 ч'],[12,'раз в 12 ч'],[24,'раз в сутки']].map(v=>`<div class="${(SETTINGS.pin_renew_hours||0)===v[0]?'on':''}" onclick="setPinRenew(${v[0]})">${v[1]}</div>`).join('')}</div>
+   <div class="obhint">Старое сообщение удаляется, новое появляется внизу — его снова замечают.</div>
+   <button class="btn ghost" style="margin-top:10px" onclick="pinNow()">Обновить закреп сейчас</button></div>`:''}
+  <div class="sec">Карточки водителей в чате</div>
+  <div class="obar cg-o" style="display:block"><div class="l">Публиковать карточку заново каждые, минут</div>
+   <div class="obhint">Водитель сам включает показ в своём кабинете. Старая карточка убирается, чтобы чат не засорялся; статус «свободен / занят» обновляется сам.</div>
+   <div class="fr" style="margin-top:10px"><input id="dpost" type="number" min="5" max="720" value="${SETTINGS.dpost_minutes??30}"></div>
+   <button class="btn ghost" onclick="saveDpost()">Сохранить</button></div>`;
+ }
+ if(cgTab==='drv'){
+  body=`${cgTog(SETTINGS.driver_feed_enabled!==false,"togGroup('driver_feed_enabled')",'Лента заказов в группу водителей','О каждой новой заявке бот пишет в закрытую группу водителей её города — без адресов и телефонов. Когда заказ берут или отменяют, сообщение меняется само.')}
+  <div class="obar cg-o" style="display:block"><div class="l">Кто попадает в группу водителей</div>
+   <div class="obhint" style="line-height:1.6">• Одобренному водителю бот сам присылает личную ссылку.<br>• Уже работающих водителей позовите кнопкой «Пригласить всех водителей города» в карточке города (вкладка «Города»).<br>• Сняли допуск или забанили — бот сам убирает из группы.</div></div>
+  <div class="obhint" style="margin:4px 18px 0">Группа водителей подключается в карточке города: поле «ID группы водителей». Проверить, всё ли работает, — команда <b>/groupcheck</b> в боте.</div>`;
+ }
+ if(cgTab==='join'){
+  const on=!!SETTINGS.community_enabled;
+  body=`${cgTog(on,"togGroup('community_enabled')",'Предлагать вступить в группу',on?'После выбора города человек видит карточку группы, в профиле есть раздел «Группа города».':'Выключено: в группу не зовут, раздел в профиле скрыт. Порядок в чате при этом работает.')}
+  ${cgTog(SETTINGS.require_sub,"togGroup('require_sub')",'Требовать подписку',SETTINGS.require_sub?'Без вступления в группу приложением пользоваться нельзя. Следите за заказами: часть людей может уйти.':'Выключено: людям только предлагают вступить, никого не заставляем.')}`;
+ }
+ c.innerHTML=`<div class="st-per e5">${tabs.map(([k,l])=>`<div class="${cgTab===k?'on':''}" onclick="cgTab='${k}';finCities(document.getElementById('fincont'))">${l}</div>`).join('')}</div>${body}<div style="height:20px"></div>`;
+}
+/* перенесено из «Городов и групп»: документы и напоминания — в свои разделы */
+async function finDocs(c){
+ c.innerHTML=`${cgTog(SETTINGS.docs_keep_days===0,'togDocsNever()','Никогда не удалять','Права и техпаспорт хранятся, пока вы сами их не удалите. Чем короче срок, тем меньше личных данных лежит в базе.')}
+ ${SETTINGS.docs_keep_days===0?'':`<div class="obar cg-o" style="display:block"><div class="l">Хранить после проверки, дней</div>
+  <div class="obhint">Права и техпаспорт удаляются сами через этот срок. В карточке водителя остаётся отметка: кто проверил и когда.</div>
+  <div class="fr" style="margin-top:10px"><input id="dkeep" type="number" min="1" max="90" value="${SETTINGS.docs_keep_days??3}"></div>
+  <button class="btn ghost" onclick="saveDocsKeep()">Сохранить срок</button></div>`}<div style="height:20px"></div>`;
+}
+async function finWinback(c){
+ c.innerHTML=`${cgTog(SETTINGS.winback_users_on!==false,"togGroup('winback_users_on')",'Напоминать уснувшим','Бот пишет пассажирам, которые давно не заходили. Кто зашёл в приложение — отсчёт начинается заново.')}
+ ${SETTINGS.winback_users_on!==false?`<div class="obar cg-o" style="display:block">
+  <div class="fr"><label>Первое напоминание через, дней тишины</label><input id="wbf" type="number" min="3" max="120" value="${SETTINGS.winback_first_days??14}"></div>
+  <div class="fr"><label>Потом повторять раз в, дней</label><input id="wbn" type="number" min="7" max="180" value="${SETTINGS.winback_next_days??30}"></div>
+  <button class="btn ghost" onclick="saveWinback()">Сохранить</button></div>`:''}<div style="height:20px"></div>`;
 }
 async function setPinRenew(v){
  const r=await api('/api/admin',{action:'settings-update',fields:{pin_renew_hours:v}});
@@ -6793,7 +6769,7 @@ async function togDocsNever(){
  if(r.error)return T(r.error==='forbidden'?'Нет прав':'Не удалось сохранить');
  if(r.settings)SETTINGS=r.settings; else SETTINGS.docs_keep_days=d;
  T(d===0?'Документы больше не удаляются':'Документы снова удаляются через 3 дн.');
- finCities(document.getElementById('fincont'));
+ aFin(document.getElementById('main'));
 }
 async function saveDocsKeep(){
  const d=Math.max(1,Math.min(90,parseInt(document.getElementById('dkeep').value)||3));
