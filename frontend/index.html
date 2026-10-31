@@ -6848,6 +6848,7 @@ function cityEdit(x){
  <div class="fr"><label>Порядок в списке</label><input id="ci_sort" value="${x.sort||100}" inputmode="numeric"></div>
  <div class="obar" style="margin:0 0 12px"><div><div class="l">Показывать в приложении</div></div><div class="tg ${x.active===false?'':'on'}" id="ci_act" onclick="this.classList.toggle('on')"><b></b></div></div>
  <div class="sa"><button class="c" onclick="document.getElementById('sh2').remove()">Отмена</button><button class="o" onclick="citySave(${x.id||0})">Сохранить</button></div>
+ ${x.id&&x.driver_group_id?`<button class="btn ghost" style="margin-top:10px" onclick="cityInvite('${esc(x.name)}')">👥 Пригласить всех водителей города</button><div class="obhint" style="padding:6px 0 0">Каждому водителю этого города, кого ещё нет в группе водителей, бот пришлёт личную одноразовую ссылку. Итог придёт вам в бота.</div>`:''}
  ${x.id?`<div style="text-align:center;padding-top:6px"><button class="rolebtn" style="color:var(--red)" onclick="cityDel(${x.id},'${esc(x.name)}')">удалить город</button></div>`:''}
  </div>`;
  document.getElementById('device').appendChild(m);
@@ -6863,6 +6864,11 @@ async function citySave(id){
  if(r.error)return T(r.error==='duplicate'?'Такой город уже есть':r.error==='forbidden'?'Нет прав':'Ошибка');
  document.getElementById('sh2').remove();T('Сохранено');
  await loadCities();aFin(document.getElementById('main'));
+}
+async function cityInvite(name){
+ const r=await api('/api/admin',{action:'city-invite-drivers',city:name});
+ if(r.error)return T(r.error==='no_group'?'Сначала укажите и сохраните ID группы водителей':r.error==='no_perm'?'Нет прав':'Не получилось');
+ T(r.total?'Рассылаю ссылки '+r.total+' '+plural(r.total,['водителю','водителям','водителям'])+' — итог придёт в бота':'В этом городе нет водителей');
 }
 async function cityDel(id,name){
  const r=await api('/api/admin',{action:'city-delete',id,city_name:name});

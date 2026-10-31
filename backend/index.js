@@ -5059,7 +5059,7 @@ const ACT_PERM = {
 
   'src-list':'refs','src-save':'refs','src-delete':'refs',
 
-  'city-list':'cities','city-save':'cities','city-delete':'cities','pin-now':'cities',
+  'city-list':'cities','city-save':'cities','city-delete':'cities','pin-now':'cities','city-invite-drivers':'cities',
 
   'settings-update':'settings','save-settings':'settings',
   'work-list':'drivers','work-revoke':'drivers',
@@ -6527,6 +6527,27 @@ async function groupDiag() {
       }
     } catch (e) { out.шаги.push('❌ города: ' + e.message); }
 
+    // v182: группы водителей
+    try {
+      const { data: dg } = await db.from('cities').select('name,driver_group_id').not('driver_group_id', 'is', null);
+      if (!dg || !dg.length) out.шаги.push('— групп водителей не указано ни у одного города');
+      const me3 = await tg('getMe');
+      const botId3 = me3 && me3.result ? me3.result.id : null;
+      for (const c of dg || []) {
+        out.шаги.push(`— группа водителей ${c.name}, ID ${c.driver_group_id}`);
+        const chat = await tg('getChat', { chat_id: c.driver_group_id });
+        if (!chat || !chat.ok) { out.шаги.push(`   ❌ бот не видит группу: ${chat && chat.description ? chat.description : 'нет ответа'}`); continue; }
+        out.шаги.push(`   ✅ найдена: ${chat.result.title}`);
+        if (!botId3) continue;
+        const cm = await tg('getChatMember', { chat_id: c.driver_group_id, user_id: botId3 });
+        const r = cm && cm.ok ? cm.result : null;
+        if (!r || r.status !== 'administrator') { out.шаги.push(`   ❌ бот НЕ администратор${r ? ' (' + r.status + ')' : ''}`); continue; }
+        out.шаги.push('   ✅ бот администратор');
+        out.шаги.push((r.can_invite_users ? '   ✅' : '   ❌') + ' право приглашать по ссылке: ' + (r.can_invite_users ? 'есть' : 'НЕТ'));
+        out.шаги.push((r.can_restrict_members ? '   ✅' : '   ❌') + ' право блокировать участников: ' + (r.can_restrict_members ? 'есть' : 'НЕТ'));
+      }
+    } catch (e) { out.шаги.push('❌ группы водителей: ' + e.message); }
+
     out.последние_события = groupLog.length ? groupLog : 'из групп сообщений не приходило — скорее всего не выключен Group Privacy у @BotFather, либо бот не переподключён после этого';
     return out;
 }
@@ -7763,6 +7784,36 @@ http.createServer(async (req, res) => {
       if (act === 'payments-list') {
         const { data } = await db.from('payments').select('*').order('created_at', { ascending: false }).limit(25);
         return json(res, 200, { ok: true, items: data || [] });
+      }
+
+      // v182: личные одноразовые ссылки в группу водителей всем водителям города, кого там ещё нет
+      if (act === 'city-invite-drivers') {
+        const cityName = String(body.city || '').slice(0, 60);
+        const groups = await driverGroupsOf(cityName);
+        if (!cityName || !groups.length) return json(res, 400, { error: 'no_group' });
+        const drv = await ptAll(() => db.from('users').select('id,name,telegram_id,role,is_banned,city')
+          .eq('city', cityName).in('role', ['driver', 'both']).order('id'), 10);
+        const list = drv.filter(d => d.telegram_id && !d.is_banned);
+        (async () => {
+          let sent = 0, already = 0, failed = 0;
+          for (const d of list) {
+            for (const gid of groups) {
+              try {
+                const cm = await tg('getChatMember', { chat_id: gid, user_id: d.telegram_id });
+                const stt = cm && cm.ok ? cm.result.status : null;
+                if (['member', 'administrator', 'creator', 'restricted'].includes(stt)) { already++; continue; }
+                const inv = await tg('createChatInviteLink', { chat_id: gid, member_limit: 1, name: `для ${String(d.name || '').slice(0, 20)}` });
+                if (!inv || !inv.ok) { failed++; continue; }
+                const ok = await send(d.telegram_id, '👥 <b>Группа водителей Бомбил</b>\nТам приходят уведомления о новых заказах вашего города. Ссылка личная и одноразовая.',
+                  { reply_markup: { inline_keyboard: [[{ text: '👥 Вступить в группу', url: inv.result.invite_link }]] } }).catch(() => null);
+                if (ok && ok.ok) sent++; else failed++;
+              } catch (e) { failed++; }
+              await new Promise(r => setTimeout(r, 120));
+            }
+          }
+          send(me.telegram_id, `👥 <b>Приглашения в группу водителей · ${hx(cityName)}</b>\nОтправлено: ${sent}\nУже в группе: ${already}${failed ? `\nНе получилось: ${failed} (бот без прав или водитель не запускал бота)` : ''}`).catch(() => {});
+        })().catch(() => {});
+        return json(res, 200, { ok: true, total: list.length });
       }
 
       // ---- рассылка ----
