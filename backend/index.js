@@ -4601,6 +4601,15 @@ async function kickFromDriverGroups(user, reason) {
   }
 }
 
+// v183: понятный текст приглашения в группу водителей
+function drvGroupInviteText(city) {
+  return `👥 <b>Закрытая группа водителей Бомбил${city ? ' · ' + hx(city) : ''}</b>\n\n` +
+    `Это рабочая группа только для наших водителей. Туда бот сразу присылает каждый новый заказ вашего города: ` +
+    `вид заказа и город, без адресов и телефонов.\n\n` +
+    `Увидели заказ — открывайте его в приложении и предлагайте цену. Кто быстрее откликнулся, того чаще и выбирают.\n\n` +
+    `🔒 Ссылка личная и одноразовая — не пересылайте её. Если допуск снимут, бот уберёт из группы сам.`;
+}
+
 async function inviteToDriverGroups(user) {
   if (!user || !user.telegram_id) return;
   const groups = await driverGroupsOf(user.city);
@@ -4612,7 +4621,7 @@ async function inviteToDriverGroups(user) {
       });
       if (inv && inv.ok) {
         await send(user.telegram_id,
-          '✅ Допуск открыт. Вот ссылка в группу водителей — там приходят уведомления о новых заказах.',
+          '✅ <b>Допуск открыт.</b>\n\n' + drvGroupInviteText(user.city),
           { reply_markup: { inline_keyboard: [[{ text: '👥 Вступить в группу', url: inv.result.invite_link }]] } }
         ).catch(() => {});
       }
@@ -7804,7 +7813,7 @@ http.createServer(async (req, res) => {
                 if (['member', 'administrator', 'creator', 'restricted'].includes(stt)) { already++; continue; }
                 const inv = await tg('createChatInviteLink', { chat_id: gid, member_limit: 1, name: `для ${String(d.name || '').slice(0, 20)}` });
                 if (!inv || !inv.ok) { failed++; continue; }
-                const ok = await send(d.telegram_id, '👥 <b>Группа водителей Бомбил</b>\nТам приходят уведомления о новых заказах вашего города. Ссылка личная и одноразовая.',
+                const ok = await send(d.telegram_id, drvGroupInviteText(cityName),
                   { reply_markup: { inline_keyboard: [[{ text: '👥 Вступить в группу', url: inv.result.invite_link }]] } }).catch(() => null);
                 if (ok && ok.ok) sent++; else failed++;
               } catch (e) { failed++; }
